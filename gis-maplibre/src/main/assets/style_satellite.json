@@ -1,0 +1,17 @@
+{
+  "version": 8,
+  "name": "Satellite",
+  "glyphs": "https://orangemug.github.io/font-glyphs/glyphs/{fontstack}/{range}.pbf",
+  "sources": {
+    "base_raster": {
+      "type": "raster",
+      "tiles": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"],
+      "tileSize": 256,
+      "minzoom": 0,
+      "maxzoom": 20
+    }
+  },
+  "layers": [
+    { "id": "base", "type": "raster", "source": "base_raster" }
+  ]
+}

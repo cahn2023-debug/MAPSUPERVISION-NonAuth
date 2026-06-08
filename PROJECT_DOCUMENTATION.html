@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapSupervision - Dự Án Giám Sát Bản Đồ Số</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --surface-color: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: hsl(210, 100%, 60%);
+            --primary-glow: rgba(59, 130, 246, 0.35);
+            --secondary: hsl(174, 100%, 43%);
+            --secondary-glow: rgba(20, 184, 166, 0.3);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent: #ec4899;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(20, 184, 166, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar navigation */
+        aside {
+            width: 320px;
+            background: rgba(10, 15, 26, 0.85);
+            backdrop-filter: blur(16px);
+            border-right: 1px solid var(--border-color);
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 2.5rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: #0b0f19;
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .logo-title {
+            font-size: 1.4rem;
+            background: linear-gradient(to right, #ffffff, #9ca3af);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }
+
+        .nav-links {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.8rem 1rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: var(--transition);
+            border: 1px solid transparent;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--border-color);
+        }
+
+        .nav-links a.active {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, transparent 100%);
+            border-left: 3px solid var(--primary);
+            color: var(--primary);
+        }
+
+        /* Main Content */
+        main {
+            margin-left: 320px;
+            flex: 1;
+            padding: 3rem 4rem;
+            max-width: 1200px;
+        }
+
+        header {
+            margin-bottom: 3.5rem;
+            position: relative;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 4px 12px;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            color: var(--primary);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        header h1 {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+        }
+
+        header p {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            max-width: 800px;
+        }
+
+        .section-card {
+            background: var(--surface-color);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin-bottom: 3rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            transition: var(--transition);
+        }
+
+        .section-card:hover {
+            border-color: rgba(59, 130, 246, 0.2);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(to bottom, var(--primary), var(--secondary));
+            border-radius: 2px;
+        }
+
+        /* Features Grid */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .feature-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-item:hover {
+            transform: translateY(-4px);
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(20, 184, 166, 0.25);
+        }
+
+        .feature-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .feature-item:hover::after {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            font-size: 1.8rem;
+            margin-bottom: 1rem;
+            display: inline-block;
+        }
+
+        .feature-item h3 {
+            font-size: 1.15rem;
+            margin-bottom: 0.5rem;
+            color: #ffffff;
+        }
+
+        .feature-item p {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* Code architecture tree styling */
+        .tree-node {
+            margin-left: 1.5rem;
+            border-left: 1px dashed rgba(255, 255, 255, 0.15);
+            padding-left: 1rem;
+            position: relative;
+            margin-top: 0.4rem;
+        }
+
+        .tree-node-title {
+            cursor: pointer;
+            font-weight: 600;
+            color: #e2e8f0;
+            font-family: monospace;
+            padding: 3px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            transition: var(--transition);
+        }
+
+        .tree-node-title:hover {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary);
+        }
+
+        .tree-node-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-left: 10px;
+        }
+
+        .tree-node-type {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-right: 6px;
+        }
+
+        .type-module {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--primary);
+        }
+
+        .type-core {
+            background: rgba(236, 72, 153, 0.2);
+            color: var(--accent);
+        }
+
+        .type-ui {
+            background: rgba(20, 184, 166, 0.2);
+            color: var(--secondary);
+        }
+
+        /* Interactive Graph / Visual Elements */
+        .diagram-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(10, 15, 26, 0.6);
+            border-radius: 12px;
+            padding: 2rem;
+            border: 1px solid var(--border-color);
+            margin: 1.5rem 0;
+            overflow: auto;
+        }
+
+        .module-graph {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        .graph-row {
+            display: flex;
+            justify-content: space-around;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .graph-card {
+            background: rgba(17, 24, 39, 0.9);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1rem;
+            width: 160px;
+            text-align: center;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .graph-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+            transform: scale(1.05);
+        }
+
+        .graph-card.active {
+            border-color: var(--secondary);
+            background: rgba(20, 184, 166, 0.1);
+            box-shadow: 0 0 15px var(--secondary-glow);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 992px) {
+            aside {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+                padding: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Sidebar Navigation -->
+    <aside>
+        <div class="logo-area">
+            <div class="logo-icon">M</div>
+            <div class="logo-title">MapSupervision</div>
+        </div>
+        <ul class="nav-links">
+            <li><a href="#about" class="active">🌟 Tổng Quan Dự Án</a></li>
+            <li><a href="#features">⚡ Tính Năng Cốt Lõi</a></li>
+            <li><a href="#architecture">🛠️ Kiến Trúc Hệ Thống</a></li>
+            <li><a href="#folder-structure">📂 Cấu Trúc Code</a></li>
+            <li><a href="#knowledge-graph">📊 Bản Đồ Tri Thức</a></li>
+        </ul>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main>
+        <header id="about">
+            <span class="tag">Dự án Android Kỹ Thuật Cao</span>
+            <h1>Hệ Thống Giám Sát Dự Án Trên Bản Đồ Số</h1>
+            <p>
+                MapSupervision là giải pháp giám sát tiến độ thi công công trình hạ tầng dựa trên không gian số bản đồ. Ứng dụng triển khai cấu trúc Clean Architecture đa mô-đun vững chắc, kết hợp nền tảng Jetpack Compose hiện đại cùng khả năng đồng bộ ảnh định vị vệ tinh GPS độ chính xác cao.
+            </p>
+        </header>
+
+        <!-- Features Section -->
+        <section id="features" class="section-card">
+            <h2 class="section-title">Tính Năng Dự Án</h2>
+            <div class="features-grid">
+                <div class="feature-item">
+                    <span class="feature-icon">🗺️</span>
+                    <h3>Bản Đồ GIS Trực Quan</h3>
+                    <p>Tích hợp MapLibre GL dựng bản đồ vectơ tốc độ cao, biểu diễn sơ đồ các Nút (Node) và Tuyến (Route) kỹ thuật thực tế một cách sinh động.</p>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">📂</span>
+                    <h3>Bộ Đọc KML/KMZ Không Gian</h3>
+                    <p>Phân tích cú pháp trực tiếp các file quy hoạch dạng KML/KMZ từ người dùng để sinh ra cấu trúc mạng lưới hạ tầng tự động mà không cần máy chủ.</p>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">📸</span>
+                    <h3>Chụp Ảnh GPS Hiện Trường</h3>
+                    <p>Tích hợp camera thông minh ghi nhận tọa độ GPS thời gian thực, xử lý bất đồng bộ ở chế độ ngầm để tự động nén và tạo thumbnail.</p>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">📊</span>
+                    <h3>Giám Sát Tiến Độ Thực Tế</h3>
+                    <p>Đối sánh trực quan giữa tiến độ kế hoạch và sản lượng thực tế thi công của từng đối tượng, phát hiện và gán cờ cảnh báo trễ hạn.</p>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">📄</span>
+                    <h3>Xuất Báo Cáo PDF Tự Động</h3>
+                    <p>Chuyển đổi tức thời toàn bộ dữ liệu hiện trường, ảnh định vị GPS và nhật ký giám sát ngày thành báo cáo PDF chất lượng cao để ký số gửi đối tác.</p>
+                </div>
+                <div class="feature-item">
+                    <span class="feature-icon">🔒</span>
+                    <h3>Lưu Trữ Mã Hóa</h3>
+                    <p>Tách biệt tài nguyên lưu trữ của từng gói dự án, tích hợp công cụ mã hóa để bảo đảm an toàn dữ liệu thực tế tại thực địa.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture Layout -->
+        <section id="architecture" class="section-card">
+            <h2 class="section-title">Thiết Kế Kiến Trúc Multi-Module</h2>
+            <p style="margin-bottom: 1.5rem; color: var(--text-muted);">
+                Ứng dụng chia nhỏ cấu trúc hệ thống thành các module độc lập. Mối quan hệ phụ thuộc tuân thủ nghiêm ngặt nguyên lý Clean Architecture: Lớp ngoài cùng phụ thuộc vào lớp trong, phần cốt lõi <code>domain</code> không phụ thuộc bất kỳ thư viện ngoài nào.
+            </p>
+            <div class="diagram-container">
+                <div class="module-graph">
+                    <!-- Layer 1 -->
+                    <div class="graph-row">
+                        <div class="graph-card" style="border-color: var(--primary);" onclick="highlightConnections('presentation')">
+                            <span style="color: var(--primary);">💻 Presentation</span><br><strong>:app</strong>
+                        </div>
+                        <div class="graph-card" style="border-color: var(--primary);" onclick="highlightConnections('presentation')">
+                            <span style="color: var(--primary);">💻 Feature</span><br><strong>:gis / :photo</strong>
+                        </div>
+                    </div>
+                    <!-- Layer 2 -->
+                    <div class="graph-row">
+                        <div class="graph-card" style="border-color: var(--secondary);" onclick="highlightConnections('data')">
+                            <span style="color: var(--secondary);">💾 Data & Storage</span><br><strong>:data</strong>
+                        </div>
+                        <div class="graph-card" style="border-color: var(--secondary);" onclick="highlightConnections('data')">
+                            <span style="color: var(--secondary);">💾 File Engine</span><br><strong>:storage</strong>
+                        </div>
+                    </div>
+                    <!-- Layer 3 -->
+                    <div class="graph-row">
+                        <div class="graph-card" style="border-color: var(--accent);" onclick="highlightConnections('core')">
+                            <span style="color: var(--accent);">⚙️ Domain Core</span><br><strong>:domain</strong>
+                        </div>
+                        <div class="graph-card" style="border-color: var(--accent);" onclick="highlightConnections('core')">
+                            <span style="color: var(--accent);">⚙️ Utils</span><br><strong>:core</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style="text-align: center; font-size: 0.85rem; color: var(--text-muted);"><i>Nhấn vào các khối để tìm hiểu cách phân bố vai trò kiến trúc.</i></p>
+        </section>
+
+        <!-- Folder Structure Section -->
+        <section id="folder-structure" class="section-card">
+            <h2 class="section-title">Cấu Trúc Thư Mục & Vai Trò Các File Code</h2>
+            <div style="background: rgba(10, 15, 26, 0.5); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-module">:app</span>MapSupervision</span>
+                    <span class="tree-node-desc">Chứa luồng điều hướng, Application class, MainActivity và Workspace UI chính.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-core">:domain</span>Domain Layer</span>
+                    <span class="tree-node-desc">Trung tâm nghiệp vụ. Định nghĩa các thực thể (GisNode, SitePhoto...) và các UseCase độc lập.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-core">:core</span>Core Utilities</span>
+                    <span class="tree-node-desc">Chứa cấu hình Coroutine Dispatcher, AppLogger dùng chung và các định nghĩa lỗi hệ thống.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-module">:data</span>Data Storage Layer</span>
+                    <span class="tree-node-desc">Triển khai SQLite Room Database, các DAO quản trị các bảng, và hiện thực các repository từ Domain.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-module">:storage</span>Storage & Importer</span>
+                    <span class="tree-node-desc">Quản lý tệp vật lý, mã hóa dự án và phân tích file nâng cao (KML/KMZ/Excel/PDF/Word).</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-ui">:gis</span>GIS Rendering Module</span>
+                    <span class="tree-node-desc">Hệ thống xử lý bản đồ. Tạo các Style động hiển thị tuyến ống kỹ thuật và nút quản lý.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-ui">:photo</span>Field Capturer</span>
+                    <span class="tree-node-desc">Quản trị camera chụp ảnh hiện trường, gán dữ liệu tọa độ GPS vệ tinh trực tiếp.</span>
+                </div>
+                <div class="tree-node">
+                    <span class="tree-node-title"><span class="tree-node-type type-ui">:reporting</span>Reporting Engine</span>
+                    <span class="tree-node-desc">Tổng hợp số liệu tiến độ và hình ảnh hiện trường để tạo tệp báo cáo định dạng PDF.</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Knowledge Graph Section -->
+        <section id="knowledge-graph" class="section-card">
+            <h2 class="section-title">Bản Đồ Quan Hệ Thực Thể Dữ Liệu (Knowledge Graph)</h2>
+            <p style="margin-bottom: 1.5rem; color: var(--text-muted);">
+                Sơ đồ biểu diễn cách các cấu trúc thực thể dữ liệu liên kết chéo với nhau bên trong hệ thống lưu trữ của MapSupervision:
+            </p>
+            <div class="diagram-container" style="background: rgba(15, 23, 42, 0.95);">
+                <!-- Visualizing the Database schema relationships beautifully with SVG -->
+                <svg width="760" height="420" viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg" style="font-family: 'Inter', sans-serif;">
+                    <!-- Defs for arrows -->
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+                        </marker>
+                        <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#3b82f6" />
+                            <stop offset="100%" stop-color="#10b981" />
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Central Entity: Project -->
+                    <rect x="300" y="30" width="160" height="70" rx="8" fill="url(#primaryGrad)" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+                    <text x="380" y="60" text-anchor="middle" fill="#0b0f19" font-weight="bold" font-size="14">DỰ ÁN (PROJECT)</text>
+                    <text x="380" y="80" text-anchor="middle" fill="#0b0f19" font-size="10">Mã dự án (ID) | Tên</text>
+
+                    <!-- Entity 1: GIS Node -->
+                    <rect x="50" y="160" width="160" height="70" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+                    <text x="130" y="190" text-anchor="middle" fill="#f3f4f6" font-weight="bold" font-size="12">GIS-NODE</text>
+                    <text x="130" y="210" text-anchor="middle" fill="#9ca3af" font-size="10">Tọa độ | Mã kỹ thuật</text>
+
+                    <!-- Entity 2: GIS Route -->
+                    <rect x="550" y="160" width="160" height="70" rx="8" fill="#1e293b" stroke="#10b981" stroke-width="1.5"/>
+                    <text x="630" y="190" text-anchor="middle" fill="#f3f4f6" font-weight="bold" font-size="12">GIS-ROUTE</text>
+                    <text x="630" y="210" text-anchor="middle" fill="#9ca3af" font-size="10">Điểm đầu | Điểm cuối</text>
+
+                    <!-- Entity 3: Site Photo -->
+                    <rect x="180" y="300" width="170" height="70" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+                    <text x="265" y="330" text-anchor="middle" fill="#f3f4f6" font-weight="bold" font-size="12">SITE-PHOTO</text>
+                    <text x="265" y="350" text-anchor="middle" fill="#9ca3af" font-size="10">GPS | Tệp gốc | Thumbnail</text>
+
+                    <!-- Entity 4: Node Progress -->
+                    <rect x="420" y="300" width="170" height="70" rx="8" fill="#1e293b" stroke="#ec4899" stroke-width="1.5"/>
+                    <text x="505" y="330" text-anchor="middle" fill="#f3f4f6" font-weight="bold" font-size="12">NODE-PROGRESS</text>
+                    <text x="505" y="350" text-anchor="middle" fill="#9ca3af" font-size="10">Thực tế | Kế hoạch | Trễ</text>
+
+                    <!-- Relationships (Lines) -->
+                    <!-- Project to GIS Node -->
+                    <path d="M 300 70 L 130 160" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow)"/>
+                    <!-- Project to GIS Route -->
+                    <path d="M 460 70 L 630 160" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4" marker-end="url(#arrow)"/>
+                    <!-- GIS Node to Progress -->
+                    <path d="M 130 230 C 130 260, 420 260, 505 300" fill="none" stroke="#ec4899" stroke-width="1.5" marker-end="url(#arrow)"/>
+                    <!-- GIS Node to Site Photo -->
+                    <path d="M 130 230 L 265 300" fill="none" stroke="#10b981" stroke-width="1.5" marker-end="url(#arrow)"/>
+                    <!-- Project to Site Photo -->
+                    <path d="M 380 100 L 265 300" fill="none" stroke="#3b82f6" stroke-width="1" stroke-dasharray="2"/>
+                </svg>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+    // Navigation highlighting
+    window.addEventListener('scroll', () => {
+        let scrollDistance = window.scrollY;
+        document.querySelectorAll('section, header').forEach((el) => {
+            if (el.offsetTop - 100 <= scrollDistance) {
+                let id = el.getAttribute('id');
+                if(id) {
+                    document.querySelectorAll('.nav-links a').forEach((a) => {
+                        a.classList.remove('active');
+                    });
+                    const activeLink = document.querySelector(`.nav-links a[href="#${id}"]`);
+                    if(activeLink) activeLink.classList.add('active');
+                }
+            }
+        });
+    });
+
+    // Graphic interactive feedback
+    function highlightConnections(layer) {
+        document.querySelectorAll('.graph-card').forEach(card => {
+            card.classList.remove('active');
+        });
+        
+        if (layer === 'presentation') {
+            document.querySelectorAll('.graph-card')[0].classList.add('active');
+            document.querySelectorAll('.graph-card')[1].classList.add('active');
+        } else if (layer === 'data') {
+            document.querySelectorAll('.graph-card')[2].classList.add('active');
+            document.querySelectorAll('.graph-card')[3].classList.add('active');
+        } else {
+            document.querySelectorAll('.graph-card')[4].classList.add('active');
+            document.querySelectorAll('.graph-card')[5].classList.add('active');
+        }
+    }
+</script>
+</body>
+</html>

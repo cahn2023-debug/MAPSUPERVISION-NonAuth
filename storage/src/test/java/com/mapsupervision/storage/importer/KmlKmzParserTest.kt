@@ -1,0 +1,346 @@
+package com.mapsupervision.storage.importer
+
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class KmlKmzParserTest {
+
+    @Test
+    fun parse_kml_with_namespace_prefix() {
+        val kml = """
+            <kml:kml xmlns:kml="http://www.opengis.net/kml/2.2">
+              <kml:Document>
+                <kml:Placemark>
+                  <kml:name>P1</kml:name>
+                  <kml:description>Test description</kml:description>
+                  <kml:Point><kml:coordinates>106.7,10.7,0</kml:coordinates></kml:Point>
+                </kml:Placemark>
+              </kml:Document>
+            </kml:kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "sample.kml", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertEquals(0, result.routes.size)
+        assertTrue(result.summary.contains("KML parsed"))
+        assertEquals("P1", result.nodes[0].mapNumberLabel)
+        assertTrue(result.nodes[0].materialSummary.contains("Test description"))
+    }
+
+    @Test
+    fun parse_kml_without_namespace_line_string_creates_route() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>LineA</name>
+                  <description>Route description</description>
+                  <LineString>
+                    <coordinates>106.1,10.1,0 106.2,10.2,0</coordinates>
+                  </LineString>
+                </Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "line.kml", "test-project")
+
+        assertEquals(2, result.nodes.size)
+        assertEquals(1, result.routes.size)
+        assertEquals("LineA", result.nodes[0].mapNumberLabel)
+        assertTrue(result.nodes[0].materialSummary.contains("Route description"))
+    }
+
+    @Test
+    fun parse_polyline_with_three_points_creates_segmented_routes() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>Polyline3</name>
+                <LineString>
+                  <coordinates>106.1,10.1,0 106.2,10.2,0 106.3,10.3,0</coordinates>
+                </LineString>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "polyline.kml", "test-project")
+
+        // Segmented routes: all 3 nodes and 2 route segments are created
+        assertEquals(3, result.nodes.size)
+        assertEquals(2, result.routes.size)
+        val first = result.nodes.first()
+        val last = result.nodes.last()
+        assertEquals(10.1, first.latitude, 0.000001)
+        assertEquals(106.1, first.longitude, 0.000001)
+        assertEquals(10.3, last.latitude, 0.000001)
+        assertEquals(106.3, last.longitude, 0.000001)
+    }
+
+    @Test
+    fun parse_kmz_with_nested_kml_entry() {
+        val tempKmz = File.createTempFile("kml-test", ".kmz")
+        tempKmz.deleteOnExit()
+        ZipOutputStream(tempKmz.outputStream()).use { zos ->
+            zos.putNextEntry(ZipEntry("nested/doc.kml"))
+            zos.write(
+                """
+                <kml xmlns="http://www.opengis.net/kml/2.2">
+                  <Placemark><name>N1</name><Point><coordinates>106.3,10.3,0</coordinates></Point></Placemark>
+                </kml>
+                """.trimIndent().toByteArray()
+            )
+            zos.closeEntry()
+        }
+
+        val result = parseKmzContent(tempKmz, "nested.kmz", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertTrue(result.summary.startsWith("KMZ parsed:"))
+    }
+
+    @Test
+    fun parse_kmz_without_kml_returns_summary() {
+        val tempKmz = File.createTempFile("kml-empty", ".kmz")
+        tempKmz.deleteOnExit()
+        ZipOutputStream(tempKmz.outputStream()).use { zos ->
+            zos.putNextEntry(ZipEntry("readme.txt"))
+            zos.write("hello".toByteArray())
+            zos.closeEntry()
+        }
+
+        val result = parseKmzContent(tempKmz, "empty.kmz", "test-project")
+
+        assertEquals(0, result.nodes.size)
+        assertEquals(0, result.routes.size)
+        assertTrue(result.summary.contains("no embedded KML"))
+    }
+
+    @Test
+    fun parse_kml_with_extendeddata() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>TestPoint</name>
+                <description>Point with extended data</description>
+                <ExtendedData>
+                  <Data name="type">
+                    <value>Camera</value>
+                  </Data>
+                  <Data name="status">
+                    <value>Active</value>
+                  </Data>
+                </ExtendedData>
+                <Point>
+                  <coordinates>106.5,10.5,0</coordinates>
+                </Point>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "extended.kml", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertEquals("TestPoint", result.nodes[0].mapNumberLabel)
+        assertTrue(result.nodes[0].materialSummary.contains("Point with extended data"))
+        assertTrue(result.nodes[0].materialSummary.contains("ExtendedData"))
+        assertTrue(result.nodes[0].materialSummary.contains("type: Camera"))
+        assertTrue(result.nodes[0].materialSummary.contains("status: Active"))
+    }
+
+    @Test
+    fun parse_kml_linestring_with_semicolon_delimited_coordinates() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>SemiLine</name>
+                <LineString>
+                  <coordinates>106.1,10.1,0;106.2,10.2,0;106.3,10.3,0</coordinates>
+                </LineString>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "semi.kml", "test-project")
+
+        // Segmented routes: all 3 nodes and 2 route segments are created
+        assertEquals(3, result.nodes.size)
+        assertEquals(2, result.routes.size)
+    }
+
+    @Test
+    fun parse_kml_multigeometry_point_and_linestring() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>Multi</name>
+                <MultiGeometry>
+                  <Point><coordinates>106.0,10.0,0</coordinates></Point>
+                  <LineString><coordinates>106.1,10.1,0 106.2,10.2,0</coordinates></LineString>
+                </MultiGeometry>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "multi.kml", "test-project")
+
+        assertEquals(3, result.nodes.size)
+        assertEquals(1, result.routes.size)
+    }
+
+    @Test
+    fun parse_kml_point_with_extra_coordinates_still_one_node() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>Pt</name>
+                <Point><coordinates>106.5,10.5,0</coordinates></Point>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "point.kml", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertEquals(0, result.routes.size)
+    }
+
+    @Test
+    fun parse_kml_multiple_placemarks_in_folders() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Folder>
+                  <Placemark><name>A</name><Point><coordinates>106.1,10.1,0</coordinates></Point></Placemark>
+                  <Placemark><name>B</name><Point><coordinates>106.2,10.2,0</coordinates></Point></Placemark>
+                </Folder>
+                <Placemark><name>C</name><Point><coordinates>106.3,10.3,0</coordinates></Point></Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "folders.kml", "test-project")
+
+        assertEquals(3, result.nodes.size)
+        assertEquals(setOf("A", "B", "C"), result.nodes.map { it.mapNumberLabel }.toSet())
+    }
+
+    @Test
+    fun parse_kml_routes_reference_existing_node_codes() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>RouteRef</name>
+                <LineString>
+                  <coordinates>106.1,10.1,0 106.2,10.2,0</coordinates>
+                </LineString>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "route-ref.kml", "test-project")
+        val nodeCodes = result.nodes.map { it.code }.toSet()
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.first()
+        assertTrue(nodeCodes.contains(route.startNodeCode))
+        assertTrue(nodeCodes.contains(route.endNodeCode))
+    }
+
+    @Test
+    fun parse_kml_with_simpledata_extended_metadata() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>SimplePt</name>
+                <ExtendedData>
+                  <SchemaData schemaUrl="#schema">
+                    <SimpleData name="layer">Cable</SimpleData>
+                  </SchemaData>
+                </ExtendedData>
+                <Point><coordinates>106.4,10.4,0</coordinates></Point>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "simple.kml", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertTrue(result.nodes[0].materialSummary.contains("layer: Cable"))
+    }
+
+    @Test
+    fun parse_kml_strips_html_from_description() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>HtmlDesc</name>
+                <description><![CDATA[<b>Bold</b> text here]]></description>
+                <Point><coordinates>106.6,10.6,0</coordinates></Point>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "html.kml", "test-project")
+
+        assertEquals(1, result.nodes.size)
+        assertTrue(result.nodes[0].materialSummary.contains("Bold text here"))
+        assertTrue(!result.nodes[0].materialSummary.contains("<b>"))
+    }
+
+    @Test
+    fun parse_kmz_merges_multiple_kml_entries() {
+        val tempKmz = File.createTempFile("kml-multi", ".kmz")
+        tempKmz.deleteOnExit()
+        ZipOutputStream(tempKmz.outputStream()).use { zos ->
+            zos.putNextEntry(ZipEntry("layers/extra.kml"))
+            zos.write(
+                """
+                <kml xmlns="http://www.opengis.net/kml/2.2">
+                  <Placemark><name>Extra</name><Point><coordinates>106.8,10.8,0</coordinates></Point></Placemark>
+                </kml>
+                """.trimIndent().toByteArray()
+            )
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("doc.kml"))
+            zos.write(
+                """
+                <kml xmlns="http://www.opengis.net/kml/2.2">
+                  <Placemark><name>Main</name><Point><coordinates>106.7,10.7,0</coordinates></Point></Placemark>
+                </kml>
+                """.trimIndent().toByteArray()
+            )
+            zos.closeEntry()
+        }
+
+        val result = parseKmzContent(tempKmz, "multi.kmz", "test-project")
+
+        assertEquals(2, result.nodes.size)
+        assertTrue(result.summary.contains("2 KML file(s)"))
+        assertTrue(result.summary.contains("doc.kml"))
+        assertTrue(result.summary.contains("extra.kml"))
+        assertEquals(setOf("Main", "Extra"), result.nodes.map { it.mapNumberLabel }.toSet())
+    }
+
+    @Test
+    fun parse_real_world_adss_kmz_sample() {
+        val kmz = javaClass.classLoader?.getResource("sample-adss.kmz")?.file
+            ?: return // skip if sample not bundled in CI
+        val file = File(kmz)
+        if (!file.exists()) return
+
+        val result = parseKmzContent(file, "sample-adss.kmz", "test-project")
+
+        // After vertex-skipping: each LineString placemark produces 2 nodes (start + end) + 1 route
+        // Point placemarks produce 1 node each. Expect at least some nodes and routes.
+        assertTrue("Expected nodes from real KMZ sample: ${result.summary}", result.nodes.isNotEmpty())
+        assertTrue("Expected routes from real KMZ sample: ${result.summary}", result.routes.isNotEmpty())
+        // Hanoi area coordinates
+        assertTrue(result.nodes.any { it.latitude in 20.0..22.0 && it.longitude in 105.0..106.5 })
+    }
+}
