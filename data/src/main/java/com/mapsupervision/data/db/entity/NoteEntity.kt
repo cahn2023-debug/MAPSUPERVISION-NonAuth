@@ -8,12 +8,9 @@ import com.mapsupervision.domain.model.Note
 @Entity(
     tableName = "note",
     indices = [
-        Index("projectId"),
-        Index("objectCode"),
-        Index("createdAtEpochMs"),
-        Index(value = ["projectId", "objectCode"]),
         Index(value = ["projectId", "createdAtEpochMs"]),
-        Index(value = ["projectId", "objectCode", "createdAtEpochMs"])
+        Index(value = ["projectId", "objectCode", "createdAtEpochMs"]),
+        Index("objectCode")
     ]
 )
 data class NoteEntity(

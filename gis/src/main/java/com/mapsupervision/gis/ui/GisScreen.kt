@@ -78,7 +78,7 @@ fun GisScreen(
     LaunchedEffect(renderNodes, renderRoutes, showNodes, showRoutes, measureEnabled, selectedNode, selectedRoute) {
         AppLogger.d(
             "gis.render nodes=${renderNodes.size} routes=${renderRoutes.size} " +
-                "showNodes=$showNodes showRoutes=$showRoutes measure=$measureEnabled " +
+            "showNodes=$showNodes showRoutes=$showRoutes measure=$measureEnabled " +
                 "selectedNode=${selectedNode?.code.orEmpty()} selectedRoute=${selectedRoute?.code.orEmpty()}"
         )
     }

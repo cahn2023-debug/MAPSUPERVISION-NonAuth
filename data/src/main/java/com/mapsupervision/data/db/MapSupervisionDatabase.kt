@@ -45,7 +45,7 @@ import com.mapsupervision.data.db.entity.WorkCategoryEntity
         WorkCategoryEntity::class,
         AiDecisionCacheEntity::class
     ],
-    version = 14,
+    version = 16,
     exportSchema = true
 )
 @TypeConverters(DbTypeConverters::class)
@@ -143,6 +143,54 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ai_decision_cache_projectId_capability_payloadHash` ON `ai_decision_cache` (`projectId`, `capability`, `payloadHash`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_decision_cache_projectId` ON `ai_decision_cache` (`projectId`)")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                listOf(
+                    "index_daily_log_projectId",
+                    "index_daily_log_createdAtEpochMs",
+                    "index_gis_node_projectId",
+                    "index_gis_node_code",
+                    "index_gis_node_contractor",
+                    "index_gis_route_projectId",
+                    "index_gis_route_code",
+                    "index_gis_route_contractor",
+                    "index_imported_files_projectId",
+                    "index_imported_files_fileType",
+                    "index_material_progress_projectId",
+                    "index_material_progress_nodeCode",
+                    "index_material_progress_materialName",
+                    "index_node_progress_projectId",
+                    "index_node_progress_nodeCode",
+                    "index_note_projectId",
+                    "index_note_objectCode",
+                    "index_note_createdAtEpochMs",
+                    "index_note_projectId_objectCode",
+                    "index_task_projectId",
+                    "index_task_objectCode",
+                    "index_task_status",
+                    "index_task_createdAtEpochMs",
+                    "index_task_projectId_objectCode",
+                    "index_site_photos_projectId",
+                    "index_site_photos_objectCode",
+                    "index_site_photos_capturedAtEpochMs",
+                    "index_site_photos_projectId_objectCode"
+                ).forEach { indexName ->
+                    db.execSQL("DROP INDEX IF EXISTS `$indexName`")
+                }
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_material_progress_nodeCode` ON `material_progress` (`nodeCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_node_progress_nodeCode` ON `node_progress` (`nodeCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_objectCode` ON `note` (`objectCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_objectCode` ON `task` (`objectCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_site_photos_objectCode` ON `site_photos` (`objectCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_categories_projectId_createdAtEpochMs` ON `work_categories` (`projectId`, `createdAtEpochMs`)")
             }
         }
     }

@@ -46,4 +46,28 @@ class MapRenderKeyTest {
         assertNotEquals(key1, key2)
         assertNotEquals(key1, key3)
     }
+
+    @Test
+    fun render_key_changes_when_filtered_node_route_set_changes() {
+        val allNodes = listOf(
+            GisNode("node-1", "project-1", "N-001", "CTR-A", 10.0, 106.0, "001"),
+            GisNode("node-2", "project-1", "N-002", "CTR-B", 10.1, 106.1, "002")
+        )
+        val allRoutes = listOf(
+            GisRoute("route-1", "project-1", "R-001", "CTR-A", "N-001", "N-001"),
+            GisRoute("route-2", "project-1", "R-002", "CTR-B", "N-002", "N-002")
+        )
+
+        val allKey = buildMapRenderKey(allNodes, allRoutes, GisLabelField.CODE, true, true, emptyMap())
+        val filteredKey = buildMapRenderKey(
+            nodes = listOf(allNodes.first()),
+            routes = listOf(allRoutes.first()),
+            labelField = GisLabelField.CODE,
+            showNumberLabels = true,
+            colorByContractor = true,
+            contractorColors = emptyMap()
+        )
+
+        assertNotEquals(allKey, filteredKey)
+    }
 }

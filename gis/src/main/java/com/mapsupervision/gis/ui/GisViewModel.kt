@@ -8,7 +8,6 @@ import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
-import com.mapsupervision.gis.style.GisStyleBuilder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -23,7 +22,6 @@ class GisViewModel @Inject constructor(
     private val activeProjectRepository: ActiveProjectRepository,
     private val gisRepository: GisRepository,
     private val projectSyncRepository: ProjectSyncRepository,
-    private val styleBuilder: GisStyleBuilder
 ) : ViewModel() {
     private val _nodes = MutableStateFlow<List<GisNode>>(emptyList())
     val nodes: StateFlow<List<GisNode>> = _nodes.asStateFlow()

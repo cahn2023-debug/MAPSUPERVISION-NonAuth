@@ -150,10 +150,6 @@ fun WorkspaceViewModel.deleteImportedFile(fileId: String) {
         if (projectId != null) {
             markProjectChanged(projectId, "imported_file_deleted")
         }
-        _state.value = _state.value.copy(
-            importedFiles = _state.value.importedFiles.filter { it.id != fileId }
-        )
-        refresh()
     }
 }
 
@@ -187,7 +183,6 @@ fun WorkspaceViewModel.combineImportedFiles(
         importedFileRepository.deleteById(file1.id)
         importedFileRepository.deleteById(file2.id)
         markProjectChanged(projectId, "imported_files_combined")
-        refresh()
     }
 }
 
@@ -228,7 +223,6 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
         val firstFailures = ArrayList<String>(2)
         val recentFailures = ArrayDeque<String>(5)
         val recentRetryableFailures = ArrayDeque<ImportFailure>(20)
-        val importedFiles = _state.value.importedFiles.toMutableList()
         val flushThreshold = 750
         val pendingImportedFileUpserts = ArrayList<ImportedFile>(flushThreshold)
         val nodes = _state.value.designNodes.toMutableList()
@@ -345,8 +339,6 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
                 )
 
                 pendingImportedFileUpserts += importedFile
-                importedFiles.add(importedFile)
-
                 val dedupStartedAtMs = System.currentTimeMillis()
                 
                 // Local AI: Discrepancy Analysis before merge
@@ -569,7 +561,6 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
             if (recentFailures.size > 5) recentFailures.removeFirst()
         }
 
-        val refreshedImports = (importedFileRepository.byProject(projectId) as? AppResult.Success)?.data ?: importedFiles.toList()
         var refreshedNodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data ?: baselineNodes
         var refreshedRoutes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data ?: baselineRoutes
         val safetyIssues = detectGeometrySafetyIssues(
@@ -614,10 +605,6 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
             )
         }
         _state.value = _state.value.copy(
-            importedFiles = refreshedImports,
-            designNodes = refreshedNodes,
-            designRoutes = refreshedRoutes,
-            dashboard = buildDashboard(refreshedNodes, refreshedRoutes, _state.value.constructionProgress, emptyList()),
             mapUi = _state.value.mapUi.copy(
                 filterContractor = null,
                 searchQuery = ""

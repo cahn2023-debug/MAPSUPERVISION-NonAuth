@@ -7,8 +7,6 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "daily_log",
     indices = [
-        Index("projectId"),
-        Index("createdAtEpochMs"),
         Index(value = ["projectId", "createdAtEpochMs"]),
         Index(value = ["projectId", "dateEpochDay"])
     ]

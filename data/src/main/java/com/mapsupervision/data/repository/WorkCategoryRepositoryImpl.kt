@@ -9,6 +9,11 @@ import com.mapsupervision.domain.model.WorkCategory
 import com.mapsupervision.domain.repository.WorkCategoryRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class WorkCategoryRepositoryImpl @Inject constructor(
@@ -28,6 +33,10 @@ class WorkCategoryRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list work categories", it)) }
     ) }
+
+    override fun observeByProject(projectId: String): Flow<List<WorkCategory>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private fun WorkCategory.toEntity() = WorkCategoryEntity(id, projectId, name, unit, createdAtEpochMs)
     private fun WorkCategoryEntity.toDomain() = WorkCategory(id, projectId, name, unit, createdAtEpochMs)

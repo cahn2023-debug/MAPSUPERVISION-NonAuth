@@ -15,6 +15,61 @@ import com.mapsupervision.gis.ui.GisLabelField
 import com.mapsupervision.storage.importer.ExcelClassificationMode
 import com.mapsupervision.storage.importer.NonExcelFieldCandidateSet
 
+enum class WorkspaceTab {
+    MAP,
+    PROGRESS,
+    DATA,
+    REPORTS
+}
+
+enum class WorkspaceLayoutMode {
+    COMPACT,
+    EXPANDED
+}
+
+data class WorkspaceDataState(
+    val activeProjectId: String? = null,
+    val importedFiles: List<ImportedFile> = emptyList(),
+    val designNodes: List<GisNode> = emptyList(),
+    val designRoutes: List<GisRoute> = emptyList(),
+    val constructionProgress: List<NodeProgress> = emptyList(),
+    val dashboard: DashboardState = DashboardState(),
+    val photoFilterNodeCode: String? = null,
+    val selectedNodePhotos: List<SitePhoto> = emptyList(),
+    val pendingCaptureNodeCode: String? = null,
+    val photoSaveCount: Int = 0,
+    val materialRows: List<MaterialProgress> = emptyList(),
+    val materialProgress: Map<String, String> = emptyMap(),
+    val dailyLogs: List<DailyLog> = emptyList(),
+    val workCategories: List<WorkCategory> = emptyList(),
+    val selectedObjectNotes: List<Note> = emptyList(),
+    val selectedObjectTasks: List<Task> = emptyList(),
+    val aiNoteSummary: String = "",
+    val aiTaskSuggestions: List<String> = emptyList(),
+    val isAiLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val lastRefreshedAtEpochMs: Long = 0L
+)
+
+data class WorkspaceUiState(
+    val selectedTab: WorkspaceTab = WorkspaceTab.MAP,
+    val layoutMode: WorkspaceLayoutMode = WorkspaceLayoutMode.COMPACT,
+    val showReportPreview: Boolean = false,
+    val previewNodeCode: String? = null
+)
+
+sealed interface WorkspaceEffect {
+    data class ShowMessage(val message: String) : WorkspaceEffect
+    data class OpenExportedFile(val path: String) : WorkspaceEffect
+}
+
+sealed interface WorkspaceAction {
+    data class SelectTab(val tab: WorkspaceTab) : WorkspaceAction
+    data class UpdateLayoutMode(val mode: WorkspaceLayoutMode) : WorkspaceAction
+    data class ShowReportPreview(val nodeCode: String?) : WorkspaceAction
+    data object DismissReportPreview : WorkspaceAction
+}
+
 internal data class Quadruple<A, B, C, D>(
     val first: A,
     val second: B,
@@ -533,7 +588,31 @@ data class WorkspaceState(
     val isAiLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val lastRefreshedAtEpochMs: Long = 0L
-)
+) {
+    fun toDataState(): WorkspaceDataState = WorkspaceDataState(
+        activeProjectId = activeProjectId,
+        importedFiles = importedFiles,
+        designNodes = designNodes,
+        designRoutes = designRoutes,
+        constructionProgress = constructionProgress,
+        dashboard = dashboard,
+        photoFilterNodeCode = photoFilterNodeCode,
+        selectedNodePhotos = selectedNodePhotos,
+        pendingCaptureNodeCode = pendingCaptureNodeCode,
+        photoSaveCount = photoSaveCount,
+        materialRows = materialRows,
+        materialProgress = materialProgress,
+        dailyLogs = dailyLogs,
+        workCategories = workCategories,
+        selectedObjectNotes = selectedObjectNotes,
+        selectedObjectTasks = selectedObjectTasks,
+        aiNoteSummary = aiNoteSummary,
+        aiTaskSuggestions = aiTaskSuggestions,
+        isAiLoading = isAiLoading,
+        isRefreshing = isRefreshing,
+        lastRefreshedAtEpochMs = lastRefreshedAtEpochMs
+    )
+}
 
 data class DashboardState(
     val totalDesignNodes: Int = 0,

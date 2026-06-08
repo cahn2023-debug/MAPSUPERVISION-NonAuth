@@ -9,13 +9,9 @@ import com.mapsupervision.domain.model.TaskStatus
 @Entity(
     tableName = "task",
     indices = [
-        Index("projectId"),
-        Index("objectCode"),
-        Index("status"),
-        Index("createdAtEpochMs"),
-        Index(value = ["projectId", "objectCode"]),
         Index(value = ["projectId", "createdAtEpochMs"]),
-        Index(value = ["projectId", "objectCode", "createdAtEpochMs"])
+        Index(value = ["projectId", "objectCode", "createdAtEpochMs"]),
+        Index("objectCode")
     ]
 )
 data class TaskEntity(

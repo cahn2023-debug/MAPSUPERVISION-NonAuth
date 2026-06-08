@@ -6,7 +6,10 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "node_progress",
-    indices = [Index("projectId"), Index("nodeCode"), Index(value = ["projectId", "nodeCode"])]
+    indices = [
+        Index(value = ["projectId", "nodeCode"]),
+        Index("nodeCode")
+    ]
 )
 data class NodeProgressEntity(
     @PrimaryKey val id: String,

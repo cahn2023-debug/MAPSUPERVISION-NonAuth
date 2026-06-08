@@ -7,7 +7,8 @@ import androidx.room.Index
 @Entity(
     tableName = "work_categories",
     indices = [
-        Index("projectId")
+        Index("projectId"),
+        Index(value = ["projectId", "createdAtEpochMs"])
     ]
 )
 data class WorkCategoryEntity(

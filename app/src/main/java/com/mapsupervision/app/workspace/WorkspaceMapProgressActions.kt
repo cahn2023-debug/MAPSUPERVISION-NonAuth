@@ -95,27 +95,8 @@ fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float,
             )
             return@launch
         }
-        val current = _state.value.constructionProgress.toMutableList()
-        val index = current.indexOfFirst { it.projectId == projectId && it.nodeCode == nodeCode }
-        val newProgress = NodeProgress(
-            id = if (index >= 0) current[index].id else UUID.randomUUID().toString(),
-            projectId = projectId,
-            nodeCode = nodeCode,
-            planned = planned,
-            actual = actual,
-            remain = remain,
-            delayed = actual < planned,
-            updatedAtEpochMs = System.currentTimeMillis()
-        )
-        if (index >= 0) {
-            current[index] = newProgress
-        } else {
-            current += newProgress
-        }
         markProjectChanged(projectId, "construction_progress_updated")
         _state.value = _state.value.copy(
-            constructionProgress = current,
-            dashboard = buildDashboard(_state.value.designNodes, _state.value.designRoutes, current, _state.value.materialRows),
             importUi = _state.value.importUi.copy(message = "Đã cập nhật thi công cho node ")
         )
     }
@@ -186,7 +167,6 @@ fun WorkspaceViewModel.addDailyLog(
             return@launch
         }
         markProjectChanged(projectId, "daily_log_added")
-        refresh()
     }
 }
 
@@ -214,7 +194,6 @@ fun WorkspaceViewModel.addWorkCategory(name: String, unit: String) {
         )
         workCategoryRepository.add(category)
         markProjectChanged(projectId, "work_category_added")
-        _state.value = _state.value.copy(workCategories = _state.value.workCategories + category)
     }
 }
 
@@ -459,12 +438,15 @@ fun WorkspaceViewModel.onMapBaseMapChanged(type: MapLayerType) {
 }
 
 fun WorkspaceViewModel.onFilterContractorChanged(contractor: String?) {
+    val normalized = contractor?.takeIf { it.isNotBlank() }
+    AppLogger.d("map.filter change requested contractor=$normalized previous=${_state.value.mapUi.filterContractor}")
     _state.value = _state.value.copy(
         mapUi = _state.value.mapUi.copy(
-            filterContractor = contractor?.takeIf { it.isNotBlank() },
+            filterContractor = normalized,
             message = ""
         )
     )
+    AppLogger.d("map.filter change applied contractor=${_state.value.mapUi.filterContractor}")
 }
 
 fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: String) {
@@ -958,26 +940,8 @@ internal fun buildMapDesignNodes(
         byContractor && byQuery
     }
 
-    // When filtering by contractor, use all routes to retain endpoint nodes
-    // This ensures nodes that are route endpoints are shown even if their route belongs to a different contractor
-    val routesForEndpointRetention = if (mapUi.filterContractor.isNullOrBlank()) {
-        state.designRoutes.filter { route ->
-            val byQuery = mapUi.searchQuery.isBlank() ||
-                indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
-            byQuery
-        }
-    } else {
-        state.designRoutes
-    }
-
-    AppLogger.d("buildMapDesignNodes: filteredNodes=${filteredNodes.size}, routesForRetention=${routesForEndpointRetention.size}")
-    val result = retainRouteEndpointNodes(
-        filteredNodes = filteredNodes,
-        filteredRoutes = routesForEndpointRetention,
-        allNodes = state.designNodes
-    )
-    AppLogger.d("buildMapDesignNodes: final result nodes=${result.size}")
-    return result
+    AppLogger.d("buildMapDesignNodes: final result nodes=${filteredNodes.size}")
+    return filteredNodes
 }
 
 private fun normalizeMapSearchText(text: String): String {

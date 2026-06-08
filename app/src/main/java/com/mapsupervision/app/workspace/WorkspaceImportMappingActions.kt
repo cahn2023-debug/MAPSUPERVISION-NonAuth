@@ -319,9 +319,8 @@ fun WorkspaceViewModel.updateImportMappingUi(
     confirmedItemFields: Boolean? = null,
     confirmedRouteLengthField: Boolean? = null
 ) {
-    val ui = _state.value.importMappingUi
-    _state.value = _state.value.copy(
-        importMappingUi = ui.copy(
+    updateImportMappingUiIfChanged { ui ->
+        ui.copy(
             positionField = positionField ?: ui.positionField,
             coordinateField = coordinateField ?: ui.coordinateField,
             contractorField = contractorField ?: ui.contractorField,
@@ -337,13 +336,19 @@ fun WorkspaceViewModel.updateImportMappingUi(
             confirmedItemFields = confirmedItemFields ?: ui.confirmedItemFields,
             confirmedRouteLengthField = confirmedRouteLengthField ?: ui.confirmedRouteLengthField
         )
-    )
+    }
 }
 
 fun WorkspaceViewModel.setImportMappingDialogVisible(visible: Boolean) {
-    _state.value = _state.value.copy(
-        importMappingUi = _state.value.importMappingUi.copy(showMappingDialog = visible)
-    )
+    updateImportMappingUiIfChanged { ui -> ui.copy(showMappingDialog = visible) }
+}
+
+private fun WorkspaceViewModel.updateImportMappingUiIfChanged(transform: (ImportMappingUiState) -> ImportMappingUiState) {
+    val state = _state.value
+    val current = state.importMappingUi
+    val updated = transform(current)
+    if (updated == current) return
+    _state.value = state.copy(importMappingUi = updated)
 }
 
 fun WorkspaceViewModel.parseNonExcelToDesign() {
@@ -434,35 +439,37 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                     gisRepository.upsertRoutes(merged.routesToInsert)
                     existingNodes.addAll(merged.nodesToInsert)
                     existingRoutes.addAll(merged.routesToInsert)
-                    _state.value = _state.value.copy(
-                        importMappingUi = ImportMappingUiState(
+                    updateImportMappingUiIfChanged { ui ->
+                        ui.copy(
+                            isLoading = false,
+                            showMappingDialog = false,
                             message = "Đã cập nhật dữ liệu: +${merged.nodesToInsert.size} node, +${merged.routesToInsert.size} tuyến"
-                        ),
-                        designNodes = existingNodes,
-                        designRoutes = existingRoutes,
-                        dashboard = buildDashboard(existingNodes, existingRoutes, _state.value.constructionProgress, emptyList())
-                    )
+                        )
+                    }
                 }.onFailure { ex ->
-                    _state.value = _state.value.copy(
-                        importMappingUi = _state.value.importMappingUi.copy(
+                    updateImportMappingUiIfChanged { ui ->
+                        ui.copy(
                             isLoading = false,
                             message = "Cập nhật dữ liệu thất bại: "
                         )
-                    )
+                    }
                 }
             } else {
                 importDesignFiles(listOf(uri))
-                _state.value = _state.value.copy(
-                    importMappingUi = ImportMappingUiState(message = "Đã xác nhận ánh xạ, đang import dữ liệu...")
-                )
+                updateImportMappingUiIfChanged { ui ->
+                    ui.copy(
+                        isLoading = false,
+                        message = "Đã xác nhận ánh xạ, đang import dữ liệu..."
+                    )
+                }
             }
         }.onFailure { ex ->
-            _state.value = _state.value.copy(
-                importMappingUi = _state.value.importMappingUi.copy(
+            updateImportMappingUiIfChanged { ui ->
+                ui.copy(
                     isLoading = false,
                     message = "Import non-Excel thất bại: "
                 )
-            )
+            }
         }
     }
 }

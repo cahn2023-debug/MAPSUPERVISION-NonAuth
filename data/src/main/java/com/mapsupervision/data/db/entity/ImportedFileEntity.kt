@@ -7,8 +7,6 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "imported_files",
     indices = [
-        Index("projectId"),
-        Index("fileType"),
         Index(value = ["projectId", "importedAtEpochMs"])
     ]
 )

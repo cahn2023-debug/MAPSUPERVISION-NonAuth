@@ -30,14 +30,8 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.style.expressions.Expression.coalesce
-import org.maplibre.android.style.expressions.Expression.get
-import org.maplibre.android.style.expressions.Expression.literal
-import org.maplibre.android.style.layers.CircleLayer
-import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -165,7 +159,6 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private var mapUpdateJob: Job? = null
     private var styleEpoch: Int = 0
     private val missingSourceWarnings = mutableSetOf<String>()
-    private val missingLayerWarnings = mutableSetOf<String>()
 
     @Composable
     override fun Render(
@@ -305,10 +298,14 @@ private class MapLibreGisMapBridge : GisMapBridge {
     }
 
     override fun fitToObjects() {
-        val mapRef = map ?: return
-        if (mapRef.style == null) return
-        val points = nodesSnapshot.filter(::isRenderableNode)
-        if (points.isEmpty()) return
+        tryFitToObjects()
+    }
+
+    private fun tryFitToObjects(): Boolean {
+        val mapRef = map ?: return false
+        if (mapRef.style == null) return false
+        val points = nodesSnapshot.mapNotNull(::renderCoordinateForNode)
+        if (points.isEmpty()) return false
         val bounds = LatLngBounds.Builder().apply {
             points.forEach { include(LatLng(it.latitude, it.longitude)) }
         }.build()
@@ -318,6 +315,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val minLon = points.minOf { it.longitude }
         val maxLon = points.maxOf { it.longitude }
         Log.d(TAG, "fitToObjects success nodes=${points.size} latRange=%.5f..%.5f lonRange=%.5f..%.5f".format(minLat, maxLat, minLon, maxLon))
+        return true
     }
 
     override fun centerOnMyLocation(): Boolean {
@@ -369,7 +367,6 @@ private class MapLibreGisMapBridge : GisMapBridge {
         styleEpoch++
         mapRef.setStyle(Style.Builder().fromUri(styleUri)) {
             resetRuntimeState(keepSnapshots = true)
-            ensureStyleBindings(it)
             Log.d(TAG, "setStyle callback baseMap=$type epoch=$styleEpoch")
             ensureClickListener(mapRef)
             updateMapData()
@@ -384,8 +381,9 @@ private class MapLibreGisMapBridge : GisMapBridge {
     override fun centerOnLocation(lat: Double, lng: Double, zoom: Double) {
         val mapRef = map ?: return
         if (mapRef.style == null) return
+        val target = normalizeCoordinatePair(lat, lng) ?: return
         mapRef.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(LatLng(lat, lng), zoom)
+            CameraUpdateFactory.newLatLngZoom(LatLng(target.latitude, target.longitude), zoom)
         )
     }
 
@@ -453,7 +451,6 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private fun updateMapData() {
         val mapRef = map ?: return
         val style = mapRef.style ?: return
-        if (!ensureStyleBindings(style)) return
 
         val renderKey = buildRenderKey(
             nodes = nodesSnapshot,
@@ -477,14 +474,27 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val localColorByContractor = latestColorByContractor
         val localContractorColors = latestContractorColors
         val localStyleEpoch = styleEpoch
-        val localValidNodes = localNodes.filter(::isRenderableNode)
+        val localRenderableNodes = localNodes.mapNotNull { node ->
+            renderCoordinateForNode(node)?.let { point -> node to point }
+        }
 
         mapUpdateJob = renderScope.launch {
             val renderPayload = withContext(Dispatchers.Default) {
-                val nodeByCode = localValidNodes.associateBy { it.code.trim().uppercase() }
+                val nodeByCode = localRenderableNodes.associate { (node, point) ->
+                    node.code.trim().uppercase() to point
+                }
+                val routeNodeCodes = HashSet<String>(localRoutes.size * 2)
+                localRoutes.forEach { route ->
+                    routeNodeCodes += route.startNodeCode.trim().uppercase()
+                    routeNodeCodes += route.endNodeCode.trim().uppercase()
+                }
 
-                val nodeFeatures = localValidNodes.map { node ->
-                    Feature.fromGeometry(Point.fromLngLat(node.longitude, node.latitude)).apply {
+                val displayedNodes = localRenderableNodes.filter { (node, _) ->
+                    !routeNodeCodes.contains(node.code.trim().uppercase())
+                }
+
+                val nodeFeatures = displayedNodes.map { (node, point) ->
+                    Feature.fromGeometry(Point.fromLngLat(point.longitude, point.latitude)).apply {
                         addStringProperty("code", node.code)
                         addStringProperty("contractor", node.contractor)
                         addStringProperty(
@@ -534,15 +544,18 @@ private class MapLibreGisMapBridge : GisMapBridge {
             }
 
             val currentStyle = map?.style ?: return@launch
-            if (!ensureStyleBindings(currentStyle)) return@launch
-
-            currentStyle.getSourceAs<GeoJsonSource>(NODES_SOURCE_ID)
-                ?.setGeoJson(renderPayload.nodeFeatureCollection)
-            currentStyle.getSourceAs<GeoJsonSource>(ROUTES_SOURCE_ID)
-                ?.setGeoJson(renderPayload.routeFeatureCollection)
+            currentStyle.getSourceAs<GeoJsonSource>(NODES_SOURCE_ID)?.let { source ->
+                source.setGeoJson(renderPayload.nodeFeatureCollection)
+                Log.d(
+                    TAG,
+                    "nodes render path committed source=$NODES_SOURCE_ID features=${renderPayload.nodeFeaturesBuilt}"
+                )
+            } ?: warnMissingSourceOnce(NODES_SOURCE_ID)
+            currentStyle.getSourceAs<GeoJsonSource>(ROUTES_SOURCE_ID)?.setGeoJson(renderPayload.routeFeatureCollection)
+                ?: warnMissingSourceOnce(ROUTES_SOURCE_ID)
             Log.d(
                 TAG,
-                "updateMapData nodesIn=${localNodes.size} nodesValid=${localValidNodes.size} " +
+                "updateMapData nodesIn=${localNodes.size} nodesRenderable=${localRenderableNodes.size} " +
                     "nodeFeatures=${renderPayload.nodeFeaturesBuilt} routesIn=${localRoutes.size} " +
                     "routeFeatures=${renderPayload.routeFeaturesBuilt} skippedRoutes=${renderPayload.skippedRoutes}"
             )
@@ -603,14 +616,11 @@ private class MapLibreGisMapBridge : GisMapBridge {
             val nodeVisibility = if (latestShowNodes) Property.VISIBLE else Property.NONE
             val routeVisibility = if (latestShowRoutes) Property.VISIBLE else Property.NONE
             style.getLayer(NODES_LAYER_ID)?.setProperties(PropertyFactory.visibility(nodeVisibility))
-                ?: warnMissingLayerOnce(NODES_LAYER_ID)
             style.getLayer(NODE_LABELS_LAYER_ID)?.setProperties(PropertyFactory.visibility(nodeVisibility))
-                ?: warnMissingLayerOnce(NODE_LABELS_LAYER_ID)
             style.getLayer(ROUTES_LAYER_ID)?.setProperties(PropertyFactory.visibility(routeVisibility))
-                ?: warnMissingLayerOnce(ROUTES_LAYER_ID)
             style.getLayer(MEASURE_LAYER_ID)?.setProperties(
                 PropertyFactory.visibility(if (measureEnabled) Property.VISIBLE else Property.NONE)
-            ) ?: warnMissingLayerOnce(MEASURE_LAYER_ID)
+            )
         }
     }
 
@@ -649,8 +659,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
 
     private fun fitIfNeeded() {
         if (!didFitBoundsOnce && nodesSnapshot.isNotEmpty()) {
-            fitToObjects()
-            didFitBoundsOnce = true
+            didFitBoundsOnce = tryFitToObjects()
         }
     }
 
@@ -659,10 +668,11 @@ private class MapLibreGisMapBridge : GisMapBridge {
         if (mapRef.style == null) return false
 
         selectedNodeSnapshot?.let { node ->
-            val key = "node:${node.id}:${node.latitude}:${node.longitude}"
+            val point = renderCoordinateForNode(node) ?: return@let
+            val key = "node:${node.id}:${point.latitude}:${point.longitude}"
             if (lastFocusedSelectionKey != key) {
                 mapRef.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(node.latitude, node.longitude), 20.0)
+                    CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), 20.0)
                 )
                 lastFocusedSelectionKey = key
                 didFitBoundsOnce = true
@@ -674,9 +684,11 @@ private class MapLibreGisMapBridge : GisMapBridge {
             val nodesByCode = nodesSnapshot.associateBy { it.code.trim().uppercase() }
             val startNode = nodesByCode[route.startNodeCode.trim().uppercase()]
             val endNode = nodesByCode[route.endNodeCode.trim().uppercase()]
-            if (startNode != null && endNode != null) {
-                val midLat = (startNode.latitude + endNode.latitude) / 2.0
-                val midLng = (startNode.longitude + endNode.longitude) / 2.0
+            val startPoint = startNode?.let(::renderCoordinateForNode)
+            val endPoint = endNode?.let(::renderCoordinateForNode)
+            if (startNode != null && endNode != null && startPoint != null && endPoint != null) {
+                val midLat = (startPoint.latitude + endPoint.latitude) / 2.0
+                val midLng = (startPoint.longitude + endPoint.longitude) / 2.0
                 val key = "route:${route.id}:${route.code}:${startNode.id}:${endNode.id}"
                 if (lastFocusedSelectionKey != key) {
                     mapRef.animateCamera(
@@ -711,6 +723,10 @@ private class MapLibreGisMapBridge : GisMapBridge {
 
         map = loadedMap
         styleEpoch++
+
+        // Hide MapLibre logo and attribution
+        loadedMap.uiSettings.isLogoEnabled = false
+        loadedMap.uiSettings.isAttributionEnabled = false
         
         // Only set default camera if we haven't moved yet
         if (!didFitBoundsOnce) {
@@ -742,7 +758,6 @@ private class MapLibreGisMapBridge : GisMapBridge {
         didFitBoundsOnce = false
         clickListenerAttached = false
         missingSourceWarnings.clear()
-        missingLayerWarnings.clear()
         if (!keepSnapshots) {
             nodesSnapshot = emptyList()
             routesSnapshot = emptyList()
@@ -754,101 +769,9 @@ private class MapLibreGisMapBridge : GisMapBridge {
         return activityManager.isLowRamDevice || activityManager.memoryClass <= 192
     }
 
-    private fun ensureStyleBindings(style: Style): Boolean {
-        ensureSource(style, NODES_SOURCE_ID)
-        ensureSource(style, ROUTES_SOURCE_ID)
-        ensureSource(style, MEASURE_SOURCE_ID)
-        ensureRouteLayer(style)
-        ensureMeasureLayer(style)
-        ensureNodeLayer(style)
-        ensureNodeLabelsLayer(style)
-
-        val ready = style.getSourceAs<GeoJsonSource>(NODES_SOURCE_ID) != null &&
-            style.getSourceAs<GeoJsonSource>(ROUTES_SOURCE_ID) != null &&
-            style.getSourceAs<GeoJsonSource>(MEASURE_SOURCE_ID) != null &&
-            style.getLayer(NODES_LAYER_ID) != null &&
-            style.getLayer(NODE_LABELS_LAYER_ID) != null &&
-            style.getLayer(ROUTES_LAYER_ID) != null &&
-            style.getLayer(MEASURE_LAYER_ID) != null
-        Log.d(TAG, "ensureStyleBindings ready=$ready")
-        return ready
-    }
-
-    private fun ensureSource(style: Style, sourceId: String) {
-        if (style.getSourceAs<GeoJsonSource>(sourceId) != null) return
-        style.addSource(
-            GeoJsonSource(
-                sourceId,
-                FeatureCollection.fromFeatures(emptyArray())
-            )
-        )
-        Log.d(TAG, "ensureSource added=$sourceId")
-    }
-
-    private fun ensureRouteLayer(style: Style) {
-        if (style.getLayer(ROUTES_LAYER_ID) != null) return
-        style.addLayer(
-            LineLayer(ROUTES_LAYER_ID, ROUTES_SOURCE_ID).withProperties(
-                PropertyFactory.lineColor("#1a73e8"),
-                PropertyFactory.lineWidth(4f)
-            )
-        )
-        Log.d(TAG, "ensureLayer added=$ROUTES_LAYER_ID")
-    }
-
-    private fun ensureMeasureLayer(style: Style) {
-        if (style.getLayer(MEASURE_LAYER_ID) != null) return
-        style.addLayer(
-            LineLayer(MEASURE_LAYER_ID, MEASURE_SOURCE_ID).withProperties(
-                PropertyFactory.lineColor("#ef4444"),
-                PropertyFactory.lineWidth(3f),
-                PropertyFactory.lineDasharray(arrayOf(2f, 2f))
-            )
-        )
-        Log.d(TAG, "ensureLayer added=$MEASURE_LAYER_ID")
-    }
-
-    private fun ensureNodeLayer(style: Style) {
-        if (style.getLayer(NODES_LAYER_ID) != null) return
-        style.addLayer(
-            CircleLayer(NODES_LAYER_ID, NODES_SOURCE_ID).withProperties(
-                PropertyFactory.circleColor(coalesce(get("color"), literal("#f97316"))),
-                PropertyFactory.circleRadius(12f),
-                PropertyFactory.circleStrokeColor("#ffffff"),
-                PropertyFactory.circleStrokeWidth(3f)
-            )
-        )
-        Log.d(TAG, "ensureLayer added=$NODES_LAYER_ID")
-    }
-
-    private fun ensureNodeLabelsLayer(style: Style) {
-        if (style.getLayer(NODE_LABELS_LAYER_ID) != null) return
-        style.addLayer(
-            SymbolLayer(NODE_LABELS_LAYER_ID, NODES_SOURCE_ID).withProperties(
-                PropertyFactory.textField("{label}"),
-                PropertyFactory.textFont(arrayOf("Noto Sans Regular", "Arial Unicode MS Regular")),
-                PropertyFactory.textSize(11f),
-                PropertyFactory.textOffset(arrayOf(0f, 0f)),
-                PropertyFactory.textAnchor(Property.TEXT_ANCHOR_CENTER),
-                PropertyFactory.textAllowOverlap(true),
-                PropertyFactory.textIgnorePlacement(true),
-                PropertyFactory.textColor("#ffffff"),
-                PropertyFactory.textHaloColor("#ffffff"),
-                PropertyFactory.textHaloWidth(0f)
-            )
-        )
-        Log.d(TAG, "ensureLayer added=$NODE_LABELS_LAYER_ID")
-    }
-
     private fun warnMissingSourceOnce(sourceId: String) {
         if (missingSourceWarnings.add(sourceId)) {
             Log.w(TAG, "Missing source: $sourceId")
-        }
-    }
-
-    private fun warnMissingLayerOnce(layerId: String) {
-        if (missingLayerWarnings.add(layerId)) {
-            Log.w(TAG, "Missing layer: $layerId")
         }
     }
 
@@ -870,11 +793,30 @@ private class MapLibreGisMapBridge : GisMapBridge {
     )
 }
 
-internal fun isRenderableNode(node: GisNode): Boolean = isValidCoordinate(node.latitude, node.longitude)
+internal fun isRenderableNode(node: GisNode): Boolean = renderCoordinateForNode(node) != null
 
 internal fun isValidCoordinate(latitude: Double, longitude: Double): Boolean {
     return latitude in -90.0..90.0 && longitude in -180.0..180.0
 }
+
+internal data class RenderCoordinate(
+    val latitude: Double,
+    val longitude: Double,
+    val swapped: Boolean
+)
+
+internal fun normalizeCoordinatePair(latitude: Double, longitude: Double): RenderCoordinate? {
+    if (isValidCoordinate(latitude, longitude)) {
+        return RenderCoordinate(latitude, longitude, swapped = false)
+    }
+    if (isValidCoordinate(longitude, latitude)) {
+        return RenderCoordinate(longitude, latitude, swapped = true)
+    }
+    return null
+}
+
+internal fun renderCoordinateForNode(node: GisNode): RenderCoordinate? =
+    normalizeCoordinatePair(node.latitude, node.longitude)
 
 internal data class CoordinateSummary(
     val validCount: Int,
@@ -884,9 +826,9 @@ internal data class CoordinateSummary(
 )
 
 internal fun summarizeCoordinates(nodes: List<GisNode>): CoordinateSummary {
-    val validNodes = nodes.filter(::isRenderableNode)
-    val invalidCount = nodes.size - validNodes.size
-    if (validNodes.isEmpty()) {
+    val renderableNodes = nodes.mapNotNull(::renderCoordinateForNode)
+    val invalidCount = nodes.size - renderableNodes.size
+    if (renderableNodes.isEmpty()) {
         return CoordinateSummary(
             validCount = 0,
             invalidCount = invalidCount,
@@ -894,12 +836,12 @@ internal fun summarizeCoordinates(nodes: List<GisNode>): CoordinateSummary {
             lonRangeText = "n/a"
         )
     }
-    val minLat = validNodes.minOf { it.latitude }
-    val maxLat = validNodes.maxOf { it.latitude }
-    val minLon = validNodes.minOf { it.longitude }
-    val maxLon = validNodes.maxOf { it.longitude }
+    val minLat = renderableNodes.minOf { it.latitude }
+    val maxLat = renderableNodes.maxOf { it.latitude }
+    val minLon = renderableNodes.minOf { it.longitude }
+    val maxLon = renderableNodes.maxOf { it.longitude }
     return CoordinateSummary(
-        validCount = validNodes.size,
+        validCount = renderableNodes.size,
         invalidCount = invalidCount,
         latRangeText = "%.5f..%.5f".format(minLat, maxLat),
         lonRangeText = "%.5f..%.5f".format(minLon, maxLon)

@@ -55,7 +55,9 @@ object DataModule {
                 MapSupervisionDatabase.MIGRATION_10_11,
                 MapSupervisionDatabase.MIGRATION_11_12,
                 MapSupervisionDatabase.MIGRATION_12_13,
-                MapSupervisionDatabase.MIGRATION_13_14
+                MapSupervisionDatabase.MIGRATION_13_14,
+                MapSupervisionDatabase.MIGRATION_14_15,
+                MapSupervisionDatabase.MIGRATION_15_16
             )
             .fallbackToDestructiveMigration()
             .build()

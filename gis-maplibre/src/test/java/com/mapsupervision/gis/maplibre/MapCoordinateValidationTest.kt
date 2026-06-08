@@ -14,10 +14,21 @@ class MapCoordinateValidationTest {
     }
 
     @Test
-    fun out_of_range_coordinate_is_not_renderable() {
+    fun swapped_coordinate_is_still_renderable_after_normalization() {
         assertFalse(isValidCoordinate(105.80482, 21.02851))
+        assertTrue(isRenderableNode(GisNode("n1", "p1", "N-001", "A", 105.80482, 21.02851)))
+
+        val normalized = normalizeCoordinatePair(105.80482, 21.02851)
+
+        assertEquals(21.02851, normalized?.latitude ?: 0.0, 0.00001)
+        assertEquals(105.80482, normalized?.longitude ?: 0.0, 0.00001)
+        assertTrue(normalized?.swapped == true)
+    }
+
+    @Test
+    fun truly_out_of_range_coordinate_is_not_renderable() {
         assertFalse(isValidCoordinate(21.02851, 181.0))
-        assertFalse(isRenderableNode(GisNode("n1", "p1", "N-001", "A", 105.80482, 21.02851)))
+        assertFalse(isRenderableNode(GisNode("n1", "p1", "N-001", "A", 200.0, 181.0)))
     }
 
     @Test

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.mapsupervision.data.db.entity.MaterialProgressEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MaterialProgressDao {
@@ -13,6 +14,9 @@ interface MaterialProgressDao {
 
     @Query("SELECT * FROM material_progress WHERE projectId = :projectId ORDER BY nodeCode, materialName")
     suspend fun byProject(projectId: String): List<MaterialProgressEntity>
+
+    @Query("SELECT * FROM material_progress WHERE projectId = :projectId ORDER BY nodeCode, materialName")
+    fun observeByProject(projectId: String): Flow<List<MaterialProgressEntity>>
 
     @Query("SELECT * FROM material_progress WHERE projectId = :projectId AND nodeCode = :nodeCode AND materialName = :materialName LIMIT 1")
     suspend fun findByNaturalKey(

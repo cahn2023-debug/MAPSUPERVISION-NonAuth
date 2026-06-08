@@ -21,6 +21,11 @@ import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class ProgressRepositoryImpl @Inject constructor(
@@ -40,6 +45,10 @@ class ProgressRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list progress", it)) }
     ) }
+
+    override fun observeByProject(projectId: String): Flow<List<NodeProgress>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private fun NodeProgress.toEntity() = NodeProgressEntity(id, projectId, nodeCode, planned, actual, remain, delayed, updatedAtEpochMs)
     private fun NodeProgressEntity.toDomain() = NodeProgress(id, projectId, nodeCode, planned, actual, remain, delayed, updatedAtEpochMs)
@@ -75,6 +84,10 @@ class PhotoRepositoryImpl @Inject constructor(
                 onFailure = { AppResult.Error(DatabaseException("Failed to list photos by object", it)) }
             )
         }
+
+    override fun observeByProject(projectId: String): Flow<List<SitePhoto>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private suspend fun dao(projectId: String): SitePhotoDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.sitePhotoDao() ?: dao
@@ -127,6 +140,10 @@ class DailyLogRepositoryImpl @Inject constructor(
         onFailure = { AppResult.Error(DatabaseException("Failed to list daily logs", it)) }
     ) }
 
+    override fun observeByProject(projectId: String): Flow<List<DailyLog>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
+
     private fun DailyLog.toEntity() = DailyLogEntity(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, dateEpochDay, volume, unit, categoryName)
     private fun DailyLogEntity.toDomain() = DailyLog(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, dateEpochDay, volume, unit, categoryName)
 
@@ -156,6 +173,10 @@ class MaterialProgressRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list material progress", it)) }
     ) }
+
+    override fun observeByProject(projectId: String): Flow<List<MaterialProgress>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private fun MaterialProgress.toEntity() = MaterialProgressEntity(
         id = id,

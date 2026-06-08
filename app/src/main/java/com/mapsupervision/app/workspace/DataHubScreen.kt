@@ -41,10 +41,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mapsupervision.app.ui.theme.extendedColors
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
@@ -60,6 +62,16 @@ import java.io.File
 fun DataHubScreen(
     state: WorkspaceState,
     dataHubUiState: DataHubUiState,
+    screenUiState: DataHubScreenUiState,
+    onSetDesignTab: (Boolean) -> Unit,
+    onUpdateSearchQuery: (String) -> Unit,
+    onUpdateContractorFilter: (String) -> Unit,
+    onSetContractorMenuExpanded: (Boolean) -> Unit,
+    onUpdateObjectTypeFilter: (String) -> Unit,
+    onUpdateSortOrder: (String) -> Unit,
+    onSetSortMenuExpanded: (Boolean) -> Unit,
+    onShowNotesAndTasks: (String) -> Unit,
+    onDismissNotesAndTasks: () -> Unit,
     onOpenPicker: () -> Unit,
     onPickerEmpty: () -> Unit,
     onUploadDesign: (List<Uri>) -> Unit,
@@ -94,13 +106,12 @@ fun DataHubScreen(
     onUpdateSelectedExcelSheet: (String) -> Unit,
     onRefresh: () -> Unit = {}
 ) {
-    var isDesignTab by remember { mutableStateOf(true) }
-
-    val darkBgColor = Color(0xFF1B2130)
-    val cardBgColor = Color(0xFF262D3D)
-    val orangeColor = Color(0xFFF5A623)
-    val textColor = Color(0xFFF8FAFC)
-    val secondaryTextColor = Color(0xFF94A3B8)
+    val extendedColors = MaterialTheme.extendedColors
+    val darkBgColor = MaterialTheme.colorScheme.background
+    val cardBgColor = extendedColors.panelBackgroundAlt
+    val orangeColor = extendedColors.mapAccent
+    val textColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -200,7 +211,7 @@ fun DataHubScreen(
                     Text("Quản lý thiết kế và cập nhật tiến độ thi công hạ tầng kỹ thuật.", color = secondaryTextColor, fontSize = 14.sp)
                 }
                 
-                if (isDesignTab) {
+                if (screenUiState.isDesignTab) {
                     IconButton(
                         onClick = {
                             onOpenPicker()
@@ -229,32 +240,32 @@ fun DataHubScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Thi Công Tab
                 Button(
-                    onClick = { isDesignTab = false },
+                    onClick = { onSetDesignTab(false) },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (!isDesignTab) orangeColor else cardBgColor,
-                        contentColor = if (!isDesignTab) Color.Black else secondaryTextColor
+                        containerColor = if (!screenUiState.isDesignTab) orangeColor else cardBgColor,
+                        contentColor = if (!screenUiState.isDesignTab) Color.Black else secondaryTextColor
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Outlined.Handyman, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("THI CÔNG", fontWeight = FontWeight.Bold)
+                    Text("Cập nhật thi công", fontWeight = FontWeight.Bold)
                 }
                 
                 // Thiết Kế Tab
                 Button(
-                    onClick = { isDesignTab = true },
+                    onClick = { onSetDesignTab(true) },
                     modifier = Modifier.weight(1f).height(56.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isDesignTab) orangeColor else cardBgColor,
-                        contentColor = if (isDesignTab) Color.Black else secondaryTextColor
+                        containerColor = if (screenUiState.isDesignTab) orangeColor else cardBgColor,
+                        contentColor = if (screenUiState.isDesignTab) Color.Black else secondaryTextColor
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Outlined.Architecture, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("THIẾT KẾ", fontWeight = FontWeight.Bold)
+                    Text("Nhập thiết kế", fontWeight = FontWeight.Bold)
                 }
             }
             
@@ -263,6 +274,7 @@ fun DataHubScreen(
             DesignTabContent(
                 state = state,
                 dataHubUiState = dataHubUiState,
+                screenUiState = screenUiState,
                 cardBgColor = cardBgColor,
                 textColor = textColor,
                 secondaryTextColor = secondaryTextColor,
@@ -270,10 +282,18 @@ fun DataHubScreen(
                 onLoadExcelPreview = onLoadExcelPreview,
                 onLoadNonExcelPreview = onLoadNonExcelPreview,
                 onDeleteImportedFile = onDeleteImportedFile,
-                isDesignTab = isDesignTab,
+                onUpdateSearchQuery = onUpdateSearchQuery,
+                onUpdateContractorFilter = onUpdateContractorFilter,
+                onSetContractorMenuExpanded = onSetContractorMenuExpanded,
+                onUpdateObjectTypeFilter = onUpdateObjectTypeFilter,
+                onUpdateSortOrder = onUpdateSortOrder,
+                onSetSortMenuExpanded = onSetSortMenuExpanded,
+                isDesignTab = screenUiState.isDesignTab,
                 onUpdateMaterialProgress = onUpdateMaterialProgress,
                 onOpenNodeOnMap = onOpenNodeOnMap,
                 onOpenRouteOnMap = onOpenRouteOnMap,
+                onShowNotesAndTasks = onShowNotesAndTasks,
+                onDismissNotesAndTasks = onDismissNotesAndTasks,
                 onLoadNotesAndTasks = onLoadNotesAndTasks,
                 onAddNote = onAddNote,
                 onDeleteNote = onDeleteNote,
@@ -294,6 +314,7 @@ fun DataHubScreen(
 private fun DesignTabContent(
     state: WorkspaceState,
     dataHubUiState: DataHubUiState,
+    screenUiState: DataHubScreenUiState,
     cardBgColor: Color,
     textColor: Color,
     secondaryTextColor: Color,
@@ -301,10 +322,18 @@ private fun DesignTabContent(
     onLoadExcelPreview: (Uri, String?) -> Unit,
     onLoadNonExcelPreview: (Uri, String?) -> Unit,
     onDeleteImportedFile: (String) -> Unit,
+    onUpdateSearchQuery: (String) -> Unit,
+    onUpdateContractorFilter: (String) -> Unit,
+    onSetContractorMenuExpanded: (Boolean) -> Unit,
+    onUpdateObjectTypeFilter: (String) -> Unit,
+    onUpdateSortOrder: (String) -> Unit,
+    onSetSortMenuExpanded: (Boolean) -> Unit,
     isDesignTab: Boolean,
     onUpdateMaterialProgress: (String, String, String) -> Unit,
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
+    onShowNotesAndTasks: (String) -> Unit,
+    onDismissNotesAndTasks: () -> Unit,
     onLoadNotesAndTasks: (String) -> Unit,
     onAddNote: (String, String) -> Unit,
     onDeleteNote: (String, String) -> Unit,
@@ -315,19 +344,6 @@ private fun DesignTabContent(
     onSuggestTasks: (String) -> Unit,
     onCombineFiles: (ImportedFile, ImportedFile, List<GisNode>, List<GisRoute>) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var contractorFilter by remember { mutableStateOf("Chọn nhà thầu") }
-    var expanded by remember { mutableStateOf(false) }
-    // "Tất cả" | "Vị trí" | "Tuyến"
-    var objectTypeFilter by remember { mutableStateOf("Tất cả") }
-    // "Mã A→Z" | "Mã Z→A"
-    var sortOrder by remember { mutableStateOf("Mã A→Z") }
-    var sortExpanded by remember { mutableStateOf(false) }
-
-    var showNotesAndTasksSheet by remember { mutableStateOf(false) }
-    var notesAndTasksObjectCode by remember { mutableStateOf("") }
-
-
     var draggedFile by remember { mutableStateOf<ImportedFile?>(null) }
     var selectedFile by remember { mutableStateOf<ImportedFile?>(null) }
     var fileBounds by remember { mutableStateOf<Map<String, Rect>>(emptyMap()) }
@@ -346,8 +362,17 @@ private fun DesignTabContent(
             }
         )
     }
-    
-    
+
+    val configuration = LocalConfiguration.current
+    val extendedColors = MaterialTheme.extendedColors
+    val outlineColor = MaterialTheme.colorScheme.outlineVariant
+    val dangerColor = extendedColors.danger
+    val gridMinSize = when {
+        configuration.screenWidthDp >= 1200 -> 280.dp
+        configuration.screenWidthDp >= 840 -> 320.dp
+        else -> 350.dp
+    }
+
     val contractors = dataHubUiState.contractorOptions
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -357,15 +382,15 @@ private fun DesignTabContent(
         // Dropdown Filter
         Box(modifier = Modifier.weight(0.4f)) {
             OutlinedButton(
-                onClick = { expanded = true },
+                onClick = { onSetContractorMenuExpanded(true) },
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = textColor),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, outlineColor),
                 contentPadding = PaddingValues(horizontal = 12.dp)
             ) {
                 Text(
-                    text = if (contractorFilter == "Chọn nhà thầu") "Chọn nhà thầu" else contractorFilter,
+                    text = if (screenUiState.contractorFilter == "Chọn nhà thầu") "Chọn nhà thầu" else screenUiState.contractorFilter,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     fontSize = 12.sp
@@ -373,16 +398,18 @@ private fun DesignTabContent(
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null)
             }
             DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
+                expanded = screenUiState.contractorMenuExpanded,
+                onDismissRequest = {
+                    onSetContractorMenuExpanded(false)
+                },
                 modifier = Modifier.background(cardBgColor)
             ) {
                 contractors.forEach { contractor ->
                     DropdownMenuItem(
                         text = { Text(contractor, color = textColor) },
                         onClick = {
-                            contractorFilter = contractor
-                            expanded = false
+                            onUpdateContractorFilter(contractor)
+                            onSetContractorMenuExpanded(false)
                         }
                     )
                 }
@@ -392,8 +419,10 @@ private fun DesignTabContent(
         // Search bar
         val searchFocusManager = LocalFocusManager.current
         OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+            value = screenUiState.searchQuery,
+            onValueChange = {
+                onUpdateSearchQuery(it)
+            },
             placeholder = { Text("Tìm theo mã/tên nút...", color = secondaryTextColor, fontSize = 12.sp) },
             modifier = Modifier.weight(0.6f).height(48.dp),
             shape = RoundedCornerShape(8.dp),
@@ -401,7 +430,7 @@ private fun DesignTabContent(
                 focusedTextColor = textColor,
                 unfocusedTextColor = textColor,
                 focusedBorderColor = orangeColor,
-                unfocusedBorderColor = Color(0xFF334155),
+                unfocusedBorderColor = outlineColor,
                 focusedContainerColor = cardBgColor,
                 unfocusedContainerColor = cardBgColor
             ),
@@ -423,10 +452,12 @@ private fun DesignTabContent(
         verticalAlignment = Alignment.CenterVertically
     ) {
         listOf("Tất cả", "Vị trí", "Tuyến").forEach { type ->
-            val selected = objectTypeFilter == type
+            val selected = screenUiState.objectTypeFilter == type
             FilterChip(
                 selected = selected,
-                onClick = { objectTypeFilter = type },
+                onClick = {
+                    onUpdateObjectTypeFilter(type)
+                },
                 label = { Text(type, fontSize = 12.sp) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = orangeColor,
@@ -437,7 +468,7 @@ private fun DesignTabContent(
                 border = FilterChipDefaults.filterChipBorder(
                     enabled = true,
                     selected = selected,
-                    borderColor = Color(0xFF334155),
+                    borderColor = outlineColor,
                     selectedBorderColor = orangeColor
                 ),
                 shape = RoundedCornerShape(16.dp)
@@ -446,25 +477,32 @@ private fun DesignTabContent(
         Spacer(modifier = Modifier.weight(1f))
         Box {
             OutlinedButton(
-                onClick = { sortExpanded = true },
+                onClick = {
+                    onSetSortMenuExpanded(true)
+                },
                 modifier = Modifier.height(36.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = secondaryTextColor),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, outlineColor),
                 contentPadding = PaddingValues(horizontal = 10.dp)
             ) {
-                Text(sortOrder, fontSize = 11.sp, color = secondaryTextColor)
+                Text(screenUiState.sortOrder, fontSize = 11.sp, color = secondaryTextColor)
                 Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(16.dp))
             }
             DropdownMenu(
-                expanded = sortExpanded,
-                onDismissRequest = { sortExpanded = false },
+                expanded = screenUiState.sortMenuExpanded,
+                onDismissRequest = {
+                    onSetSortMenuExpanded(false)
+                },
                 modifier = Modifier.background(cardBgColor)
             ) {
                 listOf("Mã A→Z", "Mã Z→A").forEach { option ->
                     DropdownMenuItem(
                         text = { Text(option, color = textColor, fontSize = 13.sp) },
-                        onClick = { sortOrder = option; sortExpanded = false }
+                        onClick = {
+                            onUpdateSortOrder(option)
+                            onSetSortMenuExpanded(false)
+                        }
                     )
                 }
             }
@@ -601,7 +639,7 @@ private fun DesignTabContent(
                                 },
                                 modifier = Modifier.weight(1f).height(32.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFFEF4444),
+                                    containerColor = dangerColor,
                                     contentColor = Color.White
                                 ),
                                 shape = RoundedCornerShape(6.dp),
@@ -618,7 +656,7 @@ private fun DesignTabContent(
                                     .weight(1f)
                                     .height(32.dp)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFF334155))
+                                    .background(outlineColor)
                                     .clickable { showCombineMenu = true },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -651,7 +689,7 @@ private fun DesignTabContent(
                                             }
                                         )
                                     }
-                                    if (state.importedFiles.size <= 1) {
+                if (state.importedFiles.size <= 1) {
                                         DropdownMenuItem(
                                             text = { Text("Không có file khác để gộp", color = secondaryTextColor, fontSize = 12.sp) },
                                             onClick = { showCombineMenu = false },
@@ -668,18 +706,26 @@ private fun DesignTabContent(
         Spacer(modifier = Modifier.height(16.dp))
     }
     val dotColors = listOf(
-        Color(0xFFEF4444),
+        dangerColor,
         Color(0xFFF97316),
         Color(0xFFEAB308),
         Color(0xFFA855F7),
-        Color(0xFF3B82F6)
+        extendedColors.info
     )
-    val allItems = remember(dataHubUiState.baseDisplayItems, contractorFilter, searchQuery, objectTypeFilter, sortOrder) {
+    val allItems = remember(
+        dataHubUiState.baseDisplayItems,
+        screenUiState.contractorFilter,
+        screenUiState.searchQuery,
+        screenUiState.objectTypeFilter,
+        screenUiState.sortOrder
+    ) {
         val contractorMatch: (String) -> Boolean = { c ->
-            contractorFilter == contractors.firstOrNull().orEmpty() || contractorFilter.startsWith("Ch") || c == contractorFilter
+            screenUiState.contractorFilter == contractors.firstOrNull().orEmpty() ||
+                screenUiState.contractorFilter.startsWith("Ch") ||
+                c == screenUiState.contractorFilter
         }
         val codeMatch: (String) -> Boolean = { code ->
-            searchQuery.isBlank() || code.contains(searchQuery, ignoreCase = true)
+            screenUiState.searchQuery.isBlank() || code.contains(screenUiState.searchQuery, ignoreCase = true)
         }
 
         dataHubUiState.baseDisplayItems
@@ -688,19 +734,23 @@ private fun DesignTabContent(
                 contractorMatch(item.contractor) &&
                     codeMatch(item.code) &&
                     when {
-                        objectTypeFilter.startsWith("V") -> !item.isRoute
-                        objectTypeFilter.startsWith("Tuy") -> item.isRoute
+                        screenUiState.objectTypeFilter.startsWith("V") -> !item.isRoute
+                        screenUiState.objectTypeFilter.startsWith("Tuy") -> item.isRoute
                         else -> true
                     }
             }
             .toList()
             .let { list ->
-                if (sortOrder.trim().endsWith("A")) list.sortedByDescending { it.code } else list.sortedBy { it.code }
+                if (screenUiState.sortOrder.trim().endsWith("A")) {
+                    list.sortedByDescending { it.code }
+                } else {
+                    list.sortedBy { it.code }
+                }
             }
     }
 
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Adaptive(minSize = 350.dp),
+        columns = StaggeredGridCells.Adaptive(minSize = gridMinSize),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalItemSpacing = 16.dp,
         contentPadding = PaddingValues(bottom = 80.dp)
@@ -792,7 +842,7 @@ private fun DesignTabContent(
                             Icon(
                                 if (item.isRoute) Icons.Outlined.Route else Icons.Outlined.FormatListNumbered,
                                 contentDescription = null,
-                                tint = if (item.isRoute) Color(0xFF3B82F6) else Color(0xFFE11D48),
+                                tint = if (item.isRoute) extendedColors.info else dangerColor,
                                 modifier = Modifier.size(24.dp)
                             )
                             val displayCode = item.node?.mapNumberLabel?.ifBlank { item.code } ?: item.code
@@ -863,7 +913,7 @@ private fun DesignTabContent(
                                                         )
                                                     }
                                             ) {
-                                                Icon(Icons.Outlined.Info, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Outlined.Info, contentDescription = null, tint = dangerColor, modifier = Modifier.size(16.dp))
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(text = itemName, color = textColor, fontSize = 12.sp, maxLines = 1)
                                             }
@@ -903,7 +953,7 @@ private fun DesignTabContent(
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(outlineColor))
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -911,9 +961,8 @@ private fun DesignTabContent(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                notesAndTasksObjectCode = item.code
                                 onLoadNotesAndTasks(item.code)
-                                showNotesAndTasksSheet = true
+                                onShowNotesAndTasks(item.code)
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = orangeColor),
                             border = androidx.compose.foundation.BorderStroke(1.dp, orangeColor),
@@ -932,15 +981,17 @@ private fun DesignTabContent(
         }
     }
 
-    if (showNotesAndTasksSheet && notesAndTasksObjectCode.isNotBlank()) {
+    if (screenUiState.showNotesAndTasksSheet && screenUiState.notesAndTasksObjectCode.isNotBlank()) {
         NotesAndTasksBottomSheet(
-            objectCode = notesAndTasksObjectCode,
+            objectCode = screenUiState.notesAndTasksObjectCode,
             notes = state.selectedObjectNotes,
             tasks = state.selectedObjectTasks,
             aiSummary = state.aiNoteSummary,
             aiSuggestions = state.aiTaskSuggestions,
             isAiLoading = state.isAiLoading,
-            onDismiss = { showNotesAndTasksSheet = false },
+            onDismiss = {
+                onDismissNotesAndTasks()
+            },
             onAddNote = onAddNote,
             onDeleteNote = onDeleteNote,
             onAddTask = onAddTask,

@@ -9,6 +9,11 @@ import com.mapsupervision.domain.model.ImportedFile
 import com.mapsupervision.domain.repository.ImportedFileRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class ImportedFileRepositoryImpl @Inject constructor(
@@ -46,6 +51,10 @@ class ImportedFileRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to delete imported file", it)) }
     ) }
+
+    override fun observeByProject(projectId: String): Flow<List<ImportedFile>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private fun ImportedFile.toEntity() = ImportedFileEntity(
         id = id,

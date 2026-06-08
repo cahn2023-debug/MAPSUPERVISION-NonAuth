@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.mapsupervision.app.ui.theme.extendedColors
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -37,13 +39,56 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.mapsupervision.domain.model.NodeProgress>, dailyLogs: List<com.mapsupervision.domain.model.DailyLog>, dashboardState: com.mapsupervision.app.workspace.DashboardState, progressUiState: ProgressUiState, workCategories: List<com.mapsupervision.domain.model.WorkCategory>, photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(), activeProjectName: String? = null, onAddConstruction: (String, Float, Float) -> Unit, onAddDailyLog: (String, Int, String, String, Double, String?, Long, Double, String, String) -> Unit, onAddWorkCategory: (String, String) -> Unit, onFetchWeatherAuto: (String?, (String, Double) -> Unit) -> Unit
+fun ProgressHubScreen(
+    activeProjectId: String?,
+    constructionProgress: List<com.mapsupervision.domain.model.NodeProgress>,
+    dailyLogs: List<com.mapsupervision.domain.model.DailyLog>,
+    dashboardState: com.mapsupervision.app.workspace.DashboardState,
+    progressUiState: ProgressUiState,
+    screenUiState: ProgressHubScreenUiState,
+    workCategories: List<com.mapsupervision.domain.model.WorkCategory>,
+    photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
+    activeProjectName: String? = null,
+    onSetProgressTab: (Boolean) -> Unit,
+    onUpdateGroupMode: (String) -> Unit,
+    onUpdateFilterMode: (String) -> Unit,
+    onSelectProgressNode: (String, String, String) -> Unit,
+    onDismissProgressNodeSheet: () -> Unit,
+    onUpdateCurrentMonth: (Int) -> Unit,
+    onUpdateCurrentYear: (Int) -> Unit,
+    onUpdateSelectedDateMillis: (Long) -> Unit,
+    onUpdateWeatherSelection: (String) -> Unit,
+    onUpdateCustomWeather: (String) -> Unit,
+    onUpdateTemperatureInput: (String) -> Unit,
+    onUpdateSelectedNodeCodeForLog: (String?) -> Unit,
+    onUpdateManpowerInput: (String) -> Unit,
+    onUpdateWorkItemInput: (String) -> Unit,
+    onUpdateNoteInput: (String) -> Unit,
+    onUpdateActualProgressInput: (String) -> Unit,
+    onUpdateActualProgressChecked: (Boolean) -> Unit,
+    onUpdateLogFormError: (String) -> Unit,
+    onSetNodeDropdownExpanded: (Boolean) -> Unit,
+    onUpdateVolumeInput: (String) -> Unit,
+    onUpdateUnitInput: (String) -> Unit,
+    onUpdateSelectedCategoryName: (String) -> Unit,
+    onSetCategoryDropdownExpanded: (Boolean) -> Unit,
+    onSetShowAddCategoryDialog: (Boolean) -> Unit,
+    onUpdateNewCategoryName: (String) -> Unit,
+    onUpdateNewCategoryUnit: (String) -> Unit,
+    onUpdateProgressSheetPlannedInput: (String) -> Unit,
+    onUpdateProgressSheetActualInput: (String) -> Unit,
+    onUpdateProgressSheetValidationError: (String) -> Unit,
+    onUpdateProgressSheetNote: (String) -> Unit,
+    onResetLogForm: () -> Unit,
+    onAddConstruction: (String, Float, Float) -> Unit,
+    onAddDailyLog: (String, Int, String, String, Double, String?, Long, Double, String, String) -> Unit,
+    onAddWorkCategory: (String, String) -> Unit
 ) {
-    var isProgressSubTab by remember { mutableStateOf(true) } // true = Progress (Tiến độ), false = Diary (Nhật ký)
+    var isProgressSubTab by rememberSaveable { mutableStateOf(screenUiState.isProgressSubTab) } // true = Progress (Tiến độ), false = Diary (Nhật ký)
     
-    var groupMode by remember { mutableStateOf("Nhà thầu") }
-    var filterMode by remember { mutableStateOf("All") }
-    var selectedNodeForProgress by remember { mutableStateOf<com.mapsupervision.domain.model.NodeProgress?>(null) }
+    var groupMode by rememberSaveable { mutableStateOf(screenUiState.groupMode) }
+    var filterMode by rememberSaveable { mutableStateOf(screenUiState.filterMode) }
+    val selectedNodeCodeForProgress = screenUiState.selectedNodeCodeForProgress
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -51,45 +96,46 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
 
     // Calendar & Diary state
     val todayCal = remember { Calendar.getInstance() }
-    var currentMonth by remember { mutableStateOf(todayCal.get(Calendar.MONTH)) }
-    var currentYear by remember { mutableStateOf(todayCal.get(Calendar.YEAR)) }
-    var selectedDate by remember { mutableStateOf(Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }) }
+    val currentMonth = screenUiState.currentMonth
+    val currentYear = screenUiState.currentYear
+    val selectedDateMillis = screenUiState.selectedDateMillis
+    val selectedDate = remember(selectedDateMillis) {
+        Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+    }
 
     // Weather Form State
-    var weatherSelected by remember { mutableStateOf("Nắng") }
-    var customWeather by remember { mutableStateOf("") }
-    var temperatureInput by remember { mutableStateOf("30") }
+    val weatherSelected = screenUiState.weatherSelected
+    val customWeather = screenUiState.customWeather
+    val temperatureInput = screenUiState.temperatureInput
 
     // Daily Log Form State
-    var selectedNodeCodeForLog by remember { mutableStateOf<String?>(null) }
-    var manpowerInput by remember { mutableStateOf("5") }
-    var workItemInput by remember { mutableStateOf("") }
-    var noteInput by remember { mutableStateOf("") }
-    var actualProgressInput by remember { mutableStateOf("") }
-    var actualProgressChecked by remember { mutableStateOf(false) }
-    var logFormError by remember { mutableStateOf("") }
-    var nodeDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedNodeCodeForLog by rememberSaveable { mutableStateOf(screenUiState.selectedNodeCodeForLog) }
+    var manpowerInput by rememberSaveable { mutableStateOf(screenUiState.manpowerInput) }
+    var workItemInput by rememberSaveable { mutableStateOf(screenUiState.workItemInput) }
+    var noteInput by rememberSaveable { mutableStateOf(screenUiState.noteInput) }
+    var actualProgressInput by rememberSaveable { mutableStateOf(screenUiState.actualProgressInput) }
+    var logFormError by rememberSaveable { mutableStateOf(screenUiState.logFormError) }
+    val nodeDropdownExpanded = screenUiState.nodeDropdownExpanded
     
     // Custom Work Category & Volume State
-    var volumeInput by remember { mutableStateOf("") }
-    var unitInput by remember { mutableStateOf("") }
-    var selectedCategoryName by remember { mutableStateOf("") }
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
+    var volumeInput by rememberSaveable { mutableStateOf(screenUiState.volumeInput) }
+    var unitInput by rememberSaveable { mutableStateOf(screenUiState.unitInput) }
+    var selectedCategoryName by rememberSaveable { mutableStateOf(screenUiState.selectedCategoryName) }
+    val categoryDropdownExpanded = screenUiState.categoryDropdownExpanded
     
-    var showAddCategoryDialog by remember { mutableStateOf(false) }
-    var newCategoryName by remember { mutableStateOf("") }
-    var newCategoryUnit by remember { mutableStateOf("") }
-
-    LaunchedEffect(selectedNodeCodeForLog, selectedDate.timeInMillis) {
-        onFetchWeatherAuto(selectedNodeCodeForLog) { cond, temp ->
-            weatherSelected = cond
-            temperatureInput = temp.roundToInt().toString()
-        }
+    LaunchedEffect(screenUiState) {
+        isProgressSubTab = screenUiState.isProgressSubTab
+        groupMode = screenUiState.groupMode
+        filterMode = screenUiState.filterMode
+        selectedNodeCodeForLog = screenUiState.selectedNodeCodeForLog
+        manpowerInput = screenUiState.manpowerInput
+        workItemInput = screenUiState.workItemInput
+        noteInput = screenUiState.noteInput
+        actualProgressInput = screenUiState.actualProgressInput
+        logFormError = screenUiState.logFormError
+        volumeInput = screenUiState.volumeInput
+        unitInput = screenUiState.unitInput
+        selectedCategoryName = screenUiState.selectedCategoryName
     }
 
     val nonStructuralNodes = progressUiState.nonStructuralNodes
@@ -98,6 +144,21 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
     val criticalNodes = progressUiState.criticalNodes
     val progressByCode = progressUiState.progressByNodeCode
     val allDisplayItems = progressUiState.allDisplayItems
+    val selectedNodeForProgress = remember(selectedNodeCodeForProgress, progressByCode, activeProjectId) {
+        selectedNodeCodeForProgress?.let { nodeCode ->
+            progressByCode[nodeCode]
+                ?: com.mapsupervision.domain.model.NodeProgress(
+                    id = "",
+                    projectId = activeProjectId ?: "",
+                    nodeCode = nodeCode,
+                    planned = 0f,
+                    actual = 0f,
+                    remain = 0f,
+                    delayed = false,
+                    updatedAtEpochMs = 0L
+                )
+        }
+    }
 
     val filteredProgress = remember(allDisplayItems, filterMode) {
         allDisplayItems.filter {
@@ -145,14 +206,15 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
     val backgroundColor = MaterialTheme.colorScheme.background
     val primaryTextColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val orangeColor = Color(0xFFF58220)
-    val darkOrangeColor = Color(0xFFC05621)
-    val redColor = Color(0xFFE53E3E)
-    val lightRedBg = redColor.copy(alpha = 0.16f)
-    val darkBlueColor = Color(0xFF1E3A8A)
-    val lightBlueColor = Color(0xFF60A5FA)
-    val successColor = Color(0xFF3B82F6) 
-    val trackBlueColor = Color(0xFF64748B)
+    val extendedColors = MaterialTheme.extendedColors
+    val orangeColor = extendedColors.warning
+    val darkOrangeColor = extendedColors.mapAccent
+    val redColor = extendedColors.danger
+    val lightRedBg = extendedColors.dangerSoft
+    val darkBlueColor = MaterialTheme.colorScheme.primary
+    val lightBlueColor = extendedColors.info
+    val successColor = extendedColors.success
+    val trackBlueColor = MaterialTheme.colorScheme.outline
 
     // Calendar computing helpers
     val monthCalendar = remember(currentMonth, currentYear) {
@@ -279,14 +341,14 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                         .padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Button( onClick = { isProgressSubTab = true }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isProgressSubTab) primaryTextColor else secondaryTextColor
+                    Button( onClick = { isProgressSubTab = true; onSetProgressTab(true) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isProgressSubTab) primaryTextColor else secondaryTextColor
                         ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Tiến độ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
-                    Button( onClick = { isProgressSubTab = false }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (!isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (!isProgressSubTab) primaryTextColor else secondaryTextColor
+                    Button( onClick = { isProgressSubTab = false; onSetProgressTab(false) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (!isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (!isProgressSubTab) primaryTextColor else secondaryTextColor
                         ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (!isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Outlined.EditCalendar, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -401,9 +463,9 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                 lineHeight = 24.sp
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip( selected = filterMode == "All", onClick = { filterMode = "All" }, label = { Text("Tất cả", color = if (filterMode == "All") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = trackBlueColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = filterMode == "All", onClick = { filterMode = "All"; onUpdateFilterMode("All") }, label = { Text("Tất cả", color = if (filterMode == "All") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = trackBlueColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
                                 )
-                                FilterChip( selected = filterMode == "Delayed", onClick = { filterMode = "Delayed" }, label = { Text("Chậm trễ", color = if (filterMode == "Delayed") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = orangeColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = filterMode == "Delayed", onClick = { filterMode = "Delayed"; onUpdateFilterMode("Delayed") }, label = { Text("Chậm trễ", color = if (filterMode == "Delayed") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = orangeColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
                                 )
                             }
                         }
@@ -412,7 +474,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                             Text("Nhóm theo: ", color = secondaryTextColor, fontSize = 14.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             listOf("Không nhóm", "Nhà thầu", "Vị trí").forEach { mode ->
-                                FilterChip( selected = groupMode == mode, onClick = { groupMode = mode }, label = { Text(mode, fontSize = 12.sp) }, modifier = Modifier.padding(end = 4.dp), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = groupMode == mode, onClick = { groupMode = mode; onUpdateGroupMode(mode) }, label = { Text(mode, fontSize = 12.sp) }, modifier = Modifier.padding(end = 4.dp), shape = RoundedCornerShape(16.dp)
                                 )
                             }
                         }
@@ -447,7 +509,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                         val existing = progressByCode[progress.nodeCode]
                                             ?: com.mapsupervision.domain.model.NodeProgress( id = "", projectId = activeProjectId ?: "", nodeCode = progress.nodeCode, planned = 0f, actual = 0f, remain = 0f, delayed = false, updatedAtEpochMs = 0L
                                             )
-                                        selectedNodeForProgress = existing
+                                        onSelectProgressNode(existing.nodeCode, existing.planned.toString(), existing.actual.toString())
                                     }
                                 )
                             }
@@ -469,20 +531,20 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                 Row {
                                     IconButton(onClick = {
                                         if (currentMonth == 0) {
-                                            currentMonth = 11
-                                            currentYear -= 1
+                                            onUpdateCurrentMonth(11)
+                                            onUpdateCurrentYear(currentYear - 1)
                                         } else {
-                                            currentMonth -= 1
+                                            onUpdateCurrentMonth(currentMonth - 1)
                                         }
                                     }) {
                                         Icon(Icons.Default.ChevronLeft, contentDescription = "Hạng mục: ")
                                     }
                                     IconButton(onClick = {
                                         if (currentMonth == 11) {
-                                            currentMonth = 0
-                                            currentYear += 1
+                                            onUpdateCurrentMonth(0)
+                                            onUpdateCurrentYear(currentYear + 1)
                                         } else {
-                                            currentMonth += 1
+                                            onUpdateCurrentMonth(currentMonth + 1)
                                         }
                                     }) {
                                         Icon(Icons.Default.ChevronRight, contentDescription = "Tháng sau")
@@ -530,7 +592,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                                             else -> Color.Transparent
                                                         }
                                                     )
-                                                    .clickable { selectedDate = cellCal }
+                                                    .clickable { onUpdateSelectedDateMillis(cellCal.timeInMillis) }
                                                     .padding(4.dp), contentAlignment = Alignment.Center
                                             ) {
                                                 Column( horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
@@ -601,7 +663,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(if (isSelected) orangeColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface)
                                             .border(1.dp, if (isSelected) orangeColor else Color.Transparent, RoundedCornerShape(8.dp))
-                                            .clickable { weatherSelected = cond }
+                                            .clickable { onUpdateWeatherSelection(cond) }
                                             .padding(vertical = 8.dp), contentAlignment = Alignment.Center
                                     ) {
                                         Text( cond, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, color = if (isSelected) orangeColor else primaryTextColor
@@ -614,9 +676,9 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = temperatureInput, onValueChange = { temperatureInput = it }, label = { Text("Nhiệt độ (°C)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = temperatureInput, onValueChange = { onUpdateTemperatureInput(it) }, label = { Text("Nhiệt độ (°C)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
                                 )
-                                OutlinedTextField( value = customWeather, onValueChange = { customWeather = it }, label = { Text("Mô tả chi tiết (nếu có)") }, modifier = Modifier.weight(2f), singleLine = true
+                                OutlinedTextField( value = customWeather, onValueChange = { onUpdateCustomWeather(it) }, label = { Text("Mô tả chi tiết (nếu có)") }, modifier = Modifier.weight(2f), singleLine = true
                                 )
                             }
                         }
@@ -637,33 +699,34 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton( onClick = { nodeDropdownExpanded = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
+                                OutlinedButton( onClick = { onSetNodeDropdownExpanded(true) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text( text = selectedNodeCodeForLog?.let { code ->
                                             nodeDisplayName(code, nodesMap) + " ($code)"
-                                        } ?: "Chọn hạng mục liên kết (không bắt buộc)", color = if (selectedNodeCodeForLog != null) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start
+                                        } ?: "Chọn hạng mục liên kết (không bắt buộc)", color = if (selectedNodeCodeForLog != null) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
                                 }
-                                DropdownMenu( expanded = nodeDropdownExpanded, onDismissRequest = { nodeDropdownExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
+                                DropdownMenu( expanded = nodeDropdownExpanded, onDismissRequest = { onSetNodeDropdownExpanded(false) }, modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
                                 ) {
                                     DropdownMenuItem( text = { Text("Không liên kết hạng mục", color = secondaryTextColor) }, onClick = {
-                                            selectedNodeCodeForLog = null
-                                            nodeDropdownExpanded = false
+                                            onUpdateSelectedNodeCodeForLog(null)
+                                            onSetNodeDropdownExpanded(false)
                                         }
                                     )
                                     progressUiState.nodeSelectorOptions.forEach { option ->
                                         DropdownMenuItem( text = { Text(option.label, color = primaryTextColor) }, onClick = {
                                                 val node = nodesMap.getValue(option.key)
-                                                selectedNodeCodeForLog = option.key
-                                                nodeDropdownExpanded = false
+                                                onUpdateSelectedNodeCodeForLog(option.key)
+                                                onSetNodeDropdownExpanded(false)
                                                 // Pre-fill default work item if empty
                                                 if (workItemInput.isBlank()) {
                                                     workItemInput = "Thi công tại ${nodeDisplayName(node.code, nodesMap)}"
+                                                    onUpdateWorkItemInput("Thi công tại ${nodeDisplayName(node.code, nodesMap)}")
                                                 }
                                                 // Pre-fill current progress if any
                                                 val existing = progressByCode[option.key]
-                                                actualProgressInput = existing?.actual?.toString() ?: ""
+                                                onUpdateActualProgressInput(existing?.actual?.toString() ?: "")
                                             }
                                         )
                                     }
@@ -677,17 +740,17 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton( onClick = { categoryDropdownExpanded = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
+                                OutlinedButton( onClick = { onSetCategoryDropdownExpanded(true) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text( text = if (selectedCategoryName.isNotBlank()) selectedCategoryName else "Chọn hạng mục công việc (đổ bê tông, kéo cáp...)", color = if (selectedCategoryName.isNotBlank()) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start
+                                    Text( text = if (selectedCategoryName.isNotBlank()) selectedCategoryName else "Chọn hạng mục công việc (đổ bê tông, kéo cáp...)", color = if (selectedCategoryName.isNotBlank()) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
                                 }
-                                DropdownMenu( expanded = categoryDropdownExpanded, onDismissRequest = { categoryDropdownExpanded = false }, modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
+                                DropdownMenu( expanded = categoryDropdownExpanded, onDismissRequest = { onSetCategoryDropdownExpanded(false) }, modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
                                 ) {
                                     DropdownMenuItem( text = { Text("+ Thêm hạng mục mới...", color = orangeColor, fontWeight = FontWeight.Bold) }, onClick = {
-                                            categoryDropdownExpanded = false
-                                            showAddCategoryDialog = true
+                                            onSetCategoryDropdownExpanded(false)
+                                            onSetShowAddCategoryDialog(true)
                                         }
                                     )
 
@@ -699,24 +762,23 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                             )
                                             materials.forEach { material ->
                                                 DropdownMenuItem( text = { Text(material.label, color = primaryTextColor) }, onClick = {
-                                                        selectedCategoryName = material.key
-                                                        unitInput = ""
-                                                        categoryDropdownExpanded = false
+                                                        onUpdateSelectedCategoryName(material.key)
+                                                        onUpdateUnitInput("")
+                                                        onSetCategoryDropdownExpanded(false)
                                                     }
                                                 )
                                             }
                                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                         }
-                                    }
 
                                     DropdownMenuItem( text = { Text("Hạng mục công việc chung:", color = secondaryTextColor, fontWeight = FontWeight.Bold, fontSize = 12.sp) }, onClick = {}, enabled = false
                                     )
 
                                     workCategories.forEach { category ->
                                         DropdownMenuItem( text = { Text("${category.name} (${category.unit})", color = primaryTextColor) }, onClick = {
-                                                selectedCategoryName = category.name
-                                                unitInput = category.unit
-                                                categoryDropdownExpanded = false
+                                                onUpdateSelectedCategoryName(category.name)
+                                                onUpdateUnitInput(category.unit)
+                                                onSetCategoryDropdownExpanded(false)
                                             }
                                         )
                                     }
@@ -725,16 +787,16 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField( value = workItemInput, onValueChange = { workItemInput = it; logFormError = "" }, label = { Text("Nội dung thực hiện trong ngày *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
+                            OutlinedTextField( value = workItemInput, onValueChange = { onUpdateWorkItemInput(it); onUpdateLogFormError("") }, label = { Text("Nội dung thực hiện trong ngày *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = volumeInput, onValueChange = { volumeInput = it }, label = { Text("Khối lượng thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = volumeInput, onValueChange = { onUpdateVolumeInput(it) }, label = { Text("Khối lượng thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
                                 )
-                                OutlinedTextField( value = unitInput, onValueChange = { unitInput = it }, label = { Text("Đơn vị tính") }, modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = unitInput, onValueChange = { onUpdateUnitInput(it) }, label = { Text("Đơn vị tính") }, modifier = Modifier.weight(1f), singleLine = true
                                 )
                             }
 
@@ -742,18 +804,18 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = manpowerInput, onValueChange = { manpowerInput = it }, label = { Text("Số nhân công: ") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = manpowerInput, onValueChange = { onUpdateManpowerInput(it) }, label = { Text("Số nhân công: ") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
                                 )
                                 
                                 if (selectedNodeCodeForLog != null) {
-                                    OutlinedTextField( value = actualProgressInput, onValueChange = { actualProgressInput = it }, label = { Text("Tiến độ thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
+                                    OutlinedTextField( value = actualProgressInput, onValueChange = { onUpdateActualProgressInput(it) }, label = { Text("Tiến độ thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
                                     )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField( value = noteInput, onValueChange = { noteInput = it }, label = { Text("Báo cáo khó khăn / ghi chú khác") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
+                            OutlinedTextField( value = noteInput, onValueChange = { onUpdateNoteInput(it) }, label = { Text("Báo cáo khó khăn / ghi chú khác") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
                             )
 
                             if (logFormError.isNotBlank()) {
@@ -766,6 +828,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                             Button( onClick = {
                                     if (workItemInput.isBlank()) {
                                         logFormError = "Vui lòng nhập nội dung thực hiện"
+                                        onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
                                         return@Button
                                     }
                                     val manpower = manpowerInput.toIntOrNull() ?: 0
@@ -777,15 +840,7 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                     )
 
                                     // Clear fields after saving
-                                    workItemInput = ""
-                                    noteInput = ""
-                                    manpowerInput = "5"
-                                    actualProgressInput = ""
-                                    volumeInput = ""
-                                    unitInput = ""
-                                    selectedCategoryName = ""
-                                    selectedNodeCodeForLog = null
-                                    logFormError = ""
+                                    onResetLogForm()
                                     coroutineScope.launch {
                                         snackbarHostState.showSnackbar("Đã thêm nhật ký thi công mới")
                                     }
@@ -928,13 +983,13 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
 
         // Add Construction progress Sheet (From Progress view item selection click)
         if (selectedNodeForProgress != null) {
-            val node = selectedNodeForProgress!!
-            var plannedInput by remember(node.nodeCode) { mutableStateOf(node.planned.toString()) }
-            var actualInput by remember(node.nodeCode) { mutableStateOf(node.actual.toString()) }
-            var validationError by remember(node.nodeCode) { mutableStateOf("") }
-            var progressNote by remember(node.nodeCode) { mutableStateOf("") }
+            val node = selectedNodeForProgress
+            val plannedInput = screenUiState.progressSheetPlannedInput.ifBlank { node.planned.toString() }
+            val actualInput = screenUiState.progressSheetActualInput.ifBlank { node.actual.toString() }
+            val validationError = screenUiState.progressSheetValidationError
+            val progressNote = screenUiState.progressSheetNote
 
-            ModalBottomSheet( onDismissRequest = { selectedNodeForProgress = null }, sheetState = bottomSheetState
+            ModalBottomSheet( onDismissRequest = { onDismissProgressNodeSheet() }, sheetState = bottomSheetState
             ) {
                 Column( modifier = Modifier
                         .fillMaxWidth()
@@ -951,25 +1006,25 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                         )
                     }
 
-                    OutlinedTextField( value = plannedInput, onValueChange = { plannedInput = it; validationError = "" }, label = { Text("Kế hoạch (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(), singleLine = true
+                    OutlinedTextField( value = plannedInput, onValueChange = { onUpdateProgressSheetPlannedInput(it); onUpdateProgressSheetValidationError("") }, label = { Text("Kế hoạch (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField( value = actualInput, onValueChange = { actualInput = it; validationError = "" }, label = { Text("Thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(), singleLine = true
+                    OutlinedTextField( value = actualInput, onValueChange = { onUpdateProgressSheetActualInput(it); onUpdateProgressSheetValidationError("") }, label = { Text("Thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth(), singleLine = true
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField( value = progressNote, onValueChange = { progressNote = it }, label = { Text("Ghi chú (tùy chọn)") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
+                    OutlinedTextField( value = progressNote, onValueChange = { onUpdateProgressSheetNote(it) }, label = { Text("Ghi chú (tùy chọn)") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
                     )
 
                     if (validationError.isNotBlank()) {
-                        Text( text = validationError, color = Color(0xFFE53E3E), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
+                        Text( text = validationError, color = redColor, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
                     Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedButton( onClick = { selectedNodeForProgress = null }, modifier = Modifier.weight(1f)
+                        OutlinedButton( onClick = { onDismissProgressNodeSheet() }, modifier = Modifier.weight(1f)
                         ) {
                             Text("Hủy")
                         }
@@ -977,10 +1032,10 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
                                 val planned = plannedInput.toFloatOrNull()
                                 val actual = actualInput.toFloatOrNull()
                                 if (planned == null || actual == null || planned !in 0f..100f || actual !in 0f..100f) {
-                                    validationError = "Giá trị phải từ 0 đến 100"
+                                    onUpdateProgressSheetValidationError("Giá trị phải từ 0 đến 100")
                                 } else {
                                     onAddConstruction(node.nodeCode, planned, actual)
-                                    selectedNodeForProgress = null
+                                    onDismissProgressNodeSheet()
                                 }
                             }, modifier = Modifier.weight(1f)
                         ) {
@@ -991,34 +1046,37 @@ fun ProgressHubScreen( activeProjectId: String?, constructionProgress: List<com.
             }
         }
 
-        if (showAddCategoryDialog) {
-            AlertDialog( onDismissRequest = { showAddCategoryDialog = false }, title = { Text("HẠNG MỤC CÔNG VIỆC", fontWeight = FontWeight.Bold) }, text = {
+        if (screenUiState.showAddCategoryDialog) {
+            AlertDialog( onDismissRequest = { onSetShowAddCategoryDialog(false) }, title = { Text("HẠNG MỤC CÔNG VIỆC", fontWeight = FontWeight.Bold) }, text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField( value = newCategoryName, onValueChange = { newCategoryName = it }, label = { Text("Tên hạng mục (ví dụ: đổ bê tông)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                        OutlinedTextField( value = screenUiState.newCategoryName, onValueChange = { onUpdateNewCategoryName(it) }, label = { Text("Tên hạng mục (ví dụ: đổ bê tông)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
                         )
-                        OutlinedTextField( value = newCategoryUnit, onValueChange = { newCategoryUnit = it }, label = { Text("Đơn vị tính (ví dụ: m3)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
+                        OutlinedTextField( value = screenUiState.newCategoryUnit, onValueChange = { onUpdateNewCategoryUnit(it) }, label = { Text("Đơn vị tính (ví dụ: m3)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
                         )
                     }
                 }, confirmButton = {
                     Button( onClick = {
-                            if (newCategoryName.isNotBlank() && newCategoryUnit.isNotBlank()) {
-                                onAddWorkCategory(newCategoryName.trim(), newCategoryUnit.trim())
-                                selectedCategoryName = newCategoryName.trim()
-                                unitInput = newCategoryUnit.trim()
-                                newCategoryName = ""
-                                newCategoryUnit = ""
-                                showAddCategoryDialog = false
+                            if (screenUiState.newCategoryName.isNotBlank() && screenUiState.newCategoryUnit.isNotBlank()) {
+                                onAddWorkCategory(screenUiState.newCategoryName.trim(), screenUiState.newCategoryUnit.trim())
+                                selectedCategoryName = screenUiState.newCategoryName.trim()
+                                unitInput = screenUiState.newCategoryUnit.trim()
+                                onUpdateSelectedCategoryName(selectedCategoryName)
+                                onUpdateUnitInput(unitInput)
+                                onUpdateNewCategoryName("")
+                                onUpdateNewCategoryUnit("")
+                                onSetShowAddCategoryDialog(false)
                             }
                         }
                     ) {
                         Text("Thêm")
                     }
                 }, dismissButton = {
-                    OutlinedButton(onClick = { showAddCategoryDialog = false }) {
+                    OutlinedButton(onClick = { onSetShowAddCategoryDialog(false) }) {
                         Text("Hủy")
                     }
                 }
             )
         }
     }
+}
 

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapSupervision - Project Documentation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f8f9fa;
+        }
+        .container {
+            background: #fff;
+            padding: 2rem 3rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1, h2, h3, h4 { color: #2c3e50; }
+        h1 { border-bottom: 2px solid #eee; padding-bottom: 0.5rem; text-align: center; }
+        h2 { border-bottom: 1px solid #eee; padding-bottom: 0.3rem; margin-top: 2rem; }
+        code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; color: #d63384; }
+        pre { background: #f4f4f4; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+        .toc { background: #fdfdfd; padding: 1.5rem; border: 1px solid #eee; border-radius: 8px; margin-bottom: 2rem; }
+        .toc ul { list-style-type: none; padding-left: 1.5rem; }
+        .toc > ul { padding-left: 0; }
+        .toc a { text-decoration: none; color: #007bff; font-weight: 500; }
+        .toc a:hover { text-decoration: underline; }
+        .mermaid { margin: 2rem 0; text-align: center; }
+        ul li { margin-bottom: 0.5rem; }
+    </style>
+    <!-- Include Mermaid.js for Diagrams -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Tài Liệu Kỹ Thuật Tổng Hợp: MapSupervision</h1>
+        <p style="text-align: center; color: #666;"><em>Hệ Thống Giám Sát Dự Án Trên Bản Đồ Số</em></p>
+
+        <div class="toc">
+            <h2>Mục Lục</h2>
+            <ul>
+                <li><a href="#overview">1. Tổng Quan Dự Án</a></li>
+                <li><a href="#features">2. Tính Năng Cốt Lõi</a></li>
+                <li><a href="#architecture">3. Cấu Trúc Thư Mục & Thiết Kế Kiến Trúc</a></li>
+                <li><a href="#workflows">4. Luồng Hoạt Động (Workflows)</a></li>
+                <li><a href="#knowledge-graph">5. Bản Đồ Tri Thức Dự Án (Knowledge Graph)</a></li>
+            </ul>
+        </div>
+
+        <h2 id="overview">1. Tổng Quan Dự Án</h2>
+        <p><strong>MapSupervision</strong> là một giải pháp toàn diện dành cho các kỹ sư giám sát dự án thi công hạ tầng lớn (đường ống, đường dây, trạm biến áp, v.v.). Đây là một ứng dụng Android đa mô-đun (Multi-module Android Application) hiện đại, áp dụng Kiến Trúc Sạch (Clean Architecture) kết hợp với Jetpack Compose để quản lý và giám sát tiến độ thi công hạ tầng, ghi nhận hiện trường thông qua GIS và hình ảnh định vị GPS ngoại tuyến.</p>
+        
+        <h2 id="features">2. Tính Năng Cốt Lõi</h2>
+        
+        <h3>2.1. Quản Lý Không Gian Làm Việc (Workspace Management)</h3>
+        <ul>
+            <li><strong>Tạo & Chuyển đổi dự án linh hoạt</strong>: Khởi tạo và thiết lập dự án với slug định danh duy nhất. Dễ dàng chuyển đổi qua lại.</li>
+            <li><strong>Phân tách & Mã hóa an toàn</strong>: Tạo cấu trúc lưu trữ độc lập trên thiết bị cho từng dự án (<code>db/</code>, <code>photos/</code>, <code>reports/</code>, <code>imports/</code>). Mã hóa bảo vệ thông tin bằng <code>ProjectCryptoManager</code>.</li>
+        </ul>
+
+        <h3>2.2. Bản Đồ Giám Sát Không Gian (GIS Map & Styling Engine)</h3>
+        <ul>
+            <li><strong>Bản đồ Vectơ offline/online</strong>: Sử dụng công nghệ MapLibre GL hỗ trợ render bản đồ vectơ mượt mà.</li>
+            <li><strong>Trực quan hóa mạng lưới</strong>: Hiển thị điểm đặt (<code>GisNode</code>) và sơ đồ tuyến kết nối (<code>GisRoute</code>).</li>
+            <li><strong>Tùy biến giao diện động (Style Builder)</strong>: Tự động phân cấp màu sắc, độ dày nét vẽ dựa trên trạng thái thi công, nhà thầu hoặc mức độ trễ hạn.</li>
+        </ul>
+
+        <h3>2.3. Nhập File Tài Liệu Thông Minh (Smart Data Importer)</h3>
+        <ul>
+            <li><strong>Hỗ trợ định dạng không gian</strong>: Phân tích KML/KMZ tự động tạo điểm nút và tuyến mà không cần kết nối mạng.</li>
+            <li><strong>Trích xuất thông tin tài liệu</strong>: Đọc siêu dữ liệu và cấu trúc tài liệu từ Excel (.xlsx), Word (.docx) và PDF (.pdf).</li>
+        </ul>
+
+        <h3>2.4. Quản Lý Tiến Độ Thi Công Chi Tiết (Progress Tracking)</h3>
+        <ul>
+            <li><strong>Chỉ số thời gian thực</strong>: Theo dõi các chỉ số <code>planned</code> (kế hoạch), <code>actual</code> (thực tế), và <code>remain</code> (còn lại) cho từng nút mạng lưới.</li>
+            <li><strong>Cảnh báo chậm trễ tự động</strong>: Khi tiến độ <code>actual</code> thấp hơn <code>planned</code>, hệ thống tự động gán cờ <code>delayed = true</code> và cảnh báo trên bản đồ.</li>
+        </ul>
+
+        <h3>2.5. Chụp Ảnh & Nén Ảnh Hiện Trường Bằng GPS (GPS Field Photo Tracking)</h3>
+        <ul>
+            <li><strong>Tự động gắn thẻ địa lý</strong>: Lấy định vị GPS, thời gian và gán tên kỹ sư tự động qua <code>PhotoLocationProvider</code>.</li>
+            <li><strong>Xử lý nền tối ưu hiệu năng</strong>: Sử dụng WorkManager (<code>PhotoPipelineService</code>) chạy ngầm để nén, giảm dung lượng và tạo ảnh thu nhỏ (thumbnail) không làm gián đoạn UI.</li>
+        </ul>
+
+        <h3>2.6. Nhật Ký & Xuất Bản Báo Cáo (Daily Log & PDF Reporting)</h3>
+        <ul>
+            <li><strong>Bảng dòng thời gian (Timeline UI)</strong>: Lịch sử thi công, nhật ký ngày và hình ảnh sắp xếp theo dạng Feed dòng thời gian.</li>
+            <li><strong>Tự động xuất báo cáo PDF</strong>: Trình biên tập <code>PdfReportGenerator</code> tạo báo cáo chuyên nghiệp có bố cục đẹp mắt để báo cáo trực tiếp cho Chủ đầu tư.</li>
+        </ul>
+
+        <h2 id="architecture">3. Cấu Trúc Thư Mục & Thiết Kế Kiến Trúc</h2>
+        <p>Dự án chia nhỏ thành các Gradle module độc lập giúp tăng tốc độ build, dễ viết Unit Test và có khả năng tái sử dụng cao theo nguyên lý Clean Architecture:</p>
+
+        <div class="mermaid">
+        graph TD
+            subgraph Presentation Layer
+                app[":app (Workspace & Hub)"]
+                project[":project (Project UI)"]
+                gis[":gis (Map UI & ViewModel)"]
+                photo[":photo (Camera, Location)"]
+                photo_lite[":photo-lite (Light UI)"]
+                timeline[":timeline (History Feed)"]
+                reporting[":reporting (PDF Report)"]
+            end
+
+            subgraph Data & Storage Layer
+                data[":data (Room DB, Repositories)"]
+                storage[":storage (File, Crypto)"]
+                gis_maplibre[":gis-maplibre"]
+            end
+
+            subgraph Domain & Core
+                domain[":domain (Core Models, UseCases)"]
+                core[":core (Dispatchers, Loggers)"]
+            end
+
+            app --> project
+            app --> gis
+            app --> photo
+            app --> timeline
+            app --> reporting
+            app --> storage
+            app --> data
+            
+            project --> domain
+            gis --> domain
+            gis_maplibre --> gis
+            photo --> domain
+            photo_lite --> domain
+            timeline --> domain
+            reporting --> domain
+            
+            data --> domain
+            storage --> domain
+            storage --> data
+            
+            domain --> core
+        </div>
+
+        <h4>Chi Tiết Chức Năng Từng Module:</h4>
+        <ul>
+            <li><code>:core</code>: Cung cấp các công cụ nền tảng dùng chung (DispatcherProvider, AppExceptions, AppLogger).</li>
+            <li><code>:domain</code>: Thuần Kotlin, chứa nghiệp vụ cốt lõi (Models: Project, GisNode, SitePhoto; Repository Interfaces; UseCases).</li>
+            <li><code>:data</code>: Triển khai lưu trữ cục bộ Room Database, cung cấp DAOs và Repository Implementation.</li>
+            <li><code>:storage</code>: Quản lý đĩa vật lý, mã hóa ProjectCryptoManager, nhập File (KML, Office).</li>
+            <li><code>:gis</code> & <code>:gis-maplibre</code>: Giao diện bản đồ tương tác và cầu nối tích hợp MapLibre native.</li>
+            <li><code>:photo</code>: Camera thu thập hình ảnh, xác định GPS và xử lý nén bằng WorkManager.</li>
+            <li><code>:timeline</code>: View hiển thị quá trình phát triển của dự án theo dạng Timeline.</li>
+            <li><code>:reporting</code>: Quản lý và vẽ báo cáo thành file PDF qua Canvas.</li>
+            <li><code>:app</code>: Hub trung tâm cấu hình Dagger Hilt DI và điều hướng (Navigation).</li>
+        </ul>
+
+        <h2 id="workflows">4. Luồng Hoạt Động (Workflows)</h2>
+
+        <h3>4.1. Luồng Nhập Bản Đồ Hạ Tầng (KML/KMZ Import)</h3>
+        <p>Xảy ra khi kỹ sư thiết lập dự án mới và đưa tệp bản đồ số vào hệ thống.</p>
+        <div class="mermaid">
+        sequenceDiagram
+            autonumber
+            actor Engineer as Kỹ sư giám sát
+            participant App as :app (Workspace)
+            participant Storage as :storage (ImportService)
+            participant Data as :data (DB)
+            participant GIS as :gis (Bản đồ)
+
+            Engineer->>App: Nhập tệp thiết kế KML/KMZ
+            App->>Storage: importFile()
+            Storage->>Storage: Parse XML trích xuất danh sách coordinates
+            Storage-->>App: Trả về ImportedFileDraft
+            App->>Data: Lưu GisNodes, GisRoutes vào SQLite DB
+            App->>GIS: Chuyển hướng sang màn hình Bản đồ
+            GIS->>Data: Truy vấn tọa độ dự án
+            GIS-->>Engineer: Dựng bản đồ MapLibre GL
+        </div>
+
+        <h3>4.2. Luồng Chụp Ảnh & Đường Ống Xử Lý Ngầm</h3>
+        <p>Hệ thống nén ảnh nặng mượt mà ở Background (sử dụng WorkManager).</p>
+        <div class="mermaid">
+        sequenceDiagram
+            autonumber
+            actor Engineer as Kỹ sư giám sát
+            participant PhotoUI as :photo (UI)
+            participant Worker as :photo (WorkManager)
+            participant StorageMgr as :storage
+            participant DB as :data
+
+            Engineer->>PhotoUI: Chụp ảnh hiện trạng (tại ObjectCode)
+            PhotoUI->>PhotoUI: Thu luồng ảnh thô + Lấy tọa độ GPS
+            PhotoUI->>Worker: Enqueue tiến trình xử lý ảnh
+            Note over PhotoUI, Worker: UI không bị chặn, kỹ sư tiếp tục làm việc.
+            Worker->>StorageMgr: Tạo ảnh Thumbnail và Nén ảnh gốc
+            Worker->>DB: Ghi lưu SitePhotoEntity
+            Worker-->>Engineer: Cập nhật ảnh thu nhỏ trên bản đồ
+        </div>
+
+        <h3>4.3. Luồng Cập Nhật Tiến Độ & Cảnh Báo Trễ Hạn</h3>
+        <p>Phát hiện khi khối lượng thực tế thấp hơn kế hoạch để lập tức cảnh báo bằng cờ đỏ trên GIS Map.</p>
+        <div class="mermaid">
+        flowchart TD
+            Start([Nhập tiến độ 'actual']) --> Compare{So sánh: actual < planned?}
+            Compare -- Đúng --> MarkDelayed[Cờ delayed = true]
+            Compare -- Sai --> MarkOntime[Cờ delayed = false]
+            MarkDelayed --> SaveDB[Ghi dữ liệu NodeProgress vào DB]
+            MarkOntime --> SaveDB
+            SaveDB --> RedrawMap[Yêu cầu vẽ lại bản đồ]
+            RedrawMap --> ColorRed[GisStyleBuilder: Đổi màu nút sang Đỏ (nếu delayed)]
+        </div>
+
+        <h3>4.4. Luồng Biên Tập Báo Cáo PDF</h3>
+        <p>Xuất báo cáo văn bản cho Chủ đầu tư.</p>
+        <div class="mermaid">
+        sequenceDiagram
+            autonumber
+            actor Engineer as Kỹ sư
+            participant ReportUI as :reporting
+            participant Generator as :reporting (PdfGenerator)
+            participant DB as :data
+
+            Engineer->>ReportUI: Yêu cầu "Xuất báo cáo PDF"
+            ReportUI->>DB: Lấy dữ liệu DailyLog & SitePhotos
+            ReportUI->>Generator: Gọi generatePdfReport()
+            Generator->>Generator: Vẽ bảng tổng hợp tiến độ và chèn ảnh (Canvas)
+            Generator-->>ReportUI: Trả về tệp .pdf hoàn chỉnh
+            ReportUI-->>Engineer: Mở tệp PDF để duyệt/chia sẻ
+        </div>
+
+        <h2 id="knowledge-graph">5. Bản Đồ Tri Thức Dự Án (Knowledge Graph)</h2>
+        <p>Sơ đồ thực thể mô tả luồng liên kết nghiệp vụ cốt lõi bên trong Database của hệ thống:</p>
+        <div class="mermaid">
+        erDiagram
+            PROJECT ||--o{ GIS-NODE : "chứa"
+            PROJECT ||--o{ GIS-ROUTE : "bao gồm"
+            PROJECT ||--o{ NODE-PROGRESS : "giám sát"
+            PROJECT ||--o{ SITE-PHOTO : "chụp hiện trường"
+            PROJECT ||--o{ DAILY-LOG : "ghi chép"
+            PROJECT ||--o{ IMPORTED-FILE : "tài liệu nguồn"
+
+            GIS-NODE ||--o{ NODE-PROGRESS : "đo lường bằng"
+            GIS-NODE ||--o{ GIS-ROUTE : "điểm bắt đầu / kết thúc"
+
+            SITE-PHOTO }o--|| GIS-NODE : "chụp tại vị trí"
+            DAILY-LOG ||--o{ SITE-PHOTO : "kèm theo ảnh chứng minh"
+            
+            PROJECT {
+                string id PK
+                string name
+                string slug
+            }
+
+            GIS-NODE {
+                string id PK
+                string projectId FK
+                string code 
+                double latitude
+                double longitude
+            }
+
+            GIS-ROUTE {
+                string id PK
+                string startNodeCode FK
+                string endNodeCode FK
+            }
+
+            NODE-PROGRESS {
+                string id PK
+                float planned 
+                float actual 
+                boolean delayed 
+            }
+
+            SITE-PHOTO {
+                string id PK
+                string filePath 
+                double latitude
+                double longitude
+                string engineer 
+            }
+        </div>
+        <p style="text-align: center; font-size: 0.9em; color: #7f8c8d; margin-top: 3rem;">
+            <em>Tài liệu được tổng hợp tự động từ Project Documentation & Overviews của dự án MapSupervision.</em>
+        </p>
+    </div>
+</body>
+</html>

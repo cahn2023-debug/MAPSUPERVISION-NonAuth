@@ -9,12 +9,9 @@ import com.mapsupervision.domain.model.PhotoLocationStatus
 @Entity(
     tableName = "site_photos",
     indices = [
-        Index("projectId"),
-        Index("objectCode"),
-        Index("capturedAtEpochMs"),
         Index(value = ["projectId", "capturedAtEpochMs"]),
-        Index(value = ["projectId", "objectCode"]),
-        Index(value = ["projectId", "objectCode", "capturedAtEpochMs"])
+        Index(value = ["projectId", "objectCode", "capturedAtEpochMs"]),
+        Index("objectCode")
     ]
 )
 data class SitePhotoEntity(

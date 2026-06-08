@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -51,21 +52,35 @@ fun MapSupervisionTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = MidnightSlate
+    val extendedColors = MapSupervisionExtendedColors(
+        panelBackground = SurfaceDark,
+        panelBackgroundAlt = SurfaceVariantDark,
+        accent = PrimaryContainer,
+        success = SuccessColor,
+        mapAccent = MapAccentColor,
+        warning = WarningColor,
+        warningSoft = WarningSoftColor,
+        info = InfoColor,
+        danger = DangerColor,
+        dangerSoft = DangerSoftColor
+    )
     
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb() // Dùng màu background cho thanh trên cùng
+            window.statusBarColor = colorScheme.surfaceVariant.toArgb() // Dùng cùng màu với TopAppBar
             window.navigationBarColor = colorScheme.surface.toArgb() // Dùng màu surface cho thanh điều hướng dưới
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = Shapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalMapSupervisionExtendedColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = Shapes,
+            content = content
+        )
+    }
 }

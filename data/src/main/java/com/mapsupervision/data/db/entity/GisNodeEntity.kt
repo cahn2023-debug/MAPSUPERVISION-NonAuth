@@ -7,9 +7,6 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "gis_node",
     indices = [
-        Index("projectId"),
-        Index("code"),
-        Index("contractor"),
         Index("importedFileId"),
         Index(value = ["projectId", "code"])
     ]

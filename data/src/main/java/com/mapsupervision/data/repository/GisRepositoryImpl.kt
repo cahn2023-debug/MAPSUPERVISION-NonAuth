@@ -12,6 +12,11 @@ import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.repository.GisRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class GisRepositoryImpl @Inject constructor(
@@ -72,6 +77,18 @@ class GisRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to find node by code", it)) }
     ) }
+
+    override fun observeNodes(projectId: String, query: String): Flow<List<GisNode>> = flow {
+        val dao = nodeDao(projectId)
+        val source = if (query.isBlank()) dao.observeByProject(projectId) else dao.observeSearch(projectId, query)
+        emitAll(source.map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
+
+    override fun observeRoutes(projectId: String, query: String): Flow<List<GisRoute>> = flow {
+        val dao = routeDao(projectId)
+        val source = if (query.isBlank()) dao.observeByProject(projectId) else dao.observeSearch(projectId, query)
+        emitAll(source.map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
 
     private fun GisNode.toEntity() = GisNodeEntity(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, materialSummary, importedFileId)
     private fun GisRoute.toEntity() = GisRouteEntity(id, projectId, code, contractor, startNodeCode, endNodeCode, importedFileId)

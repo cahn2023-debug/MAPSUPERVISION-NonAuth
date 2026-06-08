@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.mapsupervision.data.db.entity.ImportedFileEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ImportedFileDao {
@@ -17,6 +18,9 @@ interface ImportedFileDao {
 
     @Query("SELECT * FROM imported_files WHERE projectId = :projectId ORDER BY importedAtEpochMs DESC")
     suspend fun byProject(projectId: String): List<ImportedFileEntity>
+
+    @Query("SELECT * FROM imported_files WHERE projectId = :projectId ORDER BY importedAtEpochMs DESC")
+    fun observeByProject(projectId: String): Flow<List<ImportedFileEntity>>
 
     @Query("DELETE FROM imported_files WHERE id = :id")
     suspend fun deleteFileRecord(id: String)

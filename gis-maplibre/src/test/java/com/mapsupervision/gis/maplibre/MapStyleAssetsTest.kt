@@ -1,11 +1,12 @@
 package com.mapsupervision.gis.maplibre
 
 import java.io.File
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class MapStyleAssetsTest {
+    private val expectedGlyphUrl = "https://orangemug.github.io/font-glyphs/glyphs/{fontstack}/{range}.pbf"
     private val assetDir = File("src/main/assets")
     private val styleFiles = listOf(
         "style_street.json",
@@ -14,19 +15,23 @@ class MapStyleAssetsTest {
     )
 
     @Test
-    fun bundled_styles_keep_base_raster_and_do_not_define_gis_overlay_layers() {
+    fun bundled_styles_define_reference_gis_sources_and_layers() {
         styleFiles.forEach { fileName ->
             val content = File(assetDir, fileName).readText()
 
             assertTrue("$fileName missing base_raster source", content.contains("\"base_raster\""))
             assertTrue("$fileName missing base layer", content.contains("\"id\": \"base\""))
-            assertFalse("$fileName should not define nodes_source in style asset", content.contains("\"nodes_source\""))
-            assertFalse("$fileName should not define routes_source in style asset", content.contains("\"routes_source\""))
-            assertFalse("$fileName should not define measure_source in style asset", content.contains("\"measure_source\""))
-            assertFalse("$fileName should not define nodes layer", content.contains("\"id\": \"nodes\""))
-            assertFalse("$fileName should not define nodes_labels layer", content.contains("\"id\": \"nodes_labels\""))
-            assertFalse("$fileName should not define routes layer", content.contains("\"id\": \"routes\""))
-            assertFalse("$fileName should not define measure layer", content.contains("\"id\": \"measure_line\""))
+            assertTrue("$fileName should use the reference glyph source", content.contains(expectedGlyphUrl))
+            assertTrue("$fileName missing nodes_source", content.contains("\"nodes_source\""))
+            assertTrue("$fileName missing routes_source", content.contains("\"routes_source\""))
+            assertTrue("$fileName missing measure_source", content.contains("\"measure_source\""))
+            assertTrue("$fileName missing nodes layer", content.contains("\"id\": \"nodes\""))
+            assertTrue("$fileName missing nodes_labels layer", content.contains("\"id\": \"nodes_labels\""))
+            assertTrue("$fileName missing routes layer", content.contains("\"id\": \"routes\""))
+            assertTrue("$fileName missing measure_line layer", content.contains("\"id\": \"measure_line\""))
+            assertTrue("$fileName should render node color from feature property", content.contains("\"circle-color\": [\"coalesce\", [\"get\", \"color\"], \"#f97316\"]"))
+            assertTrue("$fileName should render node labels from label property", content.contains("\"text-field\": [\"get\", \"label\"]"))
+            assertTrue("$fileName should use Roboto Regular labels", content.contains("\"text-font\": [\"Roboto Regular\"]"))
         }
     }
 
