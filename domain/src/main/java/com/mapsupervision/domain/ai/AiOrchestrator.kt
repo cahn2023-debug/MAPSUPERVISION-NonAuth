@@ -5,12 +5,14 @@ import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.domain.ai.device.AndroidDeviceCapabilityDetector
 import com.mapsupervision.domain.ai.device.ResourceMonitor
 import com.mapsupervision.domain.ai.engines.CloudGeminiEngine
+import com.mapsupervision.domain.ai.engines.LocalLiteRtEngine
 import com.mapsupervision.domain.ai.engines.MediaPipeLlmEngine
 import com.mapsupervision.domain.ai.engines.MlKitVisionEngine
 import com.mapsupervision.domain.ai.engines.RuleBasedEngine
 import com.mapsupervision.domain.ai.engines.TfliteVisionEngine
 import com.mapsupervision.domain.repository.AiDecisionCacheStore
 import com.mapsupervision.domain.repository.AiRepository
+import com.mapsupervision.domain.repository.LocalLlmRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,6 +35,7 @@ class AiOrchestrator internal constructor(
     private val decisionCacheStore: AiDecisionCacheStore? = null
 ) {
     private val featureFlags = mutableMapOf(
+        AiCapability.CHAT_ASSISTANT to true,
         AiCapability.IMPORT_MAPPING to true,
         AiCapability.DISCREPANCY_CHECK to true,
         AiCapability.TIMELINE_SUMMARY to true,
@@ -53,11 +56,12 @@ class AiOrchestrator internal constructor(
         @ApplicationContext context: Context,
         aiRepository: AiRepository,
         tfLiteRepository: com.mapsupervision.domain.repository.TfLiteRepository,
-        decisionCacheStore: AiDecisionCacheStore
+        decisionCacheStore: AiDecisionCacheStore,
+        localLlmRepository: LocalLlmRepository
     ) : this(
         deviceCapabilityDetector = AndroidDeviceCapabilityDetector(context),
         resourceGate = ResourceMonitorGate(ResourceMonitor(context)),
-        initialEngines = buildDefaultEngines(context, aiRepository, tfLiteRepository),
+        initialEngines = buildDefaultEngines(context, aiRepository, tfLiteRepository, localLlmRepository),
         decisionCacheStore = decisionCacheStore
     )
 
@@ -80,6 +84,7 @@ class AiOrchestrator internal constructor(
         engines.clear()
         engines.addAll(allEngines.filter { engine ->
             when (engine.engineType) {
+                AiEngine.LOCAL_LITERT -> config.enableMediaPipeLlm
                 AiEngine.MEDIAPIPE_LLM -> config.enableMediaPipeLlm
                 AiEngine.TFLITE_VISION -> config.enableTfliteVision
                 AiEngine.MLKIT_VISION -> config.enableMlKitVision
@@ -240,28 +245,17 @@ class AiOrchestrator internal constructor(
         }
         
         val suitableEngines = availableEngines.filter { engine ->
-            when (engine.engineType) {
-                AiEngine.MEDIAPIPE_LLM -> {
-                    // Additional RAM check for MediaPipe LLM
-                    val hasEnoughRam = capabilities.availableRamMb >= config.ramThresholdForHeavyAi
-                    val thermalOk = capabilities.thermalStatus.ordinal < config.thermalThreshold.ordinal
-                    deviceCapabilityDetector.canRunHeavyAi(capabilities) && hasEnoughRam && thermalOk
-                }
-                AiEngine.TFLITE_VISION -> {
-                    capabilities.availableRamMb >= config.ramThresholdForMediumAi &&
-                        deviceCapabilityDetector.canRunMediumAi(capabilities)
-                }
-                AiEngine.MLKIT_VISION -> deviceCapabilityDetector.canRunLightAi(capabilities)
-                AiEngine.CLOUD_GEMINI -> true // Cloud doesn't depend on device
-                AiEngine.RULE_BASED -> true // Always available
-            }
+            isEngineSafe(engine.engineType, capabilities)
         }
         
         if (suitableEngines.isEmpty()) {
             return findRuleBasedEngine()
         }
-        
-        return suitableEngines.maxByOrNull { it.priority } ?: findRuleBasedEngine()
+
+        val preferredOrder = preferredEngineOrder(capability)
+        return preferredOrder.firstNotNullOfOrNull { preferred ->
+            suitableEngines.firstOrNull { it.engineType == preferred }
+        } ?: suitableEngines.maxByOrNull { it.priority } ?: findRuleBasedEngine()
     }
     
     private suspend fun findFallbackEngine(
@@ -272,19 +266,13 @@ class AiOrchestrator internal constructor(
         val capableEngines = engines.filter { it.canHandle(capability) }
         val remainingEngines = capableEngines.filter { it != failedEngine && it.isAvailable() }
         val suitableEngines = remainingEngines.filter { engine ->
-            when (engine.engineType) {
-                AiEngine.MEDIAPIPE_LLM -> deviceCapabilityDetector.canRunHeavyAi(capabilities)
-                AiEngine.TFLITE_VISION -> {
-                    capabilities.availableRamMb >= config.ramThresholdForMediumAi &&
-                        deviceCapabilityDetector.canRunMediumAi(capabilities)
-                }
-                AiEngine.MLKIT_VISION -> deviceCapabilityDetector.canRunLightAi(capabilities)
-                AiEngine.CLOUD_GEMINI -> true
-                AiEngine.RULE_BASED -> true
-            }
+            isEngineSafe(engine.engineType, capabilities)
         }
         
-        return suitableEngines.maxByOrNull { it.priority } ?: findRuleBasedEngine()
+        val preferredOrder = preferredEngineOrder(capability)
+        return preferredOrder.firstNotNullOfOrNull { preferred ->
+            suitableEngines.firstOrNull { it.engineType == preferred }
+        } ?: suitableEngines.maxByOrNull { it.priority } ?: findRuleBasedEngine()
     }
     
     private fun findRuleBasedEngine(): AiEngineInterface {
@@ -296,8 +284,12 @@ class AiOrchestrator internal constructor(
         return engine.execute(payload)
     }
     
-    private fun mapEngineToSource(engineType: AiEngine): AiDecisionSource {
+    private fun mapEngineToSource(engineType: AiEngine, capability: AiCapability? = null): AiDecisionSource {
+        if (capability == AiCapability.CHAT_ASSISTANT && engineType == AiEngine.RULE_BASED) {
+            return AiDecisionSource.LOCAL_MODEL
+        }
         return when (engineType) {
+            AiEngine.LOCAL_LITERT -> AiDecisionSource.LOCAL_MODEL
             AiEngine.MEDIAPIPE_LLM -> AiDecisionSource.MEDIAPIPE_LLM
             AiEngine.TFLITE_VISION -> AiDecisionSource.TFLITE_VISION
             AiEngine.MLKIT_VISION -> AiDecisionSource.MLKIT_VISION
@@ -326,6 +318,40 @@ class AiOrchestrator internal constructor(
         }
         
         return (baseConfidence + resourceFactor + thermalFactor).coerceIn(50, 100)
+    }
+
+    private fun isEngineSafe(engineType: AiEngine, capabilities: DeviceCapabilities): Boolean {
+        return when (engineType) {
+            AiEngine.LOCAL_LITERT -> {
+                LiteRtSafetyGate.canRun(
+                    model = GemmaModelInfo(
+                        family = GemmaModelFamily.QWEN3_0_6B,
+                        displayName = "local",
+                        estimatedSizeMb = 0,
+                        recommendedMinAvailableRamMb = config.ramThresholdForHeavyAi.coerceAtMost(3072),
+                        recommendedMinFreeStorageMb = 0,
+                        downloadFileName = "local",
+                        expectedBytes = 0L
+                    ),
+                    availableRamMb = capabilities.availableRamMb,
+                    thermalStatus = capabilities.thermalStatus,
+                    batteryLevel = capabilities.batteryLevel,
+                    isCharging = capabilities.isCharging
+                )
+            }
+            AiEngine.MEDIAPIPE_LLM -> {
+                val hasEnoughRam = capabilities.availableRamMb >= config.ramThresholdForHeavyAi
+                val thermalOk = capabilities.thermalStatus.ordinal < config.thermalThreshold.ordinal
+                deviceCapabilityDetector.canRunHeavyAi(capabilities) && hasEnoughRam && thermalOk
+            }
+            AiEngine.TFLITE_VISION -> {
+                capabilities.availableRamMb >= config.ramThresholdForMediumAi &&
+                    deviceCapabilityDetector.canRunMediumAi(capabilities)
+            }
+            AiEngine.MLKIT_VISION -> deviceCapabilityDetector.canRunLightAi(capabilities)
+            AiEngine.CLOUD_GEMINI -> true
+            AiEngine.RULE_BASED -> true
+        }
     }
 
     private fun shouldPersist(payload: AiPayload): Boolean = when (payload.capability) {
@@ -463,15 +489,30 @@ class AiOrchestrator internal constructor(
         private fun buildDefaultEngines(
             context: Context,
             aiRepository: AiRepository,
-            tfLiteRepository: com.mapsupervision.domain.repository.TfLiteRepository
+            tfLiteRepository: com.mapsupervision.domain.repository.TfLiteRepository,
+            localLlmRepository: LocalLlmRepository
         ): List<AiEngineInterface> =
             listOf(
+                LocalLiteRtEngine(localLlmRepository),
                 MediaPipeLlmEngine(context),
                 TfliteVisionEngine(context, tfLiteRepository),
                 MlKitVisionEngine(context),
                 CloudGeminiEngine(aiRepository),
                 RuleBasedEngine()
             )
+    }
+
+    private fun preferredEngineOrder(capability: AiCapability): List<AiEngine> {
+        return when (capability) {
+            AiCapability.CHAT_ASSISTANT -> listOf(AiEngine.LOCAL_LITERT, AiEngine.RULE_BASED)
+            AiCapability.IMPORT_MAPPING -> listOf(AiEngine.CLOUD_GEMINI, AiEngine.RULE_BASED)
+            AiCapability.DISCREPANCY_CHECK -> listOf(AiEngine.TFLITE_VISION, AiEngine.RULE_BASED, AiEngine.CLOUD_GEMINI)
+            AiCapability.TIMELINE_SUMMARY -> listOf(AiEngine.LOCAL_LITERT, AiEngine.CLOUD_GEMINI, AiEngine.RULE_BASED)
+            AiCapability.PHOTO_QUALITY_CHECK -> listOf(AiEngine.TFLITE_VISION, AiEngine.MLKIT_VISION, AiEngine.RULE_BASED)
+            AiCapability.REPORT_DRAFT -> listOf(AiEngine.LOCAL_LITERT, AiEngine.CLOUD_GEMINI, AiEngine.RULE_BASED)
+            AiCapability.OPS_RECOMMENDATION -> listOf(AiEngine.RULE_BASED, AiEngine.LOCAL_LITERT, AiEngine.CLOUD_GEMINI)
+            AiCapability.NOTE_SUMMARIZATION, AiCapability.TASK_RECOMMENDATION -> listOf(AiEngine.RULE_BASED)
+        }
     }
 
 

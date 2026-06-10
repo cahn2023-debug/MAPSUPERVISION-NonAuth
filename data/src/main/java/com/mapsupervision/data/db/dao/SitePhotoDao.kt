@@ -23,4 +23,16 @@ interface SitePhotoDao {
             "ORDER BY capturedAtEpochMs DESC"
     )
     suspend fun byObjectCode(projectId: String, objectCode: String): List<SitePhotoEntity>
+
+    @Query(
+        "SELECT * FROM site_photos WHERE projectId = :projectId AND (matchedNodeCode = :nodeCode OR objectCode = :nodeCode) " +
+            "ORDER BY capturedAtEpochMs DESC"
+    )
+    suspend fun byMatchedNodeCode(projectId: String, nodeCode: String): List<SitePhotoEntity>
+
+    @Query(
+        "SELECT * FROM site_photos WHERE projectId = :projectId AND (matchedRouteCode = :routeCode OR objectCode = :routeCode) " +
+            "ORDER BY capturedAtEpochMs DESC"
+    )
+    suspend fun byMatchedRouteCode(projectId: String, routeCode: String): List<SitePhotoEntity>
 }

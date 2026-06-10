@@ -96,6 +96,9 @@ class PhotoRepositoryImpl @Inject constructor(
         id,
         projectId,
         objectCode,
+        tagCodesCsv,
+        matchedNodeCode,
+        matchedRouteCode,
         filePath,
         thumbnailPath,
         latitude,
@@ -104,12 +107,17 @@ class PhotoRepositoryImpl @Inject constructor(
         isGpsMocked,
         locationStatus,
         engineer,
-        capturedAtEpochMs
+        capturedAtEpochMs,
+        matchedAtEpochMs,
+        matchingTimeOffsetMs
     )
     private fun SitePhotoEntity.toDomain() = SitePhoto(
         id,
         projectId,
         objectCode,
+        tagCodesCsv,
+        matchedNodeCode,
+        matchedRouteCode,
         filePath,
         thumbnailPath,
         latitude,
@@ -118,7 +126,9 @@ class PhotoRepositoryImpl @Inject constructor(
         isGpsMocked,
         locationStatus,
         engineer,
-        capturedAtEpochMs
+        capturedAtEpochMs,
+        matchedAtEpochMs,
+        matchingTimeOffsetMs
     )
 }
 
@@ -144,8 +154,8 @@ class DailyLogRepositoryImpl @Inject constructor(
         emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
     }
 
-    private fun DailyLog.toEntity() = DailyLogEntity(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, dateEpochDay, volume, unit, categoryName)
-    private fun DailyLogEntity.toDomain() = DailyLog(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, dateEpochDay, volume, unit, categoryName)
+    private fun DailyLog.toEntity() = DailyLogEntity(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, routeCode, dateEpochDay, volume, unit, categoryName, batchGroupId, appliedNodeCodesCsv, linkedPhotoIdsCsv, photoMatchOffsetMinutes)
+    private fun DailyLogEntity.toDomain() = DailyLog(id, projectId, workItem, manpower, note, createdAtEpochMs, weather, temperature, nodeCode, routeCode, dateEpochDay, volume, unit, categoryName, batchGroupId, appliedNodeCodesCsv, linkedPhotoIdsCsv, photoMatchOffsetMinutes)
 
     private suspend fun dao(projectId: String): DailyLogDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.dailyLogDao() ?: dao

@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,10 +22,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
 fun TimelineScreen(viewModel: TimelineViewModel = hiltViewModel()) {
-    val progress = viewModel.progress.value
-    val logs = viewModel.logs.value
-    val aiSummary = viewModel.aiSummary.value
-    val aiHighlights = viewModel.aiHighlights.value
+    val progress by viewModel.progress.collectAsState()
+    val logs by viewModel.logs.collectAsState()
+    val aiSummary by viewModel.aiSummary.collectAsState()
+    val aiHighlights by viewModel.aiHighlights.collectAsState()
     var node by remember { mutableStateOf("N-001") }
     var planned by remember { mutableStateOf("100") }
     var actual by remember { mutableStateOf("40") }

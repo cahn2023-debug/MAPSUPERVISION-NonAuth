@@ -40,6 +40,7 @@ import com.mapsupervision.domain.repository.WorkCategoryRepository
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import com.mapsupervision.domain.service.WeatherService
+import com.mapsupervision.domain.util.StringSimilarity
 import com.mapsupervision.storage.ProjectStorageManager
 import com.mapsupervision.storage.importer.UserFileImportService
 import com.mapsupervision.storage.importer.ConfirmedFieldFlags
@@ -74,12 +75,13 @@ import kotlin.math.roundToLong
 fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float, actual: Float) {
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val normalizedNodeCode = findBestMatchingNodeCode(nodeCode, _state.value.designNodes)
         val remain = (planned - actual).coerceAtLeast(0f)
         val upsertResult = progressRepository.upsert(
             NodeProgress(
                 id = UUID.randomUUID().toString(),
                 projectId = projectId,
-                nodeCode = nodeCode,
+                nodeCode = normalizedNodeCode,
                 planned = planned,
                 actual = actual,
                 remain = remain,
@@ -97,7 +99,7 @@ fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float,
         }
         markProjectChanged(projectId, "construction_progress_updated")
         _state.value = _state.value.copy(
-            importUi = _state.value.importUi.copy(message = "Đã cập nhật thi công cho node ")
+            importUi = _state.value.importUi.copy(message = "Đã cập nhật thi công cho node $normalizedNodeCode")
         )
     }
 }
@@ -117,20 +119,27 @@ fun WorkspaceViewModel.addDailyLog(
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
 
-        if (!nodeCode.isNullOrBlank() && categoryName.isNotBlank() && volume > 0.0) {
-            val node = ensureIndexes().nodesByCode[nodeCode]
-            val plannedVolume = extractPlannedQty(node, categoryName)
+        val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        val categoryMatch = if (categoryName.isNotBlank()) {
+            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.materialRows)
+        } else null
+        val normalizedCategory = categoryMatch?.first ?: categoryName
+        val normalizedUnit = categoryMatch?.second ?: unit
+
+        if (!normalizedNodeCode.isNullOrBlank() && normalizedCategory.isNotBlank() && volume > 0.0) {
+            val node = ensureIndexes().nodesByCode[normalizedNodeCode]
+            val plannedVolume = extractPlannedQty(node, normalizedCategory)
             val existingMaterials = _state.value.materialRows
             val existing = existingMaterials.firstOrNull {
-                (it.nodeCode == nodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == nodeCode) &&
-                    it.materialName.equals(categoryName, ignoreCase = true)
+                (it.nodeCode == normalizedNodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == normalizedNodeCode) &&
+                    it.materialName.equals(normalizedCategory, ignoreCase = true)
             }
             val currentActual = (existing?.actualQty ?: 0f) + volume.toFloat()
             val newMaterial = MaterialProgress(
                 id = existing?.id ?: UUID.randomUUID().toString(),
                 projectId = projectId,
-                nodeCode = nodeCode,
-                materialName = existing?.materialName ?: categoryName,
+                nodeCode = normalizedNodeCode,
+                materialName = existing?.materialName ?: normalizedCategory,
                 plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                 actualQty = currentActual,
                 updatedAtEpochMs = System.currentTimeMillis()
@@ -142,8 +151,8 @@ fun WorkspaceViewModel.addDailyLog(
             } else {
                 100f
             }
-            val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == nodeCode }
-            addConstructionProgress(nodeCode, existingProgress?.planned ?: 100f, calculatedProgress)
+            val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == normalizedNodeCode }
+            addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, calculatedProgress)
         }
 
         val log = com.mapsupervision.domain.model.DailyLog(
@@ -155,11 +164,11 @@ fun WorkspaceViewModel.addDailyLog(
             createdAtEpochMs = System.currentTimeMillis(),
             weather = weather,
             temperature = temperature,
-            nodeCode = nodeCode.takeIf { !it.isNullOrBlank() },
+            nodeCode = normalizedNodeCode.takeIf { !it.isNullOrBlank() },
             dateEpochDay = dateEpochDay,
             volume = volume,
-            unit = unit,
-            categoryName = categoryName
+            unit = normalizedUnit,
+            categoryName = normalizedCategory
         )
         val result = dailyLogRepository.add(log)
         if (result is AppResult.Error) {
@@ -279,17 +288,18 @@ fun WorkspaceViewModel.addNote(objectCode: String, content: String) {
     if (content.isBlank()) return
     viewModelScope.launch {
         val projectId = _state.value.activeProjectId ?: return@launch
+        val normalizedObjectCode = findBestMatchingNodeCode(objectCode, _state.value.designNodes)
         noteRepository.add(
             Note(
                 id = UUID.randomUUID().toString(),
                 projectId = projectId,
-                objectCode = objectCode,
+                objectCode = normalizedObjectCode,
                 content = content,
                 createdAtEpochMs = System.currentTimeMillis()
             )
         )
         markProjectChanged(projectId, "note_added")
-        loadNotesAndTasks(objectCode)
+        loadNotesAndTasks(normalizedObjectCode)
     }
 }
 
@@ -308,11 +318,12 @@ fun WorkspaceViewModel.addTask(objectCode: String, title: String) {
     if (title.isBlank()) return
     viewModelScope.launch {
         val projectId = _state.value.activeProjectId ?: return@launch
+        val normalizedObjectCode = findBestMatchingNodeCode(objectCode, _state.value.designNodes)
         taskRepository.upsert(
             Task(
                 id = UUID.randomUUID().toString(),
                 projectId = projectId,
-                objectCode = objectCode,
+                objectCode = normalizedObjectCode,
                 title = title,
                 description = "",
                 status = TaskStatus.TODO,
@@ -320,7 +331,7 @@ fun WorkspaceViewModel.addTask(objectCode: String, title: String) {
             )
         )
         markProjectChanged(projectId, "task_added")
-        loadNotesAndTasks(objectCode)
+        loadNotesAndTasks(normalizedObjectCode)
     }
 }
 
@@ -567,6 +578,165 @@ private fun WorkspaceViewModel.normalizeVietnamese(text: String): String {
     val stripped = java.text.Normalizer.normalize(text.lowercase(java.util.Locale.US), java.text.Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
     return stripped.replace("d", "d").replace(Regex("[^a-z0-9 ]+"), " ").trim().replace(Regex("\\s+"), " ")
+}
+
+private fun WorkspaceViewModel.normalizeForMatching(text: String): String {
+    val lowercase = text.trim().lowercase(java.util.Locale.US)
+        .replace('đ', 'd')
+        .replace('Đ', 'd')
+    val normalized = java.text.Normalizer.normalize(lowercase, java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{Mn}+"), "")
+    return normalized.replace(Regex("[^a-z0-9]+"), "")
+}
+
+private val CATEGORY_SYNONYMS = mapOf(
+    "raicap" to "Kéo cáp",
+    "keocap" to "Kéo cáp",
+    "luoncap" to "Kéo cáp",
+    "lapcap" to "Kéo cáp",
+    "cap" to "Kéo cáp",
+    "be tong" to "Bê tông",
+    "betong" to "Bê tông",
+    "domong" to "Móng",
+    "dapmong" to "Móng",
+    "daomong" to "Móng",
+    "bemong" to "Móng",
+    "lammong" to "Móng",
+    "lapthietbi" to "Lắp đặt thiết bị",
+    "lapdatthietbi" to "Lắp đặt thiết bị",
+    "lapcamera" to "Lắp đặt thiết bị",
+    "laptu" to "Lắp đặt thiết bị"
+)
+
+private fun WorkspaceViewModel.findBestMatchingNodeCode(inputCode: String, nodes: List<GisNode>): String {
+    if (inputCode.isBlank()) return inputCode
+    val cleanInput = inputCode.trim().lowercase()
+
+    // 1. Exact or case-insensitive match
+    val directMatch = nodes.firstOrNull { it.code.trim().equals(inputCode.trim(), ignoreCase = true) }
+    if (directMatch != null) return directMatch.code
+
+    // 2. Accent-stripped and non-alphanumeric stripped match
+    val normInput = normalizeForMatching(cleanInput)
+    val normMatch = nodes.firstOrNull { normalizeForMatching(it.code).equals(normInput, ignoreCase = true) }
+    if (normMatch != null) return normMatch.code
+
+    // 3. Numeric matching fallback
+    val inputDigits = cleanInput.filter { it.isDigit() }
+    if (inputDigits.isNotEmpty()) {
+        val digitMatches = nodes.filter { node ->
+            val nodeDigits = node.code.filter { it.isDigit() }
+            nodeDigits.isNotEmpty() && (nodeDigits == inputDigits || nodeDigits.toIntOrNull() == inputDigits.toIntOrNull())
+        }
+        if (digitMatches.isNotEmpty()) {
+            var bestScore = 0.0
+            var bestMatch: GisNode? = null
+            digitMatches.forEach { node ->
+                val score = StringSimilarity.similarityScore(normalizeForMatching(node.code), normInput)
+                if (score > bestScore) {
+                    bestScore = score
+                    bestMatch = node
+                }
+            }
+            if (bestMatch != null) {
+                return bestMatch!!.code
+            }
+        }
+    }
+
+    // 4. Similarity score match (threshold e.g. 0.7)
+    var bestScore = 0.0
+    var bestMatch: GisNode? = null
+    nodes.forEach { node ->
+        val score = StringSimilarity.similarityScore(normalizeForMatching(node.code), normInput)
+        if (score > bestScore) {
+            bestScore = score
+            bestMatch = node
+        }
+    }
+    if (bestScore >= 0.7 && bestMatch != null) {
+        return bestMatch!!.code
+    }
+    return inputCode
+}
+
+private fun WorkspaceViewModel.findBestMatchingCategory(
+    inputCategory: String,
+    categories: List<WorkCategory>,
+    materials: List<MaterialProgress>
+): Pair<String, String>? {
+    if (inputCategory.isBlank()) return null
+    val cleanInput = inputCategory.trim().lowercase()
+
+    // 1. Check synonym dictionary map
+    val normInput = normalizeForMatching(cleanInput)
+    val synonymTargetName = CATEGORY_SYNONYMS[normInput]
+    if (synonymTargetName != null) {
+        val matchedCat = categories.firstOrNull { normalizeForMatching(it.name) == normalizeForMatching(synonymTargetName) }
+        if (matchedCat != null) return matchedCat.name to matchedCat.unit
+    }
+
+    // 2. Check direct unit hint against known categories/materials
+    val unitHintTarget = when (normInput) {
+        "m3" -> categories.firstOrNull { normalizeForMatching(it.name).contains("betong") }
+        "m" -> categories.firstOrNull { normalizeForMatching(it.name).contains("cap") }
+        "m2" -> categories.firstOrNull { normalizeForMatching(it.name).contains("sanlap") }
+        else -> null
+    }
+    if (unitHintTarget != null) return unitHintTarget.name to unitHintTarget.unit
+
+    // 3. Check exact match in workCategories
+    val directCat = categories.firstOrNull { it.name.trim().equals(inputCategory.trim(), ignoreCase = true) }
+    if (directCat != null) return directCat.name to directCat.unit
+
+    // 4. Check exact match in materials
+    val directMat = materials.firstOrNull { it.materialName.trim().equals(inputCategory.trim(), ignoreCase = true) }
+    if (directMat != null) {
+        val catUnit = categories.firstOrNull { it.name.trim().equals(directMat.materialName.trim(), ignoreCase = true) }?.unit ?: ""
+        return directMat.materialName to catUnit
+    }
+
+    // 5. Normalized matching (ignoring accents, spaces, special chars)
+    val normCat = categories.firstOrNull { normalizeForMatching(it.name).equals(normInput, ignoreCase = true) }
+    if (normCat != null) return normCat.name to normCat.unit
+
+    val normMat = materials.firstOrNull { normalizeForMatching(it.materialName).equals(normInput, ignoreCase = true) }
+    if (normMat != null) {
+        val catUnit = categories.firstOrNull { it.name.trim().equals(normMat.materialName.trim(), ignoreCase = true) }?.unit ?: ""
+        return normMat.materialName to catUnit
+    }
+
+    // 6. Similarity match using StringSimilarity
+    var bestScore = 0.0
+    var bestCat: WorkCategory? = null
+    categories.forEach { cat ->
+        val score = StringSimilarity.similarityScore(normalizeForMatching(cat.name), normInput)
+        if (score > bestScore) {
+            bestScore = score
+            bestCat = cat
+        }
+    }
+    
+    var bestMatScore = 0.0
+    var bestMat: MaterialProgress? = null
+    materials.forEach { mat ->
+        val score = StringSimilarity.similarityScore(normalizeForMatching(mat.materialName), normInput)
+        if (score > bestMatScore) {
+            bestMatScore = score
+            bestMat = mat
+        }
+    }
+
+    if (bestScore >= 0.7 || bestMatScore >= 0.7) {
+        if (bestScore >= bestMatScore && bestCat != null) {
+            return bestCat!!.name to bestCat!!.unit
+        } else if (bestMat != null) {
+            val catUnit = categories.firstOrNull { it.name.trim().equals(bestMat!!.materialName.trim(), ignoreCase = true) }?.unit ?: ""
+            return bestMat!!.materialName to catUnit
+        }
+    }
+
+    return null
 }
 
 private fun WorkspaceViewModel.nodeMatchesQuery(node: GisNode, raw: String, normalized: String): Boolean {
@@ -971,3 +1141,168 @@ private fun WorkspaceViewModel.collectSummaryProperties(startSummary: String?, e
         }
     return map.entries.map { it.key to it.value }
 }
+
+fun WorkspaceViewModel.updateSitePhoto(
+    photoId: String,
+    tagCodesCsv: String,
+    matchedNodeCode: String?,
+    lat: Double?,
+    lon: Double?
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val photosResult = photoRepository.byProject(projectId)
+        val existingPhoto = (photosResult as? AppResult.Success)?.data?.find { it.id == photoId }
+        
+        if (existingPhoto == null) {
+            _state.value = _state.value.copy(
+                importUi = _state.value.importUi.copy(
+                    message = "Lỗi: Không tìm thấy ảnh $photoId để cập nhật."
+                )
+            )
+            return@launch
+        }
+        
+        val normalizedNodeCode = matchedNodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        
+        val updatedPhoto = existingPhoto.copy(
+            tagCodesCsv = tagCodesCsv,
+            matchedNodeCode = normalizedNodeCode ?: existingPhoto.matchedNodeCode,
+            objectCode = normalizedNodeCode ?: existingPhoto.objectCode,
+            latitude = lat ?: existingPhoto.latitude,
+            longitude = lon ?: existingPhoto.longitude,
+            matchedAtEpochMs = System.currentTimeMillis()
+        )
+        
+        val result = photoRepository.add(updatedPhoto)
+        if (result is AppResult.Error) {
+            _state.value = _state.value.copy(
+                importUi = _state.value.importUi.copy(
+                    message = "Lỗi cập nhật ảnh: ${result.throwable.message}"
+                )
+            )
+            return@launch
+        }
+        
+        markProjectChanged(projectId, "photo_updated")
+        _state.value = _state.value.copy(
+            importUi = _state.value.importUi.copy(message = "Đã cập nhật ảnh $photoId thành công.")
+        )
+    }
+}
+
+fun WorkspaceViewModel.saveReportDraft(
+    title: String,
+    executiveSummary: String,
+    riskSection: String,
+    recommendedActions: List<String>
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val draft = com.mapsupervision.domain.model.ReportDraft(
+            id = UUID.randomUUID().toString(),
+            projectId = projectId,
+            title = title,
+            executiveSummary = executiveSummary,
+            riskSection = riskSection,
+            recommendedActions = recommendedActions,
+            createdAtEpochMs = System.currentTimeMillis()
+        )
+        val result = reportDraftRepository.add(draft)
+        if (result is AppResult.Error) {
+            _state.value = _state.value.copy(
+                importUi = _state.value.importUi.copy(
+                    message = "Lỗi lưu bản nháp báo cáo: ${result.throwable.message}"
+                )
+            )
+            return@launch
+        }
+        
+        markProjectChanged(projectId, "report_draft_saved")
+        _state.value = _state.value.copy(
+            importUi = _state.value.importUi.copy(message = "Đã lưu bản nháp báo cáo thành công.")
+        )
+    }
+}
+
+fun WorkspaceViewModel.addDailyLogBatch(
+    workItem: String,
+    manpower: Int,
+    note: String,
+    weather: String = "",
+    temperature: Double = 0.0,
+    nodeCodes: List<String> = emptyList(),
+    dateEpochDay: Long = 0L,
+    volume: Double = 0.0,
+    unit: String = "",
+    categoryName: String = ""
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+
+        val categoryMatch = if (categoryName.isNotBlank()) {
+            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.materialRows)
+        } else null
+        val normalizedCategory = categoryMatch?.first ?: categoryName
+        val normalizedUnit = categoryMatch?.second ?: unit
+
+        val normalizedNodeCodes = nodeCodes.map { findBestMatchingNodeCode(it, _state.value.designNodes) }
+
+        if (normalizedCategory.isNotBlank() && volume > 0.0) {
+            for (nodeCode in normalizedNodeCodes) {
+                if (nodeCode.isBlank()) continue
+                val node = ensureIndexes().nodesByCode[nodeCode]
+                val plannedVolume = extractPlannedQty(node, normalizedCategory)
+                val existingMaterials = _state.value.materialRows
+                val existing = existingMaterials.firstOrNull {
+                    (it.nodeCode == nodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == nodeCode) &&
+                        it.materialName.equals(normalizedCategory, ignoreCase = true)
+                }
+                val currentActual = (existing?.actualQty ?: 0f) + volume.toFloat()
+                val newMaterial = MaterialProgress(
+                    id = existing?.id ?: UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    nodeCode = nodeCode,
+                    materialName = existing?.materialName ?: normalizedCategory,
+                    plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
+                    actualQty = currentActual,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                materialProgressRepository.upsert(newMaterial)
+
+                val calculatedProgress = if (newMaterial.plannedQty > 0f) {
+                    (newMaterial.actualQty / newMaterial.plannedQty * 100f).coerceIn(0f, 100f)
+                } else {
+                    100f
+                }
+                val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == nodeCode }
+                addConstructionProgress(nodeCode, existingProgress?.planned ?: 100f, calculatedProgress)
+            }
+        }
+
+        val log = com.mapsupervision.domain.model.DailyLog(
+            id = UUID.randomUUID().toString(),
+            projectId = projectId,
+            workItem = workItem,
+            manpower = manpower,
+            note = note,
+            createdAtEpochMs = System.currentTimeMillis(),
+            weather = weather,
+            temperature = temperature,
+            nodeCode = normalizedNodeCodes.firstOrNull()?.takeIf { it.isNotBlank() },
+            dateEpochDay = dateEpochDay,
+            volume = volume,
+            unit = normalizedUnit,
+            categoryName = normalizedCategory,
+            batchGroupId = UUID.randomUUID().toString(),
+            appliedNodeCodesCsv = normalizedNodeCodes.filter { it.isNotBlank() }.joinToString(",")
+        )
+        val result = dailyLogRepository.add(log)
+        if (result is AppResult.Error) {
+            AppLogger.d("dailylog.addBatch.error project=$projectId msg=${result.throwable.message}")
+            return@launch
+        }
+        markProjectChanged(projectId, "daily_log_batch_added")
+    }
+}
+

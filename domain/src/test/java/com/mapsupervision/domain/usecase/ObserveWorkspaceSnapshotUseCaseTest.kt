@@ -44,6 +44,9 @@ class ObserveWorkspaceSnapshotUseCaseTest {
                     id = "s1",
                     projectId = "p1",
                     objectCode = "N-1",
+                    tagCodesCsv = "N-1",
+                    matchedNodeCode = "N-1",
+                    matchedRouteCode = null,
                     filePath = "/tmp/p.jpg",
                     thumbnailPath = "/tmp/t.jpg",
                     latitude = null,
@@ -52,7 +55,9 @@ class ObserveWorkspaceSnapshotUseCaseTest {
                     isGpsMocked = false,
                     engineer = "Field",
                     capturedAtEpochMs = 6L,
-                    locationStatus = PhotoLocationStatus.MISSING
+                    locationStatus = PhotoLocationStatus.MISSING,
+                    matchedAtEpochMs = 6L,
+                    matchingTimeOffsetMs = 0L
                 )
             )
         )

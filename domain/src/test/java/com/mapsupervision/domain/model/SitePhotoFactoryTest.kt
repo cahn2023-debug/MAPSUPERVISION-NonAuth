@@ -3,6 +3,7 @@ package com.mapsupervision.domain.model
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import com.mapsupervision.domain.model.createStoredSitePhoto
 
 class SitePhotoFactoryTest {
 

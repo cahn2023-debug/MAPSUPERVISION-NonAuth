@@ -18,6 +18,9 @@ data class SitePhoto(
     val id: String,
     val projectId: String,
     val objectCode: String,
+    val tagCodesCsv: String = "",
+    val matchedNodeCode: String? = null,
+    val matchedRouteCode: String? = null,
     val filePath: String,
     val thumbnailPath: String,
     val latitude: Double?,
@@ -26,5 +29,7 @@ data class SitePhoto(
     val isGpsMocked: Boolean,
     val locationStatus: PhotoLocationStatus,
     val engineer: String,
-    val capturedAtEpochMs: Long
+    val capturedAtEpochMs: Long,
+    val matchedAtEpochMs: Long = 0L,
+    val matchingTimeOffsetMs: Long = 0L
 )

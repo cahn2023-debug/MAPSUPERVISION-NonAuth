@@ -26,7 +26,6 @@ import com.mapsupervision.domain.model.ImportedFile
 import com.mapsupervision.domain.model.MaterialProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
-import com.mapsupervision.domain.model.createStoredSitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
@@ -394,36 +393,12 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                     )
                 )
             }
-        }.onSuccess {
+        }.onSuccess { draft ->
             // For KML/KMZ files, directly import without going through draft override
             val existingFileId = _state.value.importMappingUi.existingFileId
             if (existingFileId != null) {
                 // Re-mapping an already-imported file: only update nodes/routes, no new ImportedFile
                 runCatching {
-                    val draft = withContext(Dispatchers.IO) {
-                        importService.importNonExcelWithMapping(
-                            projectId = projectId,
-                            uri = uri,
-                            mapping = NonExcelImportMapping(
-                                positionField = ui.positionField,
-                                coordinateField = ui.coordinateField.ifBlank { null },
-                                contractorField = ui.contractorField.ifBlank { null },
-                                mapNumberField = ui.mapNumberField.ifBlank { null },
-                                objectTypeField = ui.objectTypeField.ifBlank { null },
-                                itemFields = parseItemColumnsCsv(ui.itemFieldsCsv),
-                                routeLengthField = ui.routeLengthField.ifBlank { null }
-                            ),
-                            confirmed = ConfirmedFieldFlags(
-                                positionField = ui.confirmedPositionField,
-                                coordinateField = ui.confirmedCoordinateField,
-                                contractorField = ui.confirmedContractorField,
-                                mapNumberField = ui.confirmedMapNumberField,
-                                objectTypeField = ui.confirmedObjectTypeField,
-                                itemFields = ui.confirmedItemFields,
-                                routeLengthField = ui.confirmedRouteLengthField
-                            )
-                        )
-                    }
                     val existingNodes = _state.value.designNodes.toMutableList()
                     val existingRoutes = _state.value.designRoutes.toMutableList()
                     val merged = withContext(Dispatchers.Default) {
@@ -455,13 +430,50 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                     }
                 }
             } else {
-                importDesignFiles(listOf(uri))
-                updateImportMappingUiIfChanged { ui ->
-                    ui.copy(
-                        isLoading = false,
-                        message = "Đã xác nhận ánh xạ, đang import dữ liệu..."
+                val importedId = UUID.randomUUID().toString()
+                val importedFile = ImportedFile(
+                    id = importedId,
+                    projectId = projectId,
+                    fileName = draft.fileName,
+                    fileType = draft.fileType,
+                    storedPath = draft.storedPath,
+                    summary = draft.summary,
+                    importedAtEpochMs = System.currentTimeMillis()
+                )
+                val existingNodes = _state.value.designNodes.toMutableList()
+                val existingRoutes = _state.value.designRoutes.toMutableList()
+                val merged = withContext(Dispatchers.Default) {
+                    deduplicateImportedGeometry(
+                        projectId = projectId,
+                        incomingNodes = draft.suggestedNodes.map { it.copy(importedFileId = importedId) },
+                        incomingRoutes = draft.suggestedRoutes.map { it.copy(importedFileId = importedId) },
+                        existingNodes = existingNodes,
+                        existingRoutes = existingRoutes
                     )
                 }
+                importedFileRepository.upsert(importedFile)
+                gisRepository.upsertNodes(merged.nodesToInsert)
+                gisRepository.upsertRoutes(merged.routesToInsert)
+                existingNodes.addAll(merged.nodesToInsert)
+                existingRoutes.addAll(merged.routesToInsert)
+                _state.value = _state.value.copy(
+                    importMappingUi = _state.value.importMappingUi.copy(
+                        sourceUri = null,
+                        sourceFileName = "",
+                        isLoading = false,
+                        showMappingDialog = false,
+                        message = "ÄÃ£ nháº­p dá»¯ liá»‡u: +${merged.nodesToInsert.size} node, +${merged.routesToInsert.size} tuyáº¿n"
+                    ),
+                    importedFiles = _state.value.importedFiles + importedFile,
+                    designNodes = existingNodes,
+                    designRoutes = existingRoutes,
+                    dashboard = buildDashboard(
+                        existingNodes,
+                        existingRoutes,
+                        _state.value.constructionProgress,
+                        emptyList()
+                    )
+                )
             }
         }.onFailure { ex ->
             updateImportMappingUiIfChanged { ui ->
@@ -764,8 +776,8 @@ internal fun WorkspaceViewModel.parseItemColumnsCsv(csv: String): List<String> {
     return result
 }
 
-internal fun WorkspaceViewModel.normalizeCode(code: String): String = WorkspaceImportHelper.normalizeCode(code)
-internal fun WorkspaceViewModel.normalizeName(name: String): String = WorkspaceImportHelper.normalizeName(name)
+internal fun WorkspaceViewModel.normalizeCode(code: String): String = com.mapsupervision.domain.ai.CanonicalTextNormalizer.normalizeCode(code)
+internal fun WorkspaceViewModel.normalizeName(name: String): String = com.mapsupervision.domain.ai.CanonicalTextNormalizer.normalizeName(name)
 internal fun WorkspaceViewModel.coordBucketKey(lat: Double, lon: Double): Long = WorkspaceImportHelper.coordBucketKey(lat, lon)
 internal fun WorkspaceViewModel.routeKey(startCode: String, endCode: String): String = WorkspaceImportHelper.routeKey(startCode, endCode)
 internal fun WorkspaceViewModel.routeKeyNormalized(a: String, b: String): String = WorkspaceImportHelper.routeKeyNormalized(a, b)

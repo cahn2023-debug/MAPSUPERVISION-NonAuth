@@ -8,7 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as lazyItemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
@@ -229,7 +229,7 @@ fun DataHubScreen(
                             .background(orangeColor, RoundedCornerShape(8.dp))
                             .size(48.dp)
                     ) {
-                        Icon(Icons.Outlined.CloudUpload, contentDescription = "Tải lên dữ liệu", tint = Color.Black)
+                        Icon(Icons.Outlined.CloudUpload, contentDescription = "Tải lên dữ liệu", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }
@@ -242,12 +242,12 @@ fun DataHubScreen(
                 Button(
                     onClick = { onSetDesignTab(false) },
                     modifier = Modifier.weight(1f).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (!screenUiState.isDesignTab) orangeColor else cardBgColor,
-                        contentColor = if (!screenUiState.isDesignTab) Color.Black else secondaryTextColor
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (!screenUiState.isDesignTab) orangeColor else cardBgColor,
+                    contentColor = if (!screenUiState.isDesignTab) MaterialTheme.colorScheme.onPrimary else secondaryTextColor
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
                     Icon(Icons.Outlined.Handyman, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Cập nhật thi công", fontWeight = FontWeight.Bold)
@@ -257,12 +257,12 @@ fun DataHubScreen(
                 Button(
                     onClick = { onSetDesignTab(true) },
                     modifier = Modifier.weight(1f).height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (screenUiState.isDesignTab) orangeColor else cardBgColor,
-                        contentColor = if (screenUiState.isDesignTab) Color.Black else secondaryTextColor
-                    ),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (screenUiState.isDesignTab) orangeColor else cardBgColor,
+                    contentColor = if (screenUiState.isDesignTab) MaterialTheme.colorScheme.onPrimary else secondaryTextColor
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
                     Icon(Icons.Outlined.Architecture, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Nhập thiết kế", fontWeight = FontWeight.Bold)
@@ -462,7 +462,7 @@ private fun DesignTabContent(
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = orangeColor,
                     containerColor = cardBgColor,
-                    selectedLabelColor = Color.Black,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                     labelColor = secondaryTextColor
                 ),
                 border = FilterChipDefaults.filterChipBorder(
@@ -518,7 +518,7 @@ private fun DesignTabContent(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(state.importedFiles, key = { it.id }) { file ->
+            lazyItemsIndexed(state.importedFiles, key = { _, file -> file.id }) { _, file ->
                 val isDragged = draggedFile?.id == file.id
                 val isSelected = selectedFile?.id == file.id
                 val isCombineTarget = draggedFile != null && draggedFile?.id != file.id
@@ -640,7 +640,7 @@ private fun DesignTabContent(
                                 modifier = Modifier.weight(1f).height(32.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = dangerColor,
-                                    contentColor = Color.White
+                                    contentColor = MaterialTheme.colorScheme.onSurface
                                 ),
                                 shape = RoundedCornerShape(6.dp),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
@@ -707,9 +707,9 @@ private fun DesignTabContent(
     }
     val dotColors = listOf(
         dangerColor,
-        Color(0xFFF97316),
-        Color(0xFFEAB308),
-        Color(0xFFA855F7),
+        extendedColors.warning,
+        extendedColors.mapAccent,
+        MaterialTheme.colorScheme.primary,
         extendedColors.info
     )
     val allItems = remember(

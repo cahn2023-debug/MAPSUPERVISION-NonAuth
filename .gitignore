@@ -14,3 +14,7 @@ _
 *.py
 old_*.txt
 *.pyc
+extracted_lines.txt
+match.json
+match.txt
+generate_code_html.ps1

@@ -118,6 +118,7 @@ import android.net.Uri
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import com.mapsupervision.app.ui.theme.extendedColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,13 +193,29 @@ fun MapHubScreen(
     var searchExpanded by remember { mutableStateOf(false) }
     var showPhotoPopup by remember { mutableStateOf(false) }
 
-    val darkBgColor = Color(0xFF0F172A)
-    val cardBgColor = Color(0xFF1E293B)
-    val orangeColor = Color(0xFFF5A623)
-    val textColor = Color(0xFFF8FAFC)
-    val secondaryTextColor = Color(0xFF94A3B8)
-    LaunchedEffect(designNodes, designRoutes) {
-        if (designNodes.isNotEmpty() && mapUi.selectedNode == null && mapUi.selectedRoute == null) {
+    val colors = MaterialTheme.colorScheme
+    val extendedColors = MaterialTheme.extendedColors
+    val darkBgColor = colors.background
+    val cardBgColor = extendedColors.panelBackgroundAlt
+    val orangeColor = extendedColors.mapAccent
+    val textColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val dangerColor = extendedColors.danger
+    val dividerColor = colors.outlineVariant
+    val surfaceColor = colors.surface
+    val onSurfaceColor = colors.onSurface
+    val onPrimaryColor = colors.onPrimary
+    LaunchedEffect(
+        designNodes.size,
+        designNodes.firstOrNull()?.id,
+        designNodes.lastOrNull()?.id,
+        mapUi.selectedNode?.id,
+        mapUi.selectedRoute?.id
+    ) {
+        if ((designNodes.isNotEmpty() || designRoutes.isNotEmpty()) &&
+            mapUi.selectedNode == null &&
+            mapUi.selectedRoute == null
+        ) {
             GisMapBridgeRegistry.bridge?.fitToObjects()
         }
     }
@@ -249,7 +266,7 @@ fun MapHubScreen(
                             },
                             modifier = Modifier.weight(1f),
                             shape = MaterialTheme.shapes.medium,
-                            colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = Color.Black)
+                            colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = onPrimaryColor)
                         ) { Text("Tạo mới", fontWeight = FontWeight.Bold) }
 
                         OutlinedButton(
@@ -290,7 +307,7 @@ fun MapHubScreen(
                     Text("Danh sách dự án", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = textColor)
 
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(projectState.projects) { p ->
+                        items(projectState.projects, key = { project -> "${project.id}:${project.slug}" }) { p ->
                             val isActive = projectState.activeProjectId == p.id
                             ElevatedCard(
                                 modifier = Modifier
@@ -317,23 +334,23 @@ fun MapHubScreen(
                                         Text(
                                             p.name,
                                             style = MaterialTheme.typography.titleMedium,
-                                            color = if (isActive) Color.Black else textColor,
+                                            color = if (isActive) onPrimaryColor else textColor,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             "Mã: ${p.slug}",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = if (isActive) Color(0xFF4B3800) else secondaryTextColor
+                                            color = if (isActive) colors.onPrimaryContainer else secondaryTextColor
                                         )
                                     }
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         if (isActive) {
                                             Box(
                                                 modifier = Modifier
-                                                    .background(Color(0xFFFFF3CD), MaterialTheme.shapes.small)
+                                                    .background(colors.primaryContainer, MaterialTheme.shapes.small)
                                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                                             ) {
-                                                Text("ĐANG HOẠT ĐỘNG", style = MaterialTheme.typography.labelSmall, color = Color(0xFF856404), fontWeight = FontWeight.Bold)
+                                                Text("ĐANG HOẠT ĐỘNG", style = MaterialTheme.typography.labelSmall, color = colors.onPrimaryContainer, fontWeight = FontWeight.Bold)
                                             }
                                         } else {
                                             Text("KHÔNG HOẠT ĐỘNG", style = MaterialTheme.typography.labelSmall, color = secondaryTextColor)
@@ -344,15 +361,15 @@ fun MapHubScreen(
                                                  Icon(
                                                      imageVector = Icons.Default.Share,
                                                      contentDescription = "Export Project",
-                                                     tint = if (isActive) Color.Black else secondaryTextColor
+                                                     tint = if (isActive) onPrimaryColor else secondaryTextColor
                                                  )
                                             }
                                             IconButton(onClick = { onCloneProject(p.id, "${p.name} - Copy") }) {
-                                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Clone", tint = if (isActive) Color.Black else secondaryTextColor)
+                                                Icon(Icons.Outlined.ContentCopy, contentDescription = "Clone", tint = if (isActive) onPrimaryColor else secondaryTextColor)
                                             }
                                             if (!isActive) {
                                                 IconButton(onClick = { onDeleteProject(p.id) }) {
-                                                    Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444))
+                                                    Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = dangerColor)
                                                 }
                                                 Button(
                                                     onClick = {
@@ -361,7 +378,7 @@ fun MapHubScreen(
                                                     },
                                                     shape = MaterialTheme.shapes.small,
                                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = Color.Black)
+                                                    colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = onPrimaryColor)
                                                 ) { Text("Mở", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold) }
                                             }
                                         }
@@ -428,7 +445,7 @@ fun MapHubScreen(
                                                 modifier = Modifier
                                                     .size(12.dp)
                                                     .background(Color.Transparent, CircleShape)
-                                                    .border(1.dp, if (allSelected) orangeColor else Color.Gray, CircleShape)
+                                                    .border(1.dp, if (allSelected) orangeColor else dividerColor, CircleShape)
                                             )
                                             Text(
                                                 "Tất cả",
@@ -449,7 +466,7 @@ fun MapHubScreen(
                                     val hexColor = customHex ?: defaultHex
                                     val swatchColor = try {
                                         Color(AndroidColor.parseColor(hexColor))
-                                    } catch (_: Exception) { Color(0xFFF97316) }
+                                    } catch (_: Exception) { orangeColor }
 
                                     DropdownMenuItem(
                                         text = {
@@ -470,7 +487,7 @@ fun MapHubScreen(
                                                         .background(swatchColor, CircleShape)
                                                         .border(
                                                             width = if (isSelected) 2.dp else 1.dp,
-                                                            color = if (isSelected) Color.White else Color.Transparent,
+                                                            color = if (isSelected) colors.onSurface else Color.Transparent,
                                                             shape = CircleShape
                                                         )
                                                         .clickable(
@@ -555,7 +572,7 @@ fun MapHubScreen(
                     shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.elevatedCardColors(
                         containerColor = if (mapUi.measureDistanceText.isNotBlank())
-                            Color(0xFFEF4444) else Color(0xFF1E293B)
+                            dangerColor else cardBgColor
                     )
                 ) {
                     Row(
@@ -564,13 +581,13 @@ fun MapHubScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         androidx.compose.material.icons.Icons.Outlined.Straighten.let {
-                            Icon(it, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Icon(it, contentDescription = null, tint = onSurfaceColor, modifier = Modifier.size(16.dp))
                         }
                         Text(
                             text = if (mapUi.measureDistanceText.isNotBlank())
                                 "onMeasureDistance"
                             else "Chạm 2 điểm để đo",
-                            color = Color.White,
+                            color = onSurfaceColor,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -586,11 +603,11 @@ fun MapHubScreen(
                         .padding(top = 84.dp)
                         .widthIn(max = 360.dp),
                     shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF1E293B))
+                    colors = CardDefaults.elevatedCardColors(containerColor = cardBgColor)
                 ) {
                     Text(
                         text = mapUi.message,
-                        color = Color.White,
+                        color = onSurfaceColor,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     )
@@ -601,21 +618,21 @@ fun MapHubScreen(
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 90.dp, end = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                ElevatedCard(shape = RoundedCornerShape(10.dp), colors = CardDefaults.elevatedCardColors(containerColor = Color.White)) {
+                ElevatedCard(shape = RoundedCornerShape(10.dp), colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = onZoomIn) { Icon(Icons.Outlined.Add, contentDescription = "Zoom In") }
-                        IconButton(onClick = onZoomOut) { Icon(Icons.Outlined.Remove, contentDescription = "Zoom Out") }
+                        IconButton(onClick = onZoomIn) { Icon(Icons.Outlined.Add, contentDescription = "Zoom In", tint = onSurfaceColor) }
+                        IconButton(onClick = onZoomOut) { Icon(Icons.Outlined.Remove, contentDescription = "Zoom Out", tint = onSurfaceColor) }
                         IconButton(onClick = { GisMapBridgeRegistry.bridge?.fitToObjects() }) {
-                            Icon(Icons.Outlined.ZoomOutMap, contentDescription = "Zoom Fit")
+                            Icon(Icons.Outlined.ZoomOutMap, contentDescription = "Zoom Fit", tint = onSurfaceColor)
                         }
                     }
                 }
-                ElevatedCard(shape = RoundedCornerShape(10.dp), colors = CardDefaults.elevatedCardColors(containerColor = Color.White)) {
+                ElevatedCard(shape = RoundedCornerShape(10.dp), colors = CardDefaults.elevatedCardColors(containerColor = surfaceColor)) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = onMyLocation) { Icon(Icons.Outlined.LocationSearching, contentDescription = "Location") }
+                        IconButton(onClick = onMyLocation) { Icon(Icons.Outlined.LocationSearching, contentDescription = "Location", tint = onSurfaceColor) }
                         Box {
                             IconButton(onClick = { showLayerMenu = true }) {
-                                Icon(Icons.Outlined.Layers, contentDescription = "Layer")
+                                Icon(Icons.Outlined.Layers, contentDescription = "Layer", tint = onSurfaceColor)
                             }
                             DropdownMenu(expanded = showLayerMenu, onDismissRequest = { showLayerMenu = false }) {
                                 DropdownMenuItem(text = { Text("Đường phố") }, onClick = { onMapBaseMapChanged(MapLayerType.STREET); showLayerMenu = false })
@@ -624,13 +641,13 @@ fun MapHubScreen(
                             }
                         }
                         IconButton(onClick = onToggleMeasure) {
-                            Icon(
-                                Icons.Outlined.Straighten,
-                                contentDescription = "Measure",
-                                tint = if (mapUi.measureEnabled) Color(0xFFEF4444) else Color.Black
-                            )
+                                Icon(
+                                    Icons.Outlined.Straighten,
+                                    contentDescription = "Measure",
+                                    tint = if (mapUi.measureEnabled) dangerColor else onSurfaceColor
+                                )
+                            }
                         }
-                    }
                 }
             }
 
@@ -735,7 +752,7 @@ fun MapHubScreen(
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                    Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = onPrimaryColor, modifier = Modifier.size(12.dp))
                                     Text("Chụp ảnh", fontSize = 10.sp)
                                 }
                             }
@@ -753,10 +770,10 @@ fun MapHubScreen(
                                 },
                                 modifier = Modifier.weight(1.2f),
                                 contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A623), contentColor = Color.Black)
+                                colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = onPrimaryColor)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Icon(Icons.AutoMirrored.Outlined.Assignment, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                    Icon(Icons.AutoMirrored.Outlined.Assignment, contentDescription = null, tint = onPrimaryColor, modifier = Modifier.size(12.dp))
                                     Text("Ghi chú & CV", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
@@ -892,7 +909,7 @@ fun MapHubScreen(
                           OutlinedButton(onClick = { onViewPhotos(); showPhotoPopup = true }, modifier = Modifier.weight(1f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Xem ảnh", fontSize = 11.sp) }
                           Button(onClick = onCapturePicture, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary), contentPadding = PaddingValues(horizontal = 4.dp)) {
                               Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                  Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                  Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = onPrimaryColor, modifier = Modifier.size(14.dp))
                                   Text("Chụp ảnh", fontSize = 11.sp)
                               }
                           }
@@ -904,11 +921,11 @@ fun MapHubScreen(
                                   showNotesAndTasksSheet = true
                               },
                               modifier = Modifier.weight(1.2f),
-                              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A623), contentColor = Color.Black),
+                              colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = onPrimaryColor),
                               contentPadding = PaddingValues(horizontal = 4.dp)
                           ) {
                               Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                  Icon(Icons.AutoMirrored.Outlined.Assignment, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                                  Icon(Icons.AutoMirrored.Outlined.Assignment, contentDescription = null, tint = onPrimaryColor, modifier = Modifier.size(14.dp))
                                   Text("Ghi chú & CV", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                               }
                           }
@@ -943,12 +960,12 @@ fun MapHubScreen(
         if (duplicateProject != null && duplicateUri != null) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = onDismissDuplicateDialog,
-                title = { Text("Trùng lặp dự án", fontWeight = FontWeight.Bold, color = Color.White) },
+                title = { Text("Trùng lặp dự án", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
                 text = {
                     Text(
                         "Dự án với mã '${duplicateProject.slug}' và tên '${duplicateProject.name}' đã tồn tại trong hệ thống. " +
                                 "Bạn muốn ghi đè lên dữ liệu cũ hay tạo một dự án mới làm bản sao?",
-                        color = Color.LightGray
+                        color = secondaryTextColor
                     )
                 },
                 confirmButton = {
@@ -965,7 +982,7 @@ fun MapHubScreen(
                         }
                         Button(
                             onClick = { onResolveDuplicateProject(duplicateUri, true, false) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White)
+                            colors = ButtonDefaults.buttonColors(containerColor = dangerColor, contentColor = onSurfaceColor)
                         ) {
                             Text("Ghi đè", fontWeight = FontWeight.Bold)
                         }
@@ -974,13 +991,13 @@ fun MapHubScreen(
                 dismissButton = {
                     OutlinedButton(
                         onClick = onDismissDuplicateDialog,
-                        border = BorderStroke(1.dp, Color.Gray),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
+                        border = BorderStroke(1.dp, dividerColor),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = secondaryTextColor)
                     ) {
                         Text("Hủy")
                     }
                 },
-                containerColor = Color(0xFF1E293B)
+                containerColor = cardBgColor
             )
         }
 

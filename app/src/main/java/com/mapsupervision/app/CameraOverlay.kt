@@ -198,7 +198,7 @@ fun CameraOverlay(
     var targetRotation by remember { mutableStateOf(Surface.ROTATION_0) }
 
     DisposableEffect(context, previewView, preview, imageCapture) {
-        targetRotation = previewView.display?.rotation ?: context.display?.rotation ?: Surface.ROTATION_0
+                targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
         preview.targetRotation = targetRotation
         imageCapture.targetRotation = targetRotation
 

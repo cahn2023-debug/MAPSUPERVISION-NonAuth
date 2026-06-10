@@ -5,16 +5,22 @@ import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.mapsupervision.core.logging.AppLogger
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 import timber.log.Timber
 
 @HiltAndroidApp
-class MapSupervisionApplication : Application(), ImageLoaderFactory {
+class MapSupervisionApplication : Application(), ImageLoaderFactory, Configuration.Provider {
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
     override fun onCreate() {
         super.onCreate()
         val isDebugBuild = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -55,6 +61,11 @@ class MapSupervisionApplication : Application(), ImageLoaderFactory {
             .crossfade(true)
             .build()
     }
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     private fun isLowRamDevice(context: Context): Boolean {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

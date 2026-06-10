@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -203,7 +203,7 @@ fun NotesAndTasksBottomSheet(
                                     }
                                 }
                             } else {
-                                items(notes, key = { it.id }) { note ->
+                                itemsIndexed(notes, key = { index, note -> "${note.id}:$index" }) { _, note ->
                                     ElevatedCard(
                                         colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF262D3D)),
                                         shape = RoundedCornerShape(8.dp),
@@ -378,7 +378,7 @@ fun NotesAndTasksBottomSheet(
                                     }
                                 }
                             } else {
-                                items(filteredTasks, key = { it.id }) { task ->
+                                itemsIndexed(filteredTasks, key = { index, task -> "${task.id}:$index" }) { _, task ->
                                     val isCompleted = task.status == TaskStatus.COMPLETED
                                     val isProgress = task.status == TaskStatus.IN_PROGRESS
 
@@ -565,7 +565,7 @@ fun NodePhotoViewerDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val rows = photos.chunked(3)
-                        items(rows) { rowPhotos ->
+                        itemsIndexed(rows, key = { index, rowPhotos -> "${rowPhotos.firstOrNull()?.id ?: "row"}:$index" }) { _, rowPhotos ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)

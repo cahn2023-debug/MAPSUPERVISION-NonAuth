@@ -18,6 +18,9 @@ data class SitePhotoEntity(
     @PrimaryKey val id: String,
     val projectId: String,
     val objectCode: String,
+    val tagCodesCsv: String,
+    val matchedNodeCode: String?,
+    val matchedRouteCode: String?,
     val filePath: String,
     val thumbnailPath: String,
     val latitude: Double?,
@@ -26,5 +29,7 @@ data class SitePhotoEntity(
     val isGpsMocked: Boolean,
     val locationStatus: PhotoLocationStatus,
     val engineer: String,
-    val capturedAtEpochMs: Long
+    val capturedAtEpochMs: Long,
+    val matchedAtEpochMs: Long,
+    val matchingTimeOffsetMs: Long
 )

@@ -5,7 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -356,7 +356,7 @@ fun CombineFilesDialog(
                                 contentPadding = PaddingValues(vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(filteredNodes, key = { it.id }) { row ->
+                                itemsIndexed(filteredNodes, key = { index, row -> "${row.id}:$index" }) { _, row ->
                                     NodeCompareRow(
                                         row = row,
                                         selectedLeftId = selectedLeftNodeId,
@@ -406,7 +406,7 @@ fun CombineFilesDialog(
                                 contentPadding = PaddingValues(vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(filteredRoutes, key = { it.id }) { row ->
+                                itemsIndexed(filteredRoutes, key = { index, row -> "${row.id}:$index" }) { _, row ->
                                     RouteCompareRow(
                                         row = row,
                                         selectedLeftId = selectedLeftRouteId,

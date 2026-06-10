@@ -194,7 +194,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         onNodeClickCallback = onNodeClick
         onRouteClickCallback = onRouteClick
         onMeasureDistanceCallback = onMeasureDistance
-        logSnapshot("Render", nodes, routes)
+        // logSnapshot removed to avoid heavy synchronous main-thread computations in Compose Render loop.
 
         val mapView = remember { 
             MapView(context).also { mv ->
@@ -452,21 +452,6 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val mapRef = map ?: return
         val style = mapRef.style ?: return
 
-        val renderKey = buildRenderKey(
-            nodes = nodesSnapshot,
-            routes = routesSnapshot,
-            labelField = latestLabelField,
-            showNumberLabels = latestShowNumberLabels,
-            colorByContractor = latestColorByContractor,
-            contractorColors = latestContractorColors
-        )
-        if (renderKey == lastRenderKey) {
-            return
-        }
-
-        lastRenderKey = renderKey
-        mapUpdateJob?.cancel()
-
         val localNodes = nodesSnapshot.toList()
         val localRoutes = routesSnapshot.toList()
         val localLabelField = latestLabelField
@@ -474,12 +459,28 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val localColorByContractor = latestColorByContractor
         val localContractorColors = latestContractorColors
         val localStyleEpoch = styleEpoch
-        val localRenderableNodes = localNodes.mapNotNull { node ->
-            renderCoordinateForNode(node)?.let { point -> node to point }
-        }
+        val previousRenderKey = lastRenderKey
 
+        mapUpdateJob?.cancel()
         mapUpdateJob = renderScope.launch {
             val renderPayload = withContext(Dispatchers.Default) {
+                val renderKey = buildMapRenderKey(
+                    nodes = localNodes,
+                    routes = localRoutes,
+                    labelField = localLabelField,
+                    showNumberLabels = localShowNumberLabels,
+                    colorByContractor = localColorByContractor,
+                    contractorColors = localContractorColors
+                )
+
+                if (renderKey == previousRenderKey && localStyleEpoch == styleEpoch) {
+                    return@withContext null
+                }
+
+                val localRenderableNodes = localNodes.mapNotNull { node ->
+                    renderCoordinateForNode(node)?.let { point -> node to point }
+                }
+
                 val nodeByCode = localRenderableNodes.associate { (node, point) ->
                     node.code.trim().uppercase() to point
                 }
@@ -490,7 +491,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 }
 
                 val displayedNodes = localRenderableNodes.filter { (node, _) ->
-                    !routeNodeCodes.contains(node.code.trim().uppercase())
+                    val upperCode = node.code.trim().uppercase()
+                    !(routeNodeCodes.contains(upperCode) && isStructuralRouteNodeCode(upperCode))
                 }
 
                 val nodeFeatures = displayedNodes.map { (node, point) ->
@@ -529,33 +531,41 @@ private class MapLibreGisMapBridge : GisMapBridge {
                     }
                 }
 
+                val nodeGeoJson = FeatureCollection.fromFeatures(nodeFeatures).toJson()
+                val routeGeoJson = FeatureCollection.fromFeatures(routeFeatures).toJson()
+
                 RenderPayload(
-                    nodeFeatureCollection = FeatureCollection.fromFeatures(nodeFeatures),
-                    routeFeatureCollection = FeatureCollection.fromFeatures(routeFeatures),
+                    nodeGeoJson = nodeGeoJson,
+                    routeGeoJson = routeGeoJson,
                     nodeFeaturesBuilt = nodeFeatures.size,
                     routeFeaturesBuilt = routeFeatures.size,
-                    skippedRoutes = skippedRoutes
+                    skippedRoutes = skippedRoutes,
+                    newRenderKey = renderKey
                 )
             }
 
-            if (localStyleEpoch != styleEpoch) {
-                Log.d(TAG, "updateMapData skipped stale render epoch=$localStyleEpoch current=$styleEpoch")
+            if (renderPayload == null || localStyleEpoch != styleEpoch) {
                 return@launch
             }
 
             val currentStyle = map?.style ?: return@launch
             currentStyle.getSourceAs<GeoJsonSource>(NODES_SOURCE_ID)?.let { source ->
-                source.setGeoJson(renderPayload.nodeFeatureCollection)
+                source.setGeoJson(renderPayload.nodeGeoJson)
                 Log.d(
                     TAG,
                     "nodes render path committed source=$NODES_SOURCE_ID features=${renderPayload.nodeFeaturesBuilt}"
                 )
             } ?: warnMissingSourceOnce(NODES_SOURCE_ID)
-            currentStyle.getSourceAs<GeoJsonSource>(ROUTES_SOURCE_ID)?.setGeoJson(renderPayload.routeFeatureCollection)
-                ?: warnMissingSourceOnce(ROUTES_SOURCE_ID)
+
+            currentStyle.getSourceAs<GeoJsonSource>(ROUTES_SOURCE_ID)?.let { source ->
+                source.setGeoJson(renderPayload.routeGeoJson)
+            } ?: warnMissingSourceOnce(ROUTES_SOURCE_ID)
+
+            lastRenderKey = renderPayload.newRenderKey
+
             Log.d(
                 TAG,
-                "updateMapData nodesIn=${localNodes.size} nodesRenderable=${localRenderableNodes.size} " +
+                "updateMapData committed nodesIn=${localNodes.size} " +
                     "nodeFeatures=${renderPayload.nodeFeaturesBuilt} routesIn=${localRoutes.size} " +
                     "routeFeatures=${renderPayload.routeFeaturesBuilt} skippedRoutes=${renderPayload.skippedRoutes}"
             )
@@ -655,6 +665,14 @@ private class MapLibreGisMapBridge : GisMapBridge {
         customColors[contractor]?.let { return it }
         val palette = listOf("#f97316", "#22c55e", "#06b6d4", "#a855f7", "#ef4444", "#f59e0b", "#3b82f6")
         return palette[abs(contractor.hashCode()) % palette.size]
+    }
+
+    private fun isStructuralRouteNodeCode(code: String): Boolean {
+        val upper = code.trim().uppercase()
+        return (upper.contains("#PM") && upper.contains("_P")) ||
+                upper.contains("_P") ||
+                upper.endsWith("_S") ||
+                upper.endsWith("_E")
     }
 
     private fun fitIfNeeded() {
@@ -785,11 +803,12 @@ private class MapLibreGisMapBridge : GisMapBridge {
     }
 
     private data class RenderPayload(
-        val nodeFeatureCollection: FeatureCollection,
-        val routeFeatureCollection: FeatureCollection,
+        val nodeGeoJson: String,
+        val routeGeoJson: String,
         val nodeFeaturesBuilt: Int,
         val routeFeaturesBuilt: Int,
-        val skippedRoutes: Int
+        val skippedRoutes: Int,
+        val newRenderKey: MapRenderKey
     )
 }
 

@@ -4,6 +4,7 @@ package com.mapsupervision.domain.ai
  * AI Engine Types
  */
 enum class AiEngine {
+    LOCAL_LITERT,
     MEDIAPIPE_LLM,
     TFLITE_VISION,
     MLKIT_VISION,

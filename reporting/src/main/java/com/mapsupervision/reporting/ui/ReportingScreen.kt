@@ -25,10 +25,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material.icons.outlined.ArrowDropDown
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PictureAsPdf
@@ -77,6 +79,9 @@ fun ReportingScreen(
     val aiDraft by viewModel.aiReportDraft.collectAsState()
     val materialRows by viewModel.materialReportRows.collectAsState()
     val photos by viewModel.photos.collectAsState()
+    val projectNodes by viewModel.projectNodes.collectAsState()
+    val projectRoutes by viewModel.projectRoutes.collectAsState()
+    val isExporting by viewModel.isExporting.collectAsState()
 
     var showPhotos by remember { mutableStateOf(false) }
     var showFormatMenu by remember { mutableStateOf(false) }
@@ -100,6 +105,8 @@ fun ReportingScreen(
         val finalSorted = if (isAscending || sortBy == SortKey.STT || sortBy == SortKey.NONE) sorted else sorted.reversed()
         if (totalRow != null) finalSorted + totalRow else finalSorted
     }
+    val matchedPhotos = remember(photos) { photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
+    val unmatchedPhotos = remember(photos) { photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
 
     fun toggleSort(key: SortKey) {
         if (sortBy == key) {
@@ -146,6 +153,7 @@ fun ReportingScreen(
                             onClick = { showFormatMenu = true },
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
+                            enabled = !isExporting,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A623), contentColor = Color.Black)
                         ) {
                             Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
@@ -184,11 +192,33 @@ fun ReportingScreen(
                         onClick = { viewModel.exportPackageZip() },
                         modifier = Modifier.weight(1f),
                         shape = MaterialTheme.shapes.medium,
+                        enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.size(6.dp))
                         Text("Đóng gói ZIP")
+                    }
+                }
+            }
+
+            if (isExporting) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Đang xuất báo cáo, vui lòng chờ...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
             }
@@ -256,6 +286,19 @@ fun ReportingScreen(
                 }
             }
 
+            item {
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Ảnh đối chiếu", fontWeight = FontWeight.Bold)
+                        Text("Khớp: ${matchedPhotos.size}", color = MaterialTheme.colorScheme.primary)
+                        Text("Chưa khớp: ${unmatchedPhotos.size}", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
             if (showPhotos) {
                 if (filteredPhotos.isEmpty()) {
                     item {
@@ -280,7 +323,7 @@ fun ReportingScreen(
                     grouped.forEach { (nodeCode, nodePhotos) ->
                         item {
                             Text(
-                                "Tổ $nodeCode (${nodePhotos.size} ảnh)",
+                                "Tổ $nodeCode (${nodePhotos.size} ảnh, khớp ${nodePhotos.count { it.matchedNodeCode != null || it.tagCodesCsv.isNotBlank() }})",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -375,6 +418,10 @@ fun ReportingScreen(
             onDismiss = { showPreviewDialog = false },
             projectId = activeProjectId,
             selectedExportFormat = selectedExportFormat,
+            isExporting = isExporting,
+            onUpdatePhotoOffset = viewModel::updatePhotoOffset,
+            projectNodes = projectNodes,
+            projectRoutes = projectRoutes,
             onConfirmExport = { finalFormat ->
                 if (finalFormat == "PDF") viewModel.exportPdf()
                 else viewModel.exportWord()

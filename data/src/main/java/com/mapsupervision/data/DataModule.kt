@@ -7,6 +7,7 @@ import com.mapsupervision.data.db.dao.DailyLogDao
 import com.mapsupervision.data.db.dao.GisNodeDao
 import com.mapsupervision.data.db.dao.GisRouteDao
 import com.mapsupervision.data.db.dao.AiDecisionCacheDao
+import com.mapsupervision.data.db.dao.ChatHistoryDao
 import com.mapsupervision.data.db.dao.MaterialProgressDao
 import com.mapsupervision.data.db.dao.NodeProgressDao
 import com.mapsupervision.data.db.dao.NoteDao
@@ -16,6 +17,7 @@ import com.mapsupervision.data.db.dao.SitePhotoDao
 import com.mapsupervision.data.db.dao.WorkCategoryDao
 import com.mapsupervision.data.repository.DailyLogRepositoryImpl
 import com.mapsupervision.data.repository.AiDecisionCacheStoreImpl
+import com.mapsupervision.data.repository.ChatHistoryRepositoryImpl
 import com.mapsupervision.data.repository.GisRepositoryImpl
 import com.mapsupervision.data.repository.MaterialProgressRepositoryImpl
 import com.mapsupervision.data.repository.PhotoRepositoryImpl
@@ -25,6 +27,7 @@ import com.mapsupervision.data.repository.NoteRepositoryImpl
 import com.mapsupervision.data.repository.TaskRepositoryImpl
 import com.mapsupervision.data.repository.WorkCategoryRepositoryImpl
 import com.mapsupervision.domain.repository.DailyLogRepository
+import com.mapsupervision.domain.repository.ChatHistoryRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.MaterialProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
@@ -33,6 +36,9 @@ import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.NoteRepository
 import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
+import com.mapsupervision.data.db.dao.ReportDraftDao
+import com.mapsupervision.data.repository.ReportDraftRepositoryImpl
+import com.mapsupervision.domain.repository.ReportDraftRepository
 import com.mapsupervision.domain.service.WeatherService
 import dagger.Binds
 import dagger.Module
@@ -57,7 +63,10 @@ object DataModule {
                 MapSupervisionDatabase.MIGRATION_12_13,
                 MapSupervisionDatabase.MIGRATION_13_14,
                 MapSupervisionDatabase.MIGRATION_14_15,
-                MapSupervisionDatabase.MIGRATION_15_16
+                MapSupervisionDatabase.MIGRATION_15_16,
+                MapSupervisionDatabase.MIGRATION_16_17,
+                MapSupervisionDatabase.MIGRATION_17_18,
+                MapSupervisionDatabase.MIGRATION_18_19
             )
             .fallbackToDestructiveMigration()
             .build()
@@ -97,6 +106,12 @@ object DataModule {
 
     @Provides
     fun provideAiDecisionCacheDao(db: MapSupervisionDatabase): AiDecisionCacheDao = db.aiDecisionCacheDao()
+
+    @Provides
+    fun provideChatHistoryDao(db: MapSupervisionDatabase): ChatHistoryDao = db.chatHistoryDao()
+
+    @Provides
+    fun provideReportDraftDao(db: MapSupervisionDatabase): ReportDraftDao = db.reportDraftDao()
 }
 
 @Module
@@ -143,4 +158,13 @@ abstract class DataBindModule {
 
     @Binds
     abstract fun bindAiDecisionCacheStore(impl: AiDecisionCacheStoreImpl): com.mapsupervision.domain.repository.AiDecisionCacheStore
+
+    @Binds
+    abstract fun bindLocalLlmRepository(impl: com.mapsupervision.data.mediapipe.LocalLiteRtRepositoryImpl): com.mapsupervision.domain.repository.LocalLlmRepository
+
+    @Binds
+    abstract fun bindChatHistoryRepository(impl: ChatHistoryRepositoryImpl): ChatHistoryRepository
+
+    @Binds
+    abstract fun bindReportDraftRepository(impl: ReportDraftRepositoryImpl): ReportDraftRepository
 }

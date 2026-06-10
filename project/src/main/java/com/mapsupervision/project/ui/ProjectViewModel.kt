@@ -270,6 +270,18 @@ class ProjectViewModel @Inject constructor(
                             put("manpower", dl.manpower)
                             put("note", dl.note)
                             put("createdAtEpochMs", dl.createdAtEpochMs)
+                            put("weather", dl.weather)
+                            put("temperature", dl.temperature)
+                            put("nodeCode", dl.nodeCode ?: JSONObject.NULL)
+                            put("routeCode", dl.routeCode ?: JSONObject.NULL)
+                            put("dateEpochDay", dl.dateEpochDay)
+                            put("volume", dl.volume)
+                            put("unit", dl.unit)
+                            put("categoryName", dl.categoryName)
+                            put("batchGroupId", dl.batchGroupId)
+                            put("appliedNodeCodesCsv", dl.appliedNodeCodesCsv)
+                            put("linkedPhotoIdsCsv", dl.linkedPhotoIdsCsv)
+                            put("photoMatchOffsetMinutes", dl.photoMatchOffsetMinutes)
                         })
                     }
                 })
@@ -292,6 +304,9 @@ class ProjectViewModel @Inject constructor(
                             put("id", ph.id)
                             put("projectId", ph.projectId)
                             put("objectCode", ph.objectCode)
+                            put("tagCodesCsv", ph.tagCodesCsv)
+                            put("matchedNodeCode", ph.matchedNodeCode ?: JSONObject.NULL)
+                            put("matchedRouteCode", ph.matchedRouteCode ?: JSONObject.NULL)
                             put("filePath", ph.filePath)
                             put("thumbnailPath", ph.thumbnailPath)
                             put("latitude", ph.latitude ?: JSONObject.NULL)
@@ -301,6 +316,8 @@ class ProjectViewModel @Inject constructor(
                             put("locationStatus", ph.locationStatus.name)
                             put("engineer", ph.engineer)
                             put("capturedAtEpochMs", ph.capturedAtEpochMs)
+                            put("matchedAtEpochMs", ph.matchedAtEpochMs)
+                            put("matchingTimeOffsetMs", ph.matchingTimeOffsetMs)
                         })
                     }
                 })
@@ -458,7 +475,7 @@ class ProjectViewModel @Inject constructor(
                     slug = targetSlug,
                     isArchived = false,
                     createdAtEpochMs = projJson.optLong("createdAtEpochMs", System.currentTimeMillis()),
-                    metadataVersion = projJson.optInt("metadataVersion", json.optInt("metadataVersion", CURRENT_METADATA_VERSION)),
+                    metadataVersion = projJson.optInt("metadataVersion", json.optInt("metadataVersion", 3)),
                     updatedAtEpochMs = projJson.optLong("updatedAtEpochMs", json.optLong("updatedAtEpochMs", System.currentTimeMillis())),
                     storageMode = projJson.optString("storageMode").takeIf { it.isNotBlank() }?.let(ProjectStorageMode::valueOf)
                         ?: ProjectStorageMode.PROJECT_DB,
@@ -574,7 +591,12 @@ class ProjectViewModel @Inject constructor(
                                 workItem = obj.getString("workItem"),
                                 manpower = obj.getInt("manpower"),
                                 note = obj.getString("note"),
-                                createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis())
+                                createdAtEpochMs = obj.optLong("createdAtEpochMs", System.currentTimeMillis()),
+                                routeCode = obj.optString("routeCode").takeIf { it.isNotBlank() },
+                                batchGroupId = obj.optString("batchGroupId", ""),
+                                appliedNodeCodesCsv = obj.optString("appliedNodeCodesCsv", ""),
+                                linkedPhotoIdsCsv = obj.optString("linkedPhotoIdsCsv", ""),
+                                photoMatchOffsetMinutes = obj.optInt("photoMatchOffsetMinutes", 0)
                             )
                         )
                     }
@@ -607,6 +629,9 @@ class ProjectViewModel @Inject constructor(
                                 id = mapId(obj.getString("id")),
                                 projectId = targetProjectId,
                                 objectCode = obj.getString("objectCode"),
+                                tagCodesCsv = obj.optString("tagCodesCsv", ""),
+                                matchedNodeCode = obj.optString("matchedNodeCode").takeIf { it.isNotBlank() },
+                                matchedRouteCode = obj.optString("matchedRouteCode").takeIf { it.isNotBlank() },
                                 filePath = obj.getString("filePath"),
                                 thumbnailPath = obj.getString("thumbnailPath"),
                                 latitude = obj.optNullableDouble("latitude"),
@@ -616,7 +641,9 @@ class ProjectViewModel @Inject constructor(
                                 locationStatus = obj.optString("locationStatus").takeIf { it.isNotBlank() }?.let(PhotoLocationStatus::valueOf)
                                     ?: PhotoLocationStatus.MISSING,
                                 engineer = obj.optString("engineer", "Engineers"),
-                                capturedAtEpochMs = obj.optLong("capturedAtEpochMs", System.currentTimeMillis())
+                                capturedAtEpochMs = obj.optLong("capturedAtEpochMs", System.currentTimeMillis()),
+                                matchedAtEpochMs = obj.optLong("matchedAtEpochMs", 0L),
+                                matchingTimeOffsetMs = obj.optLong("matchingTimeOffsetMs", 0L)
                             )
                         )
                     }

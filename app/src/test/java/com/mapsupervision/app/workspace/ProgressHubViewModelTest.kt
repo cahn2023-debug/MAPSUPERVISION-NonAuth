@@ -1,6 +1,5 @@
 package com.mapsupervision.app.workspace
 
-import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -9,7 +8,7 @@ class ProgressHubViewModelTest {
 
     @Test
     fun `select progress node initializes sheet inputs`() {
-        val viewModel = ProgressHubViewModel(SavedStateHandle())
+        val viewModel = ProgressHubViewModel()
 
         viewModel.selectProgressNode("N-01", "30", "20")
 
@@ -21,7 +20,7 @@ class ProgressHubViewModelTest {
 
     @Test
     fun `dismiss progress node sheet clears sheet state`() {
-        val viewModel = ProgressHubViewModel(SavedStateHandle())
+        val viewModel = ProgressHubViewModel()
 
         viewModel.selectProgressNode("N-01", "30", "20")
         viewModel.updateProgressSheetValidationError("Invalid")
@@ -38,7 +37,7 @@ class ProgressHubViewModelTest {
 
     @Test
     fun `reset log form clears transient inputs`() {
-        val viewModel = ProgressHubViewModel(SavedStateHandle())
+        val viewModel = ProgressHubViewModel()
 
         viewModel.updateWorkItemInput("Task")
         viewModel.updateNoteInput("Note")

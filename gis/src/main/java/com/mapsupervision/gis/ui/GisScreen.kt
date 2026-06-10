@@ -2,6 +2,7 @@ package com.mapsupervision.gis.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,13 @@ enum class GisLabelField { CODE, CONTRACTOR, COORDINATE }
 
 enum class MapLayerType { STREET, SATELLITE, DARK }
 
+/**
+ * Public GIS rendering contract.
+ *
+ * `:gis` owns the screen state and passes only rendering inputs/callbacks through this interface.
+ * `:gis-maplibre` is responsible for the concrete map implementation and should not introduce
+ * business rules outside this contract.
+ */
 interface GisMapBridge {
     @Composable
     fun Render(
@@ -50,6 +58,12 @@ interface GisMapBridge {
     fun centerOnLocation(lat: Double, lng: Double, zoom: Double = 20.0) {}
 }
 
+/**
+ * Runtime registry used by the app to install the active bridge implementation.
+ *
+ * The bridge should be installed once at application start and then treated as the current
+ * rendering backend for all GIS screens.
+ */
 object GisMapBridgeRegistry {
     var bridge: GisMapBridge? = null
 }
@@ -72,8 +86,8 @@ fun GisScreen(
     onMeasureDistance: (Double) -> Unit = {},
     viewModel: GisViewModel = hiltViewModel()
 ) {
-    val renderNodes = nodes ?: viewModel.nodes.value
-    val renderRoutes = routes ?: viewModel.routes.value
+    val renderNodes = nodes ?: viewModel.nodes.collectAsState().value
+    val renderRoutes = routes ?: viewModel.routes.collectAsState().value
     val styleJson = viewModel.styleJson
     LaunchedEffect(renderNodes, renderRoutes, showNodes, showRoutes, measureEnabled, selectedNode, selectedRoute) {
         AppLogger.d(

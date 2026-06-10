@@ -7,6 +7,9 @@ import com.mapsupervision.domain.ai.AiEngine
 import com.mapsupervision.domain.ai.AiEngineInterface
 import com.mapsupervision.domain.ai.AiPayload
 import com.mapsupervision.domain.ai.AiResult
+import com.mapsupervision.domain.ai.ChatAssistantPayload
+import com.mapsupervision.domain.ai.ChatAssistantResult
+import com.mapsupervision.domain.ai.ChatActionParser
 import com.mapsupervision.domain.ai.DiscrepancyCheckPayload
 import com.mapsupervision.domain.ai.DiscrepancyResult
 import com.mapsupervision.domain.ai.ImportMappingPayload
@@ -38,6 +41,7 @@ class RuleBasedEngine : AiEngineInterface {
     
     override suspend fun execute(payload: AiPayload): AiResult {
         return when (payload) {
+            is ChatAssistantPayload -> fallbackChat(payload)
             is ImportMappingPayload -> fallbackImportMapping(payload)
             is DiscrepancyCheckPayload -> fallbackDiscrepancies(payload)
             is TimelineSummaryPayload -> fallbackTimeline(payload)
@@ -283,6 +287,10 @@ class RuleBasedEngine : AiEngineInterface {
         val filteredTasks = tasks.filter { t -> existingLower.none { it == t.lowercase().trim() } }
 
         return TaskRecommendationResult(suggestedTasks = filteredTasks.distinct())
+    }
+
+    private fun fallbackChat(payload: ChatAssistantPayload): ChatAssistantResult {
+        return ChatActionParser.parse(payload.message, payload.contextSummary, payload.selectedNodeCode, payload.normalizationContext)
     }
 }
 

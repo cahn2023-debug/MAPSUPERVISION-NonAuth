@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,12 +81,9 @@ fun ProgressHubScreen(
     onResetLogForm: () -> Unit,
     onAddConstruction: (String, Float, Float) -> Unit,
     onAddDailyLog: (String, Int, String, String, Double, String?, Long, Double, String, String) -> Unit,
+    onAddDailyLogBatch: (String, Int, String, String, Double, List<String>, Long, Double, String, String) -> Unit,
     onAddWorkCategory: (String, String) -> Unit
 ) {
-    var isProgressSubTab by rememberSaveable { mutableStateOf(screenUiState.isProgressSubTab) } // true = Progress (Tiến độ), false = Diary (Nhật ký)
-    
-    var groupMode by rememberSaveable { mutableStateOf(screenUiState.groupMode) }
-    var filterMode by rememberSaveable { mutableStateOf(screenUiState.filterMode) }
     val selectedNodeCodeForProgress = screenUiState.selectedNodeCodeForProgress
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
@@ -109,34 +105,10 @@ fun ProgressHubScreen(
     val temperatureInput = screenUiState.temperatureInput
 
     // Daily Log Form State
-    var selectedNodeCodeForLog by rememberSaveable { mutableStateOf(screenUiState.selectedNodeCodeForLog) }
-    var manpowerInput by rememberSaveable { mutableStateOf(screenUiState.manpowerInput) }
-    var workItemInput by rememberSaveable { mutableStateOf(screenUiState.workItemInput) }
-    var noteInput by rememberSaveable { mutableStateOf(screenUiState.noteInput) }
-    var actualProgressInput by rememberSaveable { mutableStateOf(screenUiState.actualProgressInput) }
-    var logFormError by rememberSaveable { mutableStateOf(screenUiState.logFormError) }
+    val selectedNodeCodeForLog = screenUiState.selectedNodeCodeForLog
     val nodeDropdownExpanded = screenUiState.nodeDropdownExpanded
     
-    // Custom Work Category & Volume State
-    var volumeInput by rememberSaveable { mutableStateOf(screenUiState.volumeInput) }
-    var unitInput by rememberSaveable { mutableStateOf(screenUiState.unitInput) }
-    var selectedCategoryName by rememberSaveable { mutableStateOf(screenUiState.selectedCategoryName) }
     val categoryDropdownExpanded = screenUiState.categoryDropdownExpanded
-    
-    LaunchedEffect(screenUiState) {
-        isProgressSubTab = screenUiState.isProgressSubTab
-        groupMode = screenUiState.groupMode
-        filterMode = screenUiState.filterMode
-        selectedNodeCodeForLog = screenUiState.selectedNodeCodeForLog
-        manpowerInput = screenUiState.manpowerInput
-        workItemInput = screenUiState.workItemInput
-        noteInput = screenUiState.noteInput
-        actualProgressInput = screenUiState.actualProgressInput
-        logFormError = screenUiState.logFormError
-        volumeInput = screenUiState.volumeInput
-        unitInput = screenUiState.unitInput
-        selectedCategoryName = screenUiState.selectedCategoryName
-    }
 
     val nonStructuralNodes = progressUiState.nonStructuralNodes
     val nodesMap = progressUiState.nodesByCode
@@ -144,6 +116,7 @@ fun ProgressHubScreen(
     val criticalNodes = progressUiState.criticalNodes
     val progressByCode = progressUiState.progressByNodeCode
     val allDisplayItems = progressUiState.allDisplayItems
+    val allNodeCodes = remember(progressUiState.nonStructuralNodes) { progressUiState.nonStructuralNodes.map { it.code }.filter { it.isNotBlank() } }
     val selectedNodeForProgress = remember(selectedNodeCodeForProgress, progressByCode, activeProjectId) {
         selectedNodeCodeForProgress?.let { nodeCode ->
             progressByCode[nodeCode]
@@ -160,9 +133,9 @@ fun ProgressHubScreen(
         }
     }
 
-    val filteredProgress = remember(allDisplayItems, filterMode) {
+    val filteredProgress = remember(allDisplayItems, screenUiState.filterMode) {
         allDisplayItems.filter {
-            when (filterMode) {
+            when (screenUiState.filterMode) {
                 "Delayed" -> it.delayed
                 "On-time" -> !it.delayed && it.updatedAtEpochMs > 0L
                 else -> true
@@ -170,8 +143,8 @@ fun ProgressHubScreen(
         }
     }
 
-    val groupedProgress = remember(filteredProgress, groupMode, nodesMap) {
-        when (groupMode) {
+    val groupedProgress = remember(filteredProgress, screenUiState.groupMode, nodesMap) {
+        when (screenUiState.groupMode) {
             "Nhà thầu" -> filteredProgress.groupBy { nodesMap[it.nodeCode]?.contractor?.takeIf { c -> c.isNotBlank() } ?: "Chưa phân công" }
             "Vị trí" -> filteredProgress.groupBy { it.nodeCode }
             else -> mapOf("Tất cả hạng mục" to filteredProgress)
@@ -273,6 +246,8 @@ fun ProgressHubScreen(
             log.dateEpochDay == selectedEpoch || (log.dateEpochDay == 0L && logEpoch == selectedEpoch)
         }.sortedByDescending { it.createdAtEpochMs }
     }
+    val matchedPhotos = remember(photos) { photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
+    val unmatchedPhotos = remember(photos) { photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
 
     Scaffold( snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
@@ -341,15 +316,15 @@ fun ProgressHubScreen(
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                         .padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Button( onClick = { isProgressSubTab = true; onSetProgressTab(true) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isProgressSubTab) primaryTextColor else secondaryTextColor
-                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
+                    Button( onClick = { onSetProgressTab(true) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (screenUiState.isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (screenUiState.isProgressSubTab) primaryTextColor else secondaryTextColor
+                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (screenUiState.isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Tiến độ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
-                    Button( onClick = { isProgressSubTab = false; onSetProgressTab(false) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (!isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (!isProgressSubTab) primaryTextColor else secondaryTextColor
-                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (!isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
+                    Button( onClick = { onSetProgressTab(false) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (!screenUiState.isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (!screenUiState.isProgressSubTab) primaryTextColor else secondaryTextColor
+                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (!screenUiState.isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Outlined.EditCalendar, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -358,7 +333,7 @@ fun ProgressHubScreen(
                 }
             }
 
-            if (isProgressSubTab) {
+            if (screenUiState.isProgressSubTab) {
                 // ========================== PROGRESS VIEW ==========================
                 item {
                     Card( modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -463,9 +438,9 @@ fun ProgressHubScreen(
                                 lineHeight = 24.sp
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip( selected = filterMode == "All", onClick = { filterMode = "All"; onUpdateFilterMode("All") }, label = { Text("Tất cả", color = if (filterMode == "All") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = trackBlueColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = screenUiState.filterMode == "All", onClick = { onUpdateFilterMode("All") }, label = { Text("Tất cả", color = if (screenUiState.filterMode == "All") MaterialTheme.colorScheme.onPrimary else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = trackBlueColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
                                 )
-                                FilterChip( selected = filterMode == "Delayed", onClick = { filterMode = "Delayed"; onUpdateFilterMode("Delayed") }, label = { Text("Chậm trễ", color = if (filterMode == "Delayed") Color.White else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = orangeColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = screenUiState.filterMode == "Delayed", onClick = { onUpdateFilterMode("Delayed") }, label = { Text("Chậm trễ", color = if (screenUiState.filterMode == "Delayed") MaterialTheme.colorScheme.onPrimary else primaryTextColor) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = orangeColor, containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)
                                 )
                             }
                         }
@@ -474,7 +449,7 @@ fun ProgressHubScreen(
                             Text("Nhóm theo: ", color = secondaryTextColor, fontSize = 14.sp)
                             Spacer(modifier = Modifier.width(8.dp))
                             listOf("Không nhóm", "Nhà thầu", "Vị trí").forEach { mode ->
-                                FilterChip( selected = groupMode == mode, onClick = { groupMode = mode; onUpdateGroupMode(mode) }, label = { Text(mode, fontSize = 12.sp) }, modifier = Modifier.padding(end = 4.dp), shape = RoundedCornerShape(16.dp)
+                                FilterChip( selected = screenUiState.groupMode == mode, onClick = { onUpdateGroupMode(mode) }, label = { Text(mode, fontSize = 12.sp) }, modifier = Modifier.padding(end = 4.dp), shape = RoundedCornerShape(16.dp)
                                 )
                             }
                         }
@@ -598,7 +573,7 @@ fun ProgressHubScreen(
                                                 Column( horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
                                                 ) {
                                                     Text( text = cellCal.get(Calendar.DAY_OF_MONTH).toString(), fontSize = 14.sp, fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal, color = when {
-                                                            isSelected -> Color.White
+                                                            isSelected -> MaterialTheme.colorScheme.onPrimary
                                                             isToday -> orangeColor
                                                             else -> primaryTextColor
                                                         }
@@ -607,7 +582,7 @@ fun ProgressHubScreen(
                                                         Box( modifier = Modifier
                                                                 .size(4.dp)
                                                                 .clip(CircleShape)
-                                                                .background(if (isSelected) Color.White else successColor)
+                                                                .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else successColor)
                                                         )
                                                     }
                                                 }
@@ -720,9 +695,8 @@ fun ProgressHubScreen(
                                                 onUpdateSelectedNodeCodeForLog(option.key)
                                                 onSetNodeDropdownExpanded(false)
                                                 // Pre-fill default work item if empty
-                                                if (workItemInput.isBlank()) {
-                                                    workItemInput = "Thi công tại ${nodeDisplayName(node.code, nodesMap)}"
-                                                    onUpdateWorkItemInput("Thi công tại ${nodeDisplayName(node.code, nodesMap)}")
+                                                if (screenUiState.workItemInput.isBlank()) {
+                                                                                                        onUpdateWorkItemInput("Thi công tại ${nodeDisplayName(node.code, nodesMap)}")
                                                 }
                                                 // Pre-fill current progress if any
                                                 val existing = progressByCode[option.key]
@@ -742,7 +716,7 @@ fun ProgressHubScreen(
                             Box(modifier = Modifier.fillMaxWidth()) {
                                 OutlinedButton( onClick = { onSetCategoryDropdownExpanded(true) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text( text = if (selectedCategoryName.isNotBlank()) selectedCategoryName else "Chọn hạng mục công việc (đổ bê tông, kéo cáp...)", color = if (selectedCategoryName.isNotBlank()) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    Text( text = if (screenUiState.selectedCategoryName.isNotBlank()) screenUiState.selectedCategoryName else "Chọn hạng mục công việc (đổ bê tông, kéo cáp...)", color = if (screenUiState.selectedCategoryName.isNotBlank()) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
                                 }
@@ -787,16 +761,16 @@ fun ProgressHubScreen(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField( value = workItemInput, onValueChange = { onUpdateWorkItemInput(it); onUpdateLogFormError("") }, label = { Text("Nội dung thực hiện trong ngày *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
+                            OutlinedTextField( value = screenUiState.workItemInput, onValueChange = { onUpdateWorkItemInput(it); onUpdateLogFormError("") }, label = { Text("Nội dung thực hiện trong ngày *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = volumeInput, onValueChange = { onUpdateVolumeInput(it) }, label = { Text("Khối lượng thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = screenUiState.volumeInput, onValueChange = { onUpdateVolumeInput(it) }, label = { Text("Khối lượng thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
                                 )
-                                OutlinedTextField( value = unitInput, onValueChange = { onUpdateUnitInput(it) }, label = { Text("Đơn vị tính") }, modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = screenUiState.unitInput, onValueChange = { onUpdateUnitInput(it) }, label = { Text("Đơn vị tính") }, modifier = Modifier.weight(1f), singleLine = true
                                 )
                             }
 
@@ -804,39 +778,38 @@ fun ProgressHubScreen(
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = manpowerInput, onValueChange = { onUpdateManpowerInput(it) }, label = { Text("Số nhân công: ") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = screenUiState.manpowerInput, onValueChange = { onUpdateManpowerInput(it) }, label = { Text("Số nhân công: ") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), singleLine = true
                                 )
                                 
                                 if (selectedNodeCodeForLog != null) {
-                                    OutlinedTextField( value = actualProgressInput, onValueChange = { onUpdateActualProgressInput(it) }, label = { Text("Tiến độ thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
+                                    OutlinedTextField( value = screenUiState.actualProgressInput, onValueChange = { onUpdateActualProgressInput(it) }, label = { Text("Tiến độ thực tế (%)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
                                     )
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField( value = noteInput, onValueChange = { onUpdateNoteInput(it) }, label = { Text("Báo cáo khó khăn / ghi chú khác") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
+                            OutlinedTextField( value = screenUiState.noteInput, onValueChange = { onUpdateNoteInput(it) }, label = { Text("Báo cáo khó khăn / ghi chú khác") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3
                             )
 
-                            if (logFormError.isNotBlank()) {
+                            if (screenUiState.logFormError.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(logFormError, color = redColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(screenUiState.logFormError, color = redColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
                             Button( onClick = {
-                                    if (workItemInput.isBlank()) {
-                                        logFormError = "Vui lòng nhập nội dung thực hiện"
-                                        onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
-                                        return@Button
-                                    }
-                                    val manpower = manpowerInput.toIntOrNull() ?: 0
-                                    val temp = temperatureInput.toDoubleOrNull() ?: 30.0
-                                    val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
-                                    val volume = volumeInput.toDoubleOrNull() ?: 0.0
-                                    
-                                    onAddDailyLog( workItemInput.trim(), manpower, noteInput.trim(), weatherDesc, temp, selectedNodeCodeForLog, selectedEpoch, volume, unitInput.trim(), selectedCategoryName.trim()
+                                if (screenUiState.workItemInput.isBlank()) {
+                                    onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
+                                    return@Button
+                                }
+                                val manpower = screenUiState.manpowerInput.toIntOrNull() ?: 0
+                                val temp = screenUiState.temperatureInput.toDoubleOrNull() ?: 30.0
+                                val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
+                                val volume = screenUiState.volumeInput.toDoubleOrNull() ?: 0.0
+                                
+                                    onAddDailyLog( screenUiState.workItemInput.trim(), manpower, screenUiState.noteInput.trim(), weatherDesc, temp, selectedNodeCodeForLog, selectedEpoch, volume, screenUiState.unitInput.trim(), screenUiState.selectedCategoryName.trim()
                                     )
 
                                     // Clear fields after saving
@@ -844,9 +817,39 @@ fun ProgressHubScreen(
                                     coroutineScope.launch {
                                         snackbarHostState.showSnackbar("Đã thêm nhật ký thi công mới")
                                     }
-                                }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = Color.White)
+                                }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = MaterialTheme.colorScheme.onPrimary)
                             ) {
                                 Text("Lưu nhật ký & đồng bộ tiến độ", fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    if (screenUiState.workItemInput.isBlank()) {
+                                        onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
+                                        return@OutlinedButton
+                                    }
+                                    val manpower = screenUiState.manpowerInput.toIntOrNull() ?: 0
+                                    val temp = screenUiState.temperatureInput.toDoubleOrNull() ?: 30.0
+                                    val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
+                                    val volume = screenUiState.volumeInput.toDoubleOrNull() ?: 0.0
+                                    onAddDailyLogBatch(
+                                        screenUiState.workItemInput.trim(),
+                                        manpower,
+                                        screenUiState.noteInput.trim(),
+                                        weatherDesc,
+                                        temp,
+                                        allNodeCodes,
+                                        selectedEpoch,
+                                        volume,
+                                        screenUiState.unitInput.trim(),
+                                        screenUiState.selectedCategoryName.trim()
+                                    )
+                                    onResetLogForm()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Áp nhật ký cho toàn bộ node thi công", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -859,6 +862,58 @@ fun ProgressHubScreen(
                     val dateFormatted = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDate.time)
                     Text( text = "NHẬT KÝ NGÀY $dateFormatted", fontWeight = FontWeight.Bold, color = primaryTextColor, fontSize = 12.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)
                     )
+                }
+
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Ảnh đối chiếu", fontWeight = FontWeight.Bold, color = primaryTextColor)
+                            Text("Khớp: ${matchedPhotos.size}", color = successColor)
+                            Text("Chưa khớp: ${unmatchedPhotos.size}", color = redColor)
+                        }
+                    }
+                }
+
+                if (photos.isNotEmpty()) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Ảnh nhật ký gần nhất", fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                photos.take(8).forEach { photo ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            PhotoStatusBadge(photo = photo)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                "${photo.objectCode} - ${photo.filePath.substringAfterLast('/')}",
+                                                fontSize = 12.sp,
+                                                color = secondaryTextColor,
+                                                maxLines = 1
+                                            )
+                                        }
+                                        Text(
+                                            "${photo.matchingTimeOffsetMs / 60000}m",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()) successColor else redColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (logsForSelectedDate.isNotEmpty()) {
@@ -1058,10 +1113,8 @@ fun ProgressHubScreen(
                     Button( onClick = {
                             if (screenUiState.newCategoryName.isNotBlank() && screenUiState.newCategoryUnit.isNotBlank()) {
                                 onAddWorkCategory(screenUiState.newCategoryName.trim(), screenUiState.newCategoryUnit.trim())
-                                selectedCategoryName = screenUiState.newCategoryName.trim()
-                                unitInput = screenUiState.newCategoryUnit.trim()
-                                onUpdateSelectedCategoryName(selectedCategoryName)
-                                onUpdateUnitInput(unitInput)
+                                onUpdateSelectedCategoryName(screenUiState.newCategoryName.trim())
+                                onUpdateUnitInput(screenUiState.newCategoryUnit.trim())
                                 onUpdateNewCategoryName("")
                                 onUpdateNewCategoryUnit("")
                                 onSetShowAddCategoryDialog(false)
@@ -1079,4 +1132,25 @@ fun ProgressHubScreen(
         }
     }
 }
+
+@Composable
+private fun PhotoStatusBadge(photo: com.mapsupervision.domain.model.SitePhoto) {
+    val isMatched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+    val bg = if (isMatched) MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
+    val fg = if (isMatched) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+    Box(
+        modifier = Modifier
+            .background(bg, RoundedCornerShape(999.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            if (isMatched) "Khớp" else "Lệch",
+            color = fg,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+
 

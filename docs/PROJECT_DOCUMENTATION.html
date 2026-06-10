@@ -3,291 +3,705 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MapSupervision - Project Documentation</title>
+    <title>MapSupervision - Tài liệu tổng hợp dự án</title>
     <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --panel-2: #1f2937;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #38bdf8;
+            --accent-2: #34d399;
+            --border: rgba(255, 255, 255, 0.08);
+            --warn: #f59e0b;
+            --good: #22c55e;
+        }
+        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 1000px;
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 28%),
+                radial-gradient(circle at top right, rgba(52, 211, 153, 0.10), transparent 24%),
+                linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+            color: var(--text);
+            line-height: 1.65;
+        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .wrap {
+            max-width: 1240px;
             margin: 0 auto;
-            padding: 2rem;
-            background-color: #f8f9fa;
+            padding: 28px 18px 56px;
         }
-        .container {
-            background: #fff;
-            padding: 2rem 3rem;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        .hero {
+            display: grid;
+            grid-template-columns: 1.25fr 0.75fr;
+            gap: 20px;
+            align-items: stretch;
+            margin-bottom: 20px;
         }
-        h1, h2, h3, h4 { color: #2c3e50; }
-        h1 { border-bottom: 2px solid #eee; padding-bottom: 0.5rem; text-align: center; }
-        h2 { border-bottom: 1px solid #eee; padding-bottom: 0.3rem; margin-top: 2rem; }
-        code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; color: #d63384; }
-        pre { background: #f4f4f4; padding: 1rem; border-radius: 4px; overflow-x: auto; }
-        .toc { background: #fdfdfd; padding: 1.5rem; border: 1px solid #eee; border-radius: 8px; margin-bottom: 2rem; }
-        .toc ul { list-style-type: none; padding-left: 1.5rem; }
-        .toc > ul { padding-left: 0; }
-        .toc a { text-decoration: none; color: #007bff; font-weight: 500; }
-        .toc a:hover { text-decoration: underline; }
-        .mermaid { margin: 2rem 0; text-align: center; }
-        ul li { margin-bottom: 0.5rem; }
+        .card {
+            background: rgba(17, 24, 39, 0.92);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+        }
+        .hero-main {
+            padding: 28px;
+        }
+        .hero-side {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            color: #c9f3ff;
+            font-size: 13px;
+            width: fit-content;
+        }
+        h1, h2, h3, h4 { line-height: 1.2; margin: 0; }
+        h1 {
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            margin: 14px 0 12px;
+        }
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 14px;
+        }
+        h3 {
+            font-size: 1.08rem;
+            margin-bottom: 10px;
+        }
+        p { margin: 0 0 12px; color: var(--text); }
+        .muted { color: var(--muted); }
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin: 20px 0 30px;
+        }
+        .stat {
+            background: rgba(17, 24, 39, 0.88);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+        }
+        .stat .label {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .stat .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+        .section {
+            background: rgba(17, 24, 39, 0.88);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+        .toc {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .toc a {
+            display: block;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid var(--border);
+        }
+        .toc a span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 14px;
+            margin-top: 12px;
+        }
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        th {
+            text-align: left;
+            color: #fff;
+            background: rgba(31, 41, 55, 0.96);
+            font-weight: 600;
+        }
+        td {
+            background: rgba(17, 24, 39, 0.76);
+            color: var(--text);
+        }
+        ul { margin: 10px 0 0 20px; padding: 0; }
+        li { margin-bottom: 8px; }
+        code, pre {
+            font-family: Consolas, "Courier New", monospace;
+        }
+        code {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 6px;
+            color: #dbeafe;
+        }
+        pre {
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: 14px;
+            overflow: auto;
+            color: #e2e8f0;
+            margin: 14px 0 0;
+            white-space: pre-wrap;
+        }
+        .pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid var(--border);
+            background: rgba(31, 41, 55, 0.9);
+            color: #d1d5db;
+        }
+        .pill.good { color: #dcfce7; border-color: rgba(34, 197, 94, 0.28); background: rgba(34, 197, 94, 0.12); }
+        .pill.warn { color: #ffedd5; border-color: rgba(245, 158, 11, 0.28); background: rgba(245, 158, 11, 0.12); }
+        .note {
+            border-left: 4px solid var(--accent);
+            background: rgba(56, 189, 248, 0.08);
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-top: 14px;
+            color: #dbeafe;
+        }
+        .diagram {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .flow {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .flow > div {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px;
+        }
+        .arrow {
+            text-align: center;
+            color: var(--accent-2);
+            font-weight: 700;
+        }
+        .footer {
+            margin-top: 18px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        @media (max-width: 980px) {
+            .hero, .grid-4, .toc, .flow { grid-template-columns: 1fr; }
+        }
     </style>
-    <!-- Include Mermaid.js for Diagrams -->
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({ startOnLoad: true, theme: 'default' });
-    </script>
 </head>
 <body>
-    <div class="container">
-        <h1>Tài Liệu Kỹ Thuật Tổng Hợp: MapSupervision</h1>
-        <p style="text-align: center; color: #666;"><em>Hệ Thống Giám Sát Dự Án Trên Bản Đồ Số</em></p>
-
-        <div class="toc">
-            <h2>Mục Lục</h2>
-            <ul>
-                <li><a href="#overview">1. Tổng Quan Dự Án</a></li>
-                <li><a href="#features">2. Tính Năng Cốt Lõi</a></li>
-                <li><a href="#architecture">3. Cấu Trúc Thư Mục & Thiết Kế Kiến Trúc</a></li>
-                <li><a href="#workflows">4. Luồng Hoạt Động (Workflows)</a></li>
-                <li><a href="#knowledge-graph">5. Bản Đồ Tri Thức Dự Án (Knowledge Graph)</a></li>
-            </ul>
+    <div class="wrap">
+        <div class="hero">
+            <div class="card hero-main">
+                <div class="badge">MapSupervision · Android multi-module · Clean Architecture</div>
+                <h1>Tài liệu tổng hợp dự án</h1>
+                <p class="muted">
+                    Trang này tổng hợp cấu trúc code, module chính, các luồng nghiệp vụ lớn và những điểm vào quan trọng
+                    của repo <strong>MapSupervision</strong>. Nội dung được viết theo codebase hiện tại, không thêm giả định ngoài những gì đang có trong source.
+                </p>
+                <div class="pill-row">
+                    <span class="pill good">11 module Gradle đang được include</span>
+                    <span class="pill good">Room database version 19</span>
+                    <span class="pill">Compose + Hilt + WorkManager</span>
+                    <span class="pill">MapLibre GL integration</span>
+                    <span class="pill warn">AI local + cloud routing</span>
+                </div>
+                <div class="note">
+                    <strong>Ghi chú:</strong> Repo có thêm các thư mục backup trong <code>BAK/</code>, nhưng phần tài liệu này chỉ mô tả các module và symbol đang dùng trong cấu trúc hiện tại của project.
+                </div>
+            </div>
+            <div class="card hero-side">
+                <img src="mapsupervision_logo.png" alt="MapSupervision logo" style="width:100%; border-radius:14px; border:1px solid var(--border); background:#0b1220;">
+                <div>
+                    <div class="muted" style="font-size:13px;">Mục tiêu của hệ thống</div>
+                    <div style="font-size:1.05rem; font-weight:600; margin-top:4px;">Quản lý, giám sát và báo cáo tiến độ công trình hạ tầng bằng GIS, ảnh hiện trường và dữ liệu dự án.</div>
+                </div>
+            </div>
         </div>
 
-        <h2 id="overview">1. Tổng Quan Dự Án</h2>
-        <p><strong>MapSupervision</strong> là một giải pháp toàn diện dành cho các kỹ sư giám sát dự án thi công hạ tầng lớn (đường ống, đường dây, trạm biến áp, v.v.). Đây là một ứng dụng Android đa mô-đun (Multi-module Android Application) hiện đại, áp dụng Kiến Trúc Sạch (Clean Architecture) kết hợp với Jetpack Compose để quản lý và giám sát tiến độ thi công hạ tầng, ghi nhận hiện trường thông qua GIS và hình ảnh định vị GPS ngoại tuyến.</p>
-        
-        <h2 id="features">2. Tính Năng Cốt Lõi</h2>
-        
-        <h3>2.1. Quản Lý Không Gian Làm Việc (Workspace Management)</h3>
-        <ul>
-            <li><strong>Tạo & Chuyển đổi dự án linh hoạt</strong>: Khởi tạo và thiết lập dự án với slug định danh duy nhất. Dễ dàng chuyển đổi qua lại.</li>
-            <li><strong>Phân tách & Mã hóa an toàn</strong>: Tạo cấu trúc lưu trữ độc lập trên thiết bị cho từng dự án (<code>db/</code>, <code>photos/</code>, <code>reports/</code>, <code>imports/</code>). Mã hóa bảo vệ thông tin bằng <code>ProjectCryptoManager</code>.</li>
-        </ul>
-
-        <h3>2.2. Bản Đồ Giám Sát Không Gian (GIS Map & Styling Engine)</h3>
-        <ul>
-            <li><strong>Bản đồ Vectơ offline/online</strong>: Sử dụng công nghệ MapLibre GL hỗ trợ render bản đồ vectơ mượt mà.</li>
-            <li><strong>Trực quan hóa mạng lưới</strong>: Hiển thị điểm đặt (<code>GisNode</code>) và sơ đồ tuyến kết nối (<code>GisRoute</code>).</li>
-            <li><strong>Tùy biến giao diện động (Style Builder)</strong>: Tự động phân cấp màu sắc, độ dày nét vẽ dựa trên trạng thái thi công, nhà thầu hoặc mức độ trễ hạn.</li>
-        </ul>
-
-        <h3>2.3. Nhập File Tài Liệu Thông Minh (Smart Data Importer)</h3>
-        <ul>
-            <li><strong>Hỗ trợ định dạng không gian</strong>: Phân tích KML/KMZ tự động tạo điểm nút và tuyến mà không cần kết nối mạng.</li>
-            <li><strong>Trích xuất thông tin tài liệu</strong>: Đọc siêu dữ liệu và cấu trúc tài liệu từ Excel (.xlsx), Word (.docx) và PDF (.pdf).</li>
-        </ul>
-
-        <h3>2.4. Quản Lý Tiến Độ Thi Công Chi Tiết (Progress Tracking)</h3>
-        <ul>
-            <li><strong>Chỉ số thời gian thực</strong>: Theo dõi các chỉ số <code>planned</code> (kế hoạch), <code>actual</code> (thực tế), và <code>remain</code> (còn lại) cho từng nút mạng lưới.</li>
-            <li><strong>Cảnh báo chậm trễ tự động</strong>: Khi tiến độ <code>actual</code> thấp hơn <code>planned</code>, hệ thống tự động gán cờ <code>delayed = true</code> và cảnh báo trên bản đồ.</li>
-        </ul>
-
-        <h3>2.5. Chụp Ảnh & Nén Ảnh Hiện Trường Bằng GPS (GPS Field Photo Tracking)</h3>
-        <ul>
-            <li><strong>Tự động gắn thẻ địa lý</strong>: Lấy định vị GPS, thời gian và gán tên kỹ sư tự động qua <code>PhotoLocationProvider</code>.</li>
-            <li><strong>Xử lý nền tối ưu hiệu năng</strong>: Sử dụng WorkManager (<code>PhotoPipelineService</code>) chạy ngầm để nén, giảm dung lượng và tạo ảnh thu nhỏ (thumbnail) không làm gián đoạn UI.</li>
-        </ul>
-
-        <h3>2.6. Nhật Ký & Xuất Bản Báo Cáo (Daily Log & PDF Reporting)</h3>
-        <ul>
-            <li><strong>Bảng dòng thời gian (Timeline UI)</strong>: Lịch sử thi công, nhật ký ngày và hình ảnh sắp xếp theo dạng Feed dòng thời gian.</li>
-            <li><strong>Tự động xuất báo cáo PDF</strong>: Trình biên tập <code>PdfReportGenerator</code> tạo báo cáo chuyên nghiệp có bố cục đẹp mắt để báo cáo trực tiếp cho Chủ đầu tư.</li>
-        </ul>
-
-        <h2 id="architecture">3. Cấu Trúc Thư Mục & Thiết Kế Kiến Trúc</h2>
-        <p>Dự án chia nhỏ thành các Gradle module độc lập giúp tăng tốc độ build, dễ viết Unit Test và có khả năng tái sử dụng cao theo nguyên lý Clean Architecture:</p>
-
-        <div class="mermaid">
-        graph TD
-            subgraph Presentation Layer
-                app[":app (Workspace & Hub)"]
-                project[":project (Project UI)"]
-                gis[":gis (Map UI & ViewModel)"]
-                photo[":photo (Camera, Location)"]
-                photo_lite[":photo-lite (Light UI)"]
-                timeline[":timeline (History Feed)"]
-                reporting[":reporting (PDF Report)"]
-            end
-
-            subgraph Data & Storage Layer
-                data[":data (Room DB, Repositories)"]
-                storage[":storage (File, Crypto)"]
-                gis_maplibre[":gis-maplibre"]
-            end
-
-            subgraph Domain & Core
-                domain[":domain (Core Models, UseCases)"]
-                core[":core (Dispatchers, Loggers)"]
-            end
-
-            app --> project
-            app --> gis
-            app --> photo
-            app --> timeline
-            app --> reporting
-            app --> storage
-            app --> data
-            
-            project --> domain
-            gis --> domain
-            gis_maplibre --> gis
-            photo --> domain
-            photo_lite --> domain
-            timeline --> domain
-            reporting --> domain
-            
-            data --> domain
-            storage --> domain
-            storage --> data
-            
-            domain --> core
+        <div class="grid-4">
+            <div class="stat">
+                <div class="label">Layer kiến trúc</div>
+                <div class="value">4</div>
+                <div class="muted">Presentation, data, domain, core/storage.</div>
+            </div>
+            <div class="stat">
+                <div class="label">Đầu vào chính</div>
+                <div class="value">Android</div>
+                <div class="muted">Jetpack Compose, Room, Hilt, WorkManager.</div>
+            </div>
+            <div class="stat">
+                <div class="label">AI subsystem</div>
+                <div class="value">Hybrid</div>
+                <div class="muted">Rule-based, local LLM, vision, cloud fallback.</div>
+            </div>
+            <div class="stat">
+                <div class="label">Storage model</div>
+                <div class="value">Per-project</div>
+                <div class="muted">Thư mục dự án riêng trong Downloads/MapSupervision.</div>
+            </div>
         </div>
 
-        <h4>Chi Tiết Chức Năng Từng Module:</h4>
-        <ul>
-            <li><code>:core</code>: Cung cấp các công cụ nền tảng dùng chung (DispatcherProvider, AppExceptions, AppLogger).</li>
-            <li><code>:domain</code>: Thuần Kotlin, chứa nghiệp vụ cốt lõi (Models: Project, GisNode, SitePhoto; Repository Interfaces; UseCases).</li>
-            <li><code>:data</code>: Triển khai lưu trữ cục bộ Room Database, cung cấp DAOs và Repository Implementation.</li>
-            <li><code>:storage</code>: Quản lý đĩa vật lý, mã hóa ProjectCryptoManager, nhập File (KML, Office).</li>
-            <li><code>:gis</code> & <code>:gis-maplibre</code>: Giao diện bản đồ tương tác và cầu nối tích hợp MapLibre native.</li>
-            <li><code>:photo</code>: Camera thu thập hình ảnh, xác định GPS và xử lý nén bằng WorkManager.</li>
-            <li><code>:timeline</code>: View hiển thị quá trình phát triển của dự án theo dạng Timeline.</li>
-            <li><code>:reporting</code>: Quản lý và vẽ báo cáo thành file PDF qua Canvas.</li>
-            <li><code>:app</code>: Hub trung tâm cấu hình Dagger Hilt DI và điều hướng (Navigation).</li>
-        </ul>
-
-        <h2 id="workflows">4. Luồng Hoạt Động (Workflows)</h2>
-
-        <h3>4.1. Luồng Nhập Bản Đồ Hạ Tầng (KML/KMZ Import)</h3>
-        <p>Xảy ra khi kỹ sư thiết lập dự án mới và đưa tệp bản đồ số vào hệ thống.</p>
-        <div class="mermaid">
-        sequenceDiagram
-            autonumber
-            actor Engineer as Kỹ sư giám sát
-            participant App as :app (Workspace)
-            participant Storage as :storage (ImportService)
-            participant Data as :data (DB)
-            participant GIS as :gis (Bản đồ)
-
-            Engineer->>App: Nhập tệp thiết kế KML/KMZ
-            App->>Storage: importFile()
-            Storage->>Storage: Parse XML trích xuất danh sách coordinates
-            Storage-->>App: Trả về ImportedFileDraft
-            App->>Data: Lưu GisNodes, GisRoutes vào SQLite DB
-            App->>GIS: Chuyển hướng sang màn hình Bản đồ
-            GIS->>Data: Truy vấn tọa độ dự án
-            GIS-->>Engineer: Dựng bản đồ MapLibre GL
+        <div class="section">
+            <h2>Mục lục</h2>
+            <div class="toc">
+                <a href="#overview">1. Tổng quan dự án <span>Vai trò, mục tiêu, phạm vi</span></a>
+                <a href="#modules">2. Cấu trúc module <span>Gradle modules và trách nhiệm</span></a>
+                <a href="#architecture">3. Kiến trúc & phụ thuộc <span>Luồng phụ thuộc giữa các layer</span></a>
+                <a href="#data">4. Dữ liệu & database <span>Room, DAO, entity, repository</span></a>
+                <a href="#ai">5. AI & chat flow <span>Router, parser, worker, engines</span></a>
+                <a href="#storage">6. Storage & import <span>Project folders, crypto, file parsers</span></a>
+                <a href="#gis-photo-report">7. GIS, photo, reporting <span>Bản đồ, ảnh hiện trường, xuất báo cáo</span></a>
+                <a href="#entrypoints">8. Entry points quan trọng <span>Các file/symbol tiêu biểu</span></a>
+            </div>
         </div>
 
-        <h3>4.2. Luồng Chụp Ảnh & Đường Ống Xử Lý Ngầm</h3>
-        <p>Hệ thống nén ảnh nặng mượt mà ở Background (sử dụng WorkManager).</p>
-        <div class="mermaid">
-        sequenceDiagram
-            autonumber
-            actor Engineer as Kỹ sư giám sát
-            participant PhotoUI as :photo (UI)
-            participant Worker as :photo (WorkManager)
-            participant StorageMgr as :storage
-            participant DB as :data
-
-            Engineer->>PhotoUI: Chụp ảnh hiện trạng (tại ObjectCode)
-            PhotoUI->>PhotoUI: Thu luồng ảnh thô + Lấy tọa độ GPS
-            PhotoUI->>Worker: Enqueue tiến trình xử lý ảnh
-            Note over PhotoUI, Worker: UI không bị chặn, kỹ sư tiếp tục làm việc.
-            Worker->>StorageMgr: Tạo ảnh Thumbnail và Nén ảnh gốc
-            Worker->>DB: Ghi lưu SitePhotoEntity
-            Worker-->>Engineer: Cập nhật ảnh thu nhỏ trên bản đồ
+        <div class="section" id="overview">
+            <h2>1. Tổng quan dự án</h2>
+            <p>
+                <strong>MapSupervision</strong> là một ứng dụng Android đa module phục vụ quản lý và giám sát công trình hạ tầng.
+                Hệ thống kết hợp <strong>GIS</strong>, <strong>ảnh hiện trường</strong>, <strong>nhập dữ liệu từ tệp</strong>, <strong>nhật ký tiến độ</strong>,
+                <strong>xuất báo cáo</strong> và một <strong>subsystem AI/chat</strong> để hỗ trợ thao tác nhanh trong bối cảnh dự án.
+            </p>
+            <p>
+                Dựa trên file <code>settings.gradle.kts</code>, root project include các module:
+                <code>:app</code>, <code>:core</code>, <code>:domain</code>, <code>:data</code>, <code>:project</code>,
+                <code>:gis</code>, <code>:gis-maplibre</code>, <code>:photo</code>, <code>:timeline</code>,
+                <code>:reporting</code>, <code>:storage-core</code>, <code>:storage-crypto</code>, <code>:storage-import</code>.
+            </p>
+            <p>
+                Root <code>build.gradle.kts</code> còn có kiểm tra ràng buộc phụ thuộc giữa module, giúp giữ cấu trúc theo hướng sạch:
+                domain không phụ thuộc ngược lên data, storage, hay app; các module UI dựa vào domain và một số module hạ tầng cần thiết.
+            </p>
         </div>
 
-        <h3>4.3. Luồng Cập Nhật Tiến Độ & Cảnh Báo Trễ Hạn</h3>
-        <p>Phát hiện khi khối lượng thực tế thấp hơn kế hoạch để lập tức cảnh báo bằng cờ đỏ trên GIS Map.</p>
-        <div class="mermaid">
-        flowchart TD
-            Start([Nhập tiến độ 'actual']) --> Compare{So sánh: actual < planned?}
-            Compare -- Đúng --> MarkDelayed[Cờ delayed = true]
-            Compare -- Sai --> MarkOntime[Cờ delayed = false]
-            MarkDelayed --> SaveDB[Ghi dữ liệu NodeProgress vào DB]
-            MarkOntime --> SaveDB
-            SaveDB --> RedrawMap[Yêu cầu vẽ lại bản đồ]
-            RedrawMap --> ColorRed[GisStyleBuilder: Đổi màu nút sang Đỏ (nếu delayed)]
+        <div class="section" id="modules">
+            <h2>2. Cấu trúc module</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Module</th>
+                        <th>Vai trò chính</th>
+                        <th>File/symbol tiêu biểu</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>:app</code></td>
+                        <td>
+                            App shell và điều phối màn hình chính. Chứa <code>MainActivity</code>, <code>WorkspaceAppShell</code>,
+                            <code>AIManager</code>, các hub/workspace UI và entry points Hilt.
+                        </td>
+                        <td><code>app/src/main/java/com/mapsupervision/app/MainActivity.kt</code><br><code>app/src/main/java/com/mapsupervision/app/WorkspaceAppShell.kt</code><br><code>app/src/main/java/com/mapsupervision/app/ai/AIManager.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:core</code></td>
+                        <td>
+                            Hạ tầng dùng chung: logger, exception, dispatcher provider, result wrapper.
+                        </td>
+                        <td><code>core/src/main/java/com/mapsupervision/core/logging/AppLogger.kt</code><br><code>core/src/main/java/com/mapsupervision/core/coroutines/DispatcherProvider.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:domain</code></td>
+                        <td>
+                            Nơi đặt model nghiệp vụ, interface repository, use case và subsystem AI cốt lõi.
+                        </td>
+                        <td><code>domain/src/main/java/com/mapsupervision/domain/model/*</code><br><code>domain/src/main/java/com/mapsupervision/domain/repository/*</code><br><code>domain/src/main/java/com/mapsupervision/domain/ai/*</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:data</code></td>
+                        <td>
+                            Room database, entity, DAO, repository implementation, network/ML helpers.
+                        </td>
+                        <td><code>data/src/main/java/com/mapsupervision/data/db/MapSupervisionDatabase.kt</code><br><code>data/src/main/java/com/mapsupervision/data/repository/ProjectRepositoryImpl.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:project</code></td>
+                        <td>
+                            Màn hình quản lý dự án và import project package.
+                        </td>
+                        <td><code>project/src/main/java/com/mapsupervision/project/ui/ProjectViewModel.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:gis</code></td>
+                        <td>
+                            Giao diện GIS, view model và bridge cho bản đồ.
+                        </td>
+                        <td><code>gis/src/main/java/com/mapsupervision/gis/ui/GisViewModel.kt</code><br><code>gis/src/main/java/com/mapsupervision/gis/ui/GisScreen.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:gis-maplibre</code></td>
+                        <td>
+                            Tích hợp MapLibre Android và bridge render dữ liệu GIS.
+                        </td>
+                        <td><code>gis-maplibre/src/main/java/com/mapsupervision/gis/maplibre/MapBridgeInstaller.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:photo</code></td>
+                        <td>
+                            Camera, location, watermark/stamp và pipeline xử lý ảnh.
+                        </td>
+                        <td><code>photo/src/main/java/com/mapsupervision/photo/worker/PhotoPipelineService.kt</code><br><code>photo/src/main/java/com/mapsupervision/photo/location/PhotoLocationProvider.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:timeline</code></td>
+                        <td>
+                            Màn hình dòng thời gian cho nhật ký, ảnh và tiến độ.
+                        </td>
+                        <td><code>timeline/src/main/java/com/mapsupervision/timeline/ui/TimelineScreen.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:reporting</code></td>
+                        <td>
+                            Tạo nội dung báo cáo, xem trước và xuất PDF/DOCX.
+                        </td>
+                        <td><code>reporting/src/main/java/com/mapsupervision/reporting/ui/ReportExportBuilder.kt</code><br><code>reporting/src/main/java/com/mapsupervision/reporting/pdf/PdfReportGenerator.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:storage-core</code></td>
+                        <td>
+                            Quản lý thư mục dự án, sync repository và package service.
+                        </td>
+                        <td><code>storage-core/src/main/java/com/mapsupervision/storage/ProjectStorageManager.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:storage-crypto</code></td>
+                        <td>
+                            Mã hóa/giải mã dữ liệu dự án bằng Android Keystore.
+                        </td>
+                        <td><code>storage-crypto/src/main/java/com/mapsupervision/storage/crypto/ProjectCryptoManager.kt</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>:storage-import</code></td>
+                        <td>
+                            Parser và dịch vụ import tệp: KML/KMZ, GeoJSON, Excel, DOCX, PDF.
+                        </td>
+                        <td><code>storage-import/src/main/java/com/mapsupervision/storage/importer/UserFileImportService.kt</code></td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
-        <h3>4.4. Luồng Biên Tập Báo Cáo PDF</h3>
-        <p>Xuất báo cáo văn bản cho Chủ đầu tư.</p>
-        <div class="mermaid">
-        sequenceDiagram
-            autonumber
-            actor Engineer as Kỹ sư
-            participant ReportUI as :reporting
-            participant Generator as :reporting (PdfGenerator)
-            participant DB as :data
-
-            Engineer->>ReportUI: Yêu cầu "Xuất báo cáo PDF"
-            ReportUI->>DB: Lấy dữ liệu DailyLog & SitePhotos
-            ReportUI->>Generator: Gọi generatePdfReport()
-            Generator->>Generator: Vẽ bảng tổng hợp tiến độ và chèn ảnh (Canvas)
-            Generator-->>ReportUI: Trả về tệp .pdf hoàn chỉnh
-            ReportUI-->>Engineer: Mở tệp PDF để duyệt/chia sẻ
+        <div class="section" id="architecture">
+            <h2>3. Kiến trúc và phụ thuộc</h2>
+            <p>
+                Cấu trúc tổng thể đi theo hướng <strong>presentation → domain → data/storage</strong>. Các màn hình và view model ở layer UI
+                gọi use case/repository interface trong domain, rồi domain được hiện thực bởi data hoặc các module storage tương ứng.
+            </p>
+            <div class="diagram">
+<pre>app
+├─ project / gis / photo / timeline / reporting
+├─ data / storage-core / storage-crypto / storage-import
+└─ domain
+   └─ core</pre>
+            </div>
+            <p>
+                Từ <code>build.gradle.kts</code>, project còn enforce dependency boundaries ở cấp module.
+                Điều này giúp giữ repo ổn định khi số lượng màn hình và subsystem tăng lên.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nhóm phụ thuộc</th>
+                        <th>Ý nghĩa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>UI modules</td>
+                        <td>Phụ thuộc vào domain và một số module hạ tầng để dựng màn hình, view model và pipeline.</td>
+                    </tr>
+                    <tr>
+                        <td>Data</td>
+                        <td>Hiện thực repository interface của domain, quản lý Room, network, ML/AI helper.</td>
+                    </tr>
+                    <tr>
+                        <td>Storage</td>
+                        <td>Chia tách xử lý file, crypto và import để dễ bảo trì và kiểm thử.</td>
+                    </tr>
+                    <tr>
+                        <td>Core</td>
+                        <td>Không phụ thuộc ngược, đóng vai trò nền tảng dùng chung.</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
 
-        <h2 id="knowledge-graph">5. Bản Đồ Tri Thức Dự Án (Knowledge Graph)</h2>
-        <p>Sơ đồ thực thể mô tả luồng liên kết nghiệp vụ cốt lõi bên trong Database của hệ thống:</p>
-        <div class="mermaid">
-        erDiagram
-            PROJECT ||--o{ GIS-NODE : "chứa"
-            PROJECT ||--o{ GIS-ROUTE : "bao gồm"
-            PROJECT ||--o{ NODE-PROGRESS : "giám sát"
-            PROJECT ||--o{ SITE-PHOTO : "chụp hiện trường"
-            PROJECT ||--o{ DAILY-LOG : "ghi chép"
-            PROJECT ||--o{ IMPORTED-FILE : "tài liệu nguồn"
-
-            GIS-NODE ||--o{ NODE-PROGRESS : "đo lường bằng"
-            GIS-NODE ||--o{ GIS-ROUTE : "điểm bắt đầu / kết thúc"
-
-            SITE-PHOTO }o--|| GIS-NODE : "chụp tại vị trí"
-            DAILY-LOG ||--o{ SITE-PHOTO : "kèm theo ảnh chứng minh"
-            
-            PROJECT {
-                string id PK
-                string name
-                string slug
-            }
-
-            GIS-NODE {
-                string id PK
-                string projectId FK
-                string code 
-                double latitude
-                double longitude
-            }
-
-            GIS-ROUTE {
-                string id PK
-                string startNodeCode FK
-                string endNodeCode FK
-            }
-
-            NODE-PROGRESS {
-                string id PK
-                float planned 
-                float actual 
-                boolean delayed 
-            }
-
-            SITE-PHOTO {
-                string id PK
-                string filePath 
-                double latitude
-                double longitude
-                string engineer 
-            }
+        <div class="section" id="data">
+            <h2>4. Dữ liệu và database</h2>
+            <p>
+                Layer dữ liệu xoay quanh <code>MapSupervisionDatabase</code>, một Room database version <strong>19</strong> chứa
+                các entity cho dự án, tiến độ, ảnh, nhật ký, nhập file, AI cache, chat history và report draft.
+            </p>
+            <p>
+                Các DAO chính gồm <code>ProjectDao</code>, <code>GisNodeDao</code>, <code>GisRouteDao</code>,
+                <code>SitePhotoDao</code>, <code>DailyLogDao</code>, <code>TaskDao</code>,
+                <code>NoteDao</code>, <code>MaterialProgressDao</code>, <code>WorkCategoryDao</code>,
+                <code>AiDecisionCacheDao</code>, <code>ChatHistoryDao</code>, <code>ReportDraftDao</code>.
+            </p>
+            <p>
+                Những model domain trọng tâm gồm:
+                <code>Project</code>, <code>GisNode</code>, <code>GisRoute</code>, <code>NodeProgress</code>,
+                <code>MaterialProgress</code>, <code>SitePhoto</code>, <code>DailyLog</code>, <code>Note</code>,
+                <code>Task</code>, <code>ImportedFile</code>, <code>ChatHistoryMessage</code>,
+                <code>ReportDraft</code>, <code>WorkspaceSnapshot</code>.
+            </p>
+            <div class="note">
+                <strong>Điểm đáng chú ý:</strong> <code>Project</code> có thêm metadata version, storage mode và đường dẫn DB riêng,
+                cho thấy project đã tiến hoá từ mô hình lưu trữ chung sang mô hình per-project rõ ràng hơn.
+            </div>
         </div>
-        <p style="text-align: center; font-size: 0.9em; color: #7f8c8d; margin-top: 3rem;">
-            <em>Tài liệu được tổng hợp tự động từ Project Documentation & Overviews của dự án MapSupervision.</em>
-        </p>
+
+        <div class="section" id="ai">
+            <h2>5. AI và chat flow</h2>
+            <p>
+                Subsystem AI của repo không chỉ là một lớp gọi model, mà là một pipeline điều phối theo tài nguyên thiết bị,
+                loại nhiệm vụ và trạng thái hệ thống.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Thành phần</th>
+                        <th>Trách nhiệm</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>app/.../AIManager.kt</code></td>
+                        <td>
+                            Phân loại prompt đơn giản hay phức tạp. Nếu đơn giản hoặc thiết bị thiếu tài nguyên, xử lý ngay bằng parser rule-based.
+                            Nếu phức tạp và tài nguyên đủ, đẩy sang <code>HeavyAIWorker</code> qua WorkManager.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>domain/.../ChatActionParser.kt</code></td>
+                        <td>
+                            Chuyển prompt hoặc response từ LLM thành kết quả hành động có cấu trúc.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>domain/.../ChatDictionaryResolver.kt</code></td>
+                        <td>
+                            Chuẩn hóa từ khóa và hỗ trợ nhận diện lệnh nhanh theo dictionary/normalization.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>domain/.../AiOrchestrator.kt</code></td>
+                        <td>
+                            Smart router cho các capability AI. Chọn engine theo thiết bị, tài nguyên, feature flag và cache.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                Các engine được nhìn thấy trong domain gồm:
+                <code>RuleBasedEngine</code>, <code>CloudGeminiEngine</code>, <code>LocalLiteRtEngine</code>,
+                <code>MediaPipeLlmEngine</code>, <code>MlKitVisionEngine</code>, <code>TfliteVisionEngine</code>.
+            </p>
+            <div class="flow">
+                <div>
+                    <h3>1. Prompt vào</h3>
+                    <p>Người dùng nhập lệnh vào UI chat/workspace.</p>
+                </div>
+                <div class="arrow">→</div>
+                <div>
+                    <h3>2. AIManager</h3>
+                    <p>Kiểm tra độ đơn giản của prompt và tình trạng thiết bị.</p>
+                </div>
+                <div>
+                    <h3>3. Rule-based path</h3>
+                    <p>Prompt đơn giản hoặc thiết bị yếu: parse trực tiếp bằng <code>ChatActionParser</code>.</p>
+                </div>
+                <div class="arrow">→</div>
+                <div>
+                    <h3>4. Heavy path</h3>
+                    <p>Prompt phức tạp: enqueue <code>HeavyAIWorker</code> để xử lý nền.</p>
+                </div>
+                <div>
+                    <h3>5. Orchestrator</h3>
+                    <p>Nếu đi sâu hơn vào AI capability, <code>AiOrchestrator</code> chọn engine phù hợp và có fallback.</p>
+                </div>
+            </div>
+            <p class="muted" style="margin-top:12px;">
+                Đây là luồng thực tế được suy ra từ code trong <code>AIManager.kt</code> và <code>AiOrchestrator.kt</code>.
+            </p>
+        </div>
+
+        <div class="section" id="storage">
+            <h2>6. Storage, import và bảo mật</h2>
+            <p>
+                Hệ thống lưu trữ được chia tách theo dự án. <code>ProjectStorageManager</code> tạo cây thư mục riêng cho từng project
+                trong <code>Downloads/MapSupervision/Projects/&lt;slug&gt;</code>, rồi đảm bảo các thư mục con cần thiết đã tồn tại.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Thành phần</th>
+                        <th>Vai trò</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>ProjectStorageManager</code></td>
+                        <td>Quản lý thư mục dự án, tạo <code>photos/Nodes</code>, <code>thumbs</code>, <code>reports</code>, <code>exports</code>, <code>imports</code>, <code>db</code>.</td>
+                    </tr>
+                    <tr>
+                        <td><code>ProjectCryptoManager</code></td>
+                        <td>Mã hóa/giải mã bằng AES/GCM trên Android Keystore, có hàm diagnostics để kiểm tra key có hardware-backed hay không.</td>
+                    </tr>
+                    <tr>
+                        <td><code>UserFileImportService</code></td>
+                        <td>Nhập và preview file, hỗ trợ KML/KMZ, GeoJSON/JSON và Excel, đồng thời đọc thêm một số tài liệu phụ trợ.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p>
+                <code>UserFileImportService</code> cho thấy dự án có một pipeline import khá thực dụng:
+                copy tệp vào thư mục import, parse summary, sinh draft gợi ý node/route, và phân biệt giữa file non-Excel với file Excel.
+            </p>
+            <p>
+                Trong <code>photo</code>, <code>PhotoPipelineService</code> tạo file chụp, thêm watermark/stamp, tạo thumbnail và có hàm OCR
+                để trích xuất dữ liệu vật tư hoặc nhật ký từ ảnh.
+            </p>
+        </div>
+
+        <div class="section" id="gis-photo-report">
+            <h2>7. GIS, photo và reporting</h2>
+            <h3>GIS</h3>
+            <p>
+                Module <code>:gis</code> và <code>:gis-maplibre</code> chịu trách nhiệm hiển thị bản đồ, nodes/routes, chọn phần tử và đo khoảng cách.
+                <code>MapBridgeInstaller</code> khởi tạo MapLibre và gắn bridge render vào registry dùng chung của GIS UI.
+            </p>
+            <p>
+                Các symbol đáng chú ý: <code>GisViewModel</code>, <code>GisScreen</code>, <code>MapLibreGisMapBridge</code>,
+                <code>MapRenderKey</code>, <code>GisMapBridgeRegistry</code>.
+            </p>
+            <h3>Photo</h3>
+            <p>
+                Module <code>:photo</code> tập trung vào chụp ảnh hiện trường và xử lý hậu kỳ. Dữ liệu ảnh gắn với GPS,
+                timestamp, object code và các trường stamp khác. <code>PhotoPipelineService</code> tạo ảnh đầu ra,
+                thumbnail, và hỗ trợ import từ gallery.
+            </p>
+            <h3>Reporting</h3>
+            <p>
+                Module <code>:reporting</code> gom dữ liệu từ node progress, material progress, site photo và daily log để dựng nội dung báo cáo.
+                <code>ReportExportBuilder</code> chuẩn hóa content đầu ra, còn <code>PdfReportGenerator</code> và các màn hình reporting xử lý xuất file và preview.
+            </p>
+        </div>
+
+        <div class="section" id="entrypoints">
+            <h2>8. Entry points quan trọng</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>File / symbol</th>
+                        <th>Lý do quan trọng</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>app/src/main/java/com/mapsupervision/app/MainActivity.kt</code></td>
+                        <td>Điểm vào UI Android chính.</td>
+                    </tr>
+                    <tr>
+                        <td><code>app/src/main/java/com/mapsupervision/app/WorkspaceAppShell.kt</code></td>
+                        <td>Shell điều phối workspace và các hub màn hình.</td>
+                    </tr>
+                    <tr>
+                        <td><code>app/src/main/java/com/mapsupervision/app/ai/AIManager.kt</code></td>
+                        <td>Điểm vào xử lý prompt/command của AI ở app layer.</td>
+                    </tr>
+                    <tr>
+                        <td><code>domain/src/main/java/com/mapsupervision/domain/ai/AiOrchestrator.kt</code></td>
+                        <td>Router thông minh chọn engine AI và fallback khi cần.</td>
+                    </tr>
+                    <tr>
+                        <td><code>data/src/main/java/com/mapsupervision/data/db/MapSupervisionDatabase.kt</code></td>
+                        <td>Trung tâm persistence, định nghĩa entity và migration.</td>
+                    </tr>
+                    <tr>
+                        <td><code>data/src/main/java/com/mapsupervision/data/repository/ProjectRepositoryImpl.kt</code></td>
+                        <td>Bridge giữa repository interface và Room/DB.</td>
+                    </tr>
+                    <tr>
+                        <td><code>project/src/main/java/com/mapsupervision/project/ui/ProjectViewModel.kt</code></td>
+                        <td>Import project package và điều khiển luồng dự án.</td>
+                    </tr>
+                    <tr>
+                        <td><code>storage-import/src/main/java/com/mapsupervision/storage/importer/UserFileImportService.kt</code></td>
+                        <td>Pipeline import file kỹ thuật cho GIS và tài liệu.</td>
+                    </tr>
+                    <tr>
+                        <td><code>storage-core/src/main/java/com/mapsupervision/storage/ProjectStorageManager.kt</code></td>
+                        <td>Tạo và quản lý cây thư mục per-project.</td>
+                    </tr>
+                    <tr>
+                        <td><code>reporting/src/main/java/com/mapsupervision/reporting/ui/ReportExportBuilder.kt</code></td>
+                        <td>Tổng hợp dữ liệu để xuất báo cáo.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>Kết luận ngắn</h2>
+            <p>
+                Repo này là một ứng dụng Android khá hoàn chỉnh cho giám sát dự án hạ tầng, với ranh giới module rõ, dữ liệu Room có tiến hóa,
+                GIS là một trục trung tâm, và AI/chat được tích hợp theo hướng thực dụng: rule-based trước, heavy AI sau, có cache và fallback.
+            </p>
+            <p>
+                Nếu cần, mình có thể làm tiếp một bản HTML thứ hai theo kiểu “sơ đồ kiến trúc kỹ thuật” hoặc “tài liệu cho người mới vào dự án”
+                với mức chi tiết còn sâu hơn ở từng module.
+            </p>
+            <div class="footer">
+                Tài liệu này được tổng hợp từ cấu trúc module và các symbol hiện có trong codebase MapSupervision.
+            </div>
+        </div>
     </div>
 </body>
 </html>

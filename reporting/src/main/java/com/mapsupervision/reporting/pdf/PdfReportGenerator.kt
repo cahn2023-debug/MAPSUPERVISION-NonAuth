@@ -25,7 +25,8 @@ class PdfReportGenerator @Inject constructor() {
         projectId: String,
         summaryLines: List<String>,
         materialRows: List<MaterialReportRow>,
-        photos: List<SitePhoto>
+        photos: List<SitePhoto>,
+        dailyLogLines: List<String> = emptyList()
     ): File {
         val doc = PdfDocument()
         val pageWidth = 595
@@ -117,6 +118,34 @@ class PdfReportGenerator @Inject constructor() {
             y += 18f
         }
 
+        if (dailyLogLines.isNotEmpty()) {
+            if (y > pageHeight - 120f) {
+                drawFooter()
+                doc.finishPage(page)
+                pageNumber++
+                pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                page = doc.startPage(pageInfo)
+                canvas = page.canvas
+                y = 60f
+            }
+            y += 14f
+            canvas.drawText("Tổng hợp nhật ký thi công", 40f, y, headerPaint)
+            y += 18f
+            dailyLogLines.forEach { line ->
+                if (y > pageHeight - 60f) {
+                    drawFooter()
+                    doc.finishPage(page)
+                    pageNumber++
+                    pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                    page = doc.startPage(pageInfo)
+                    canvas = page.canvas
+                    y = 60f
+                }
+                canvas.drawText(line, 40f, y, bodyPaint)
+                y += 18f
+            }
+        }
+
         // Draw Construction Photo Log section
         if (photos.isNotEmpty()) {
             drawFooter()
@@ -172,12 +201,14 @@ class PdfReportGenerator @Inject constructor() {
                     val latStr = photo.latitude?.let { "%.4f".format(it) } ?: "N/A"
                     val lngStr = photo.longitude?.let { "%.4f".format(it) } ?: "N/A"
                     val label2 = "Toạ độ: $latStr, $lngStr"
-                    val label3 = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(photo.capturedAtEpochMs))
+                    val label3 = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(photo.matchedAtEpochMs.takeIf { it > 0L } ?: photo.capturedAtEpochMs))
+                    val label4 = if (photo.matchingTimeOffsetMs != 0L) "Offset: ${photo.matchingTimeOffsetMs / 60000}m" else ""
 
                     val detailPaint = Paint().apply { textSize = 9f }
                     canvas.drawText(label1, startX, textY, headerPaint.apply { textSize = 9f })
                     canvas.drawText(label2, startX, textY + 12f, detailPaint)
                     canvas.drawText(label3, startX, textY + 24f, detailPaint)
+                    if (label4.isNotBlank()) canvas.drawText(label4, startX, textY + 36f, detailPaint)
                 }
 
                 y += cellHeight + 15f

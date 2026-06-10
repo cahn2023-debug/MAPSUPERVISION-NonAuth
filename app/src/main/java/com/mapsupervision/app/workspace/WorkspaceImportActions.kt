@@ -26,7 +26,6 @@ import com.mapsupervision.domain.model.ImportedFile
 import com.mapsupervision.domain.model.MaterialProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
-import com.mapsupervision.domain.model.createStoredSitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository

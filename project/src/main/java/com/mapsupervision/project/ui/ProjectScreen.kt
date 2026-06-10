@@ -19,10 +19,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.collectAsState
 
 @Composable
 fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
-    val state = viewModel.uiState.value
+    val state by viewModel.uiState.collectAsState()
     var name by remember { mutableStateOf("") }
 
     val importLauncher = rememberLauncherForActivityResult(

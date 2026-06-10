@@ -27,6 +27,8 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -118,6 +120,12 @@ fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> U
                 modifier = Modifier.align(Alignment.Center).size(24.dp)
             )
         }
+        MatchStatusBadge(
+            photo = photo,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(4.dp)
+        )
         // Timestamp badge
         val ts = SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(photo.capturedAtEpochMs))
         Box(
@@ -128,6 +136,21 @@ fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> U
         ) {
             Text(ts, color = Color.White, fontSize = 9.sp)
         }
+    }
+}
+
+@Composable
+private fun MatchStatusBadge(photo: SitePhoto, modifier: Modifier = Modifier) {
+    val isMatched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+    val text = if (isMatched) "Khớp" else "Lệch"
+    val background = if (isMatched) Color(0xCC16A34A) else Color(0xCCDC2626)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(background)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(text, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }
 

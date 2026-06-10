@@ -36,6 +36,15 @@ class MapStyleAssetsTest {
     }
 
     @Test
+    fun street_and_satellite_styles_request_vietnamese_labels() {
+        listOf("style_street.json", "style_satellite.json").forEach { fileName ->
+            val content = File(assetDir, fileName).readText()
+
+            assertTrue("$fileName should request Vietnamese labels", content.contains("hl=vi"))
+        }
+    }
+
+    @Test
     fun bundled_styles_do_not_include_cluster_or_point_count_filters() {
         styleFiles.forEach { fileName ->
             val content = File(assetDir, fileName).readText()

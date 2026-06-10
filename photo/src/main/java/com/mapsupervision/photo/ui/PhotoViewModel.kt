@@ -9,8 +9,8 @@ import com.mapsupervision.domain.ai.AiOrchestrator
 import com.mapsupervision.domain.ai.PhotoQualityPayload
 import com.mapsupervision.domain.ai.PhotoQualityResult
 import com.mapsupervision.domain.model.SitePhoto
-import com.mapsupervision.domain.model.createStoredSitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
+import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
@@ -33,6 +33,7 @@ class PhotoViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val photoRepository: PhotoRepository,
     private val activeProjectRepository: ActiveProjectRepository,
+    private val gisRepository: GisRepository,
     private val projectRepository: ProjectRepository,
     private val projectSyncRepository: ProjectSyncRepository,
     private val locationProvider: PhotoLocationProvider,
@@ -43,6 +44,10 @@ class PhotoViewModel @Inject constructor(
     val photos: StateFlow<List<SitePhoto>> = _photos.asStateFlow()
     private val _lastAiPhotoQuality = MutableStateFlow<PhotoQualityResult?>(null)
     val lastAiPhotoQuality: StateFlow<PhotoQualityResult?> = _lastAiPhotoQuality.asStateFlow()
+    private val _selectedPhotoForReview = MutableStateFlow<SitePhoto?>(null)
+    val selectedPhotoForReview: StateFlow<SitePhoto?> = _selectedPhotoForReview.asStateFlow()
+    private val _availableTagOptions = MutableStateFlow<List<String>>(emptyList())
+    val availableTagOptions: StateFlow<List<String>> = _availableTagOptions.asStateFlow()
     private var activeProjectIdCache: String? = null
 
     init {
@@ -72,6 +77,80 @@ class PhotoViewModel @Inject constructor(
             activeProjectIdCache = activeId
             val result = photoRepository.byProject(activeId)
             _photos.value = (result as? AppResult.Success)?.data.orEmpty()
+            refreshTagOptions(activeId)
+            _selectedPhotoForReview.value = _selectedPhotoForReview.value?.let { selected ->
+                _photos.value.firstOrNull { it.id == selected.id } ?: selected
+            }
+        }
+    }
+
+    private suspend fun refreshTagOptions(projectId: String) {
+        val nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+        val routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+        _availableTagOptions.value = buildSet {
+            nodes.forEach { node ->
+                if (node.code.isNotBlank()) add(node.code.trim())
+            }
+            routes.forEach { route ->
+                if (route.code.isNotBlank()) add(route.code.trim())
+            }
+        }.toList().sorted()
+    }
+
+    fun selectPhotoForReview(photoId: String) {
+        _selectedPhotoForReview.value = _photos.value.firstOrNull { it.id == photoId }
+    }
+
+    fun clearPhotoReviewSelection() {
+        _selectedPhotoForReview.value = null
+    }
+
+    fun updateSelectedPhotoTags(tagCodesCsv: String) {
+        val current = _selectedPhotoForReview.value ?: return
+        _selectedPhotoForReview.value = current.copy(
+            tagCodesCsv = tagCodesCsv,
+            matchedNodeCode = tagCodesCsv.split(',').firstOrNull { it.isNotBlank() }?.trim()
+                ?: current.matchedNodeCode,
+            matchedRouteCode = tagCodesCsv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+                .drop(1)
+                .firstOrNull() ?: current.matchedRouteCode
+        )
+    }
+
+    fun updateSelectedPhotoOffsetMinutes(offsetMinutes: Int) {
+        val current = _selectedPhotoForReview.value ?: return
+        val offsetMs = offsetMinutes.toLong() * 60_000L
+        val matchedAt = current.capturedAtEpochMs + offsetMs
+        _selectedPhotoForReview.value = current.copy(
+            matchingTimeOffsetMs = offsetMs,
+            matchedAtEpochMs = matchedAt,
+            matchedNodeCode = current.tagCodesCsv.split(',').firstOrNull { it.isNotBlank() }?.trim()
+                ?: current.matchedNodeCode
+        )
+    }
+
+    fun toggleSelectedPhotoTag(tagCode: String) {
+        val current = _selectedPhotoForReview.value ?: return
+        val normalized = tagCode.trim()
+        if (normalized.isBlank()) return
+        val nextTags = current.tagCodesCsv
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it != normalized }
+            .toMutableList()
+        if (current.tagCodesCsv.split(',').map { it.trim() }.any { it == normalized }) {
+            // tag already present; remove it
+        } else {
+            nextTags.add(normalized)
+        }
+        updateSelectedPhotoTags(nextTags.joinToString(", "))
+    }
+
+    fun saveSelectedPhotoReview() {
+        val current = _selectedPhotoForReview.value ?: return
+        viewModelScope.launch {
+            photoRepository.add(current)
+            refresh()
         }
     }
 
@@ -154,13 +233,25 @@ class PhotoViewModel @Inject constructor(
         location: com.mapsupervision.domain.model.PhotoLocationSnapshot
     ) {
         val thumb = photoPipelineService.createThumbnail(projectId, file)
-        val model = createStoredSitePhoto(
+        val capturedAt = System.currentTimeMillis()
+        val model = SitePhoto(
+            id = java.util.UUID.randomUUID().toString(),
             projectId = projectId,
             objectCode = objectCode,
-            file = file,
-            thumbnailFile = thumb,
-            location = location,
-            engineer = engineer
+            tagCodesCsv = objectCode,
+            matchedNodeCode = objectCode,
+            matchedRouteCode = null,
+            filePath = file.absolutePath,
+            thumbnailPath = thumb.absolutePath,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            locationAccuracyM = location.accuracyM,
+            isGpsMocked = location.isMock,
+            locationStatus = location.status,
+            engineer = engineer,
+            capturedAtEpochMs = capturedAt,
+            matchedAtEpochMs = capturedAt,
+            matchingTimeOffsetMs = 0L
         )
         photoRepository.add(model)
     }

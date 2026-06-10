@@ -9,8 +9,12 @@ import kotlin.math.roundToLong
 
 object WorkspaceImportHelper {
     fun isStructuralRouteNode(code: String, routeNodeCodesUpper: Set<String>): Boolean {
-        if (!code.contains("#pm") || !code.contains("_p")) return false
-        return routeNodeCodesUpper.contains(code.trim().uppercase())
+        val upper = code.trim().uppercase()
+        if (!routeNodeCodesUpper.contains(upper)) return false
+        return (upper.contains("#PM") && upper.contains("_P")) ||
+                upper.contains("_P") ||
+                upper.endsWith("_S") ||
+                upper.endsWith("_E")
     }
 
     private val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")

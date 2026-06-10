@@ -68,7 +68,12 @@ class DailyLogRepositoryErrorHandlingTest {
             workItem = "Thi cong",
             manpower = 3,
             note = "",
-            createdAtEpochMs = 1_000L
+            createdAtEpochMs = 1_000L,
+            routeCode = null,
+            batchGroupId = "",
+            appliedNodeCodesCsv = "",
+            linkedPhotoIdsCsv = "",
+            photoMatchOffsetMinutes = 0
         )
 
         assertEquals("", log.weather)
@@ -78,5 +83,7 @@ class DailyLogRepositoryErrorHandlingTest {
         assertEquals(0.0, log.volume, 0.0)
         assertEquals("", log.unit)
         assertEquals("", log.categoryName)
+        assertEquals("", log.batchGroupId)
+        assertEquals("", log.appliedNodeCodesCsv)
     }
 }

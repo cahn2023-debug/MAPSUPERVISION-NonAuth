@@ -16,6 +16,7 @@ import com.mapsupervision.data.db.entity.ProjectEntity
 import com.mapsupervision.data.db.entity.SitePhotoEntity
 import com.mapsupervision.data.db.entity.TaskEntity
 import com.mapsupervision.data.db.entity.WorkCategoryEntity
+import com.mapsupervision.data.db.entity.ReportDraftEntity
 import com.mapsupervision.domain.model.ProjectStorageMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -78,7 +79,10 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 MapSupervisionDatabase.MIGRATION_12_13,
                 MapSupervisionDatabase.MIGRATION_13_14,
                 MapSupervisionDatabase.MIGRATION_14_15,
-                MapSupervisionDatabase.MIGRATION_15_16
+                MapSupervisionDatabase.MIGRATION_15_16,
+                MapSupervisionDatabase.MIGRATION_16_17,
+                MapSupervisionDatabase.MIGRATION_17_18,
+                MapSupervisionDatabase.MIGRATION_18_19
             )
             .fallbackToDestructiveMigration()
             .build()
@@ -94,14 +98,9 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     ) {
         val scopedHasData = hasAnyProjectRows(projectDatabase, project.id)
         val sharedHasData = hasAnyProjectRows(sharedDatabase, project.id)
-        val scopedNodes = countProjectRows(projectDatabase, "gis_node", project.id)
-        val scopedRoutes = countProjectRows(projectDatabase, "gis_route", project.id)
-        val sharedNodes = countProjectRows(sharedDatabase, "gis_node", project.id)
-        val sharedRoutes = countProjectRows(sharedDatabase, "gis_route", project.id)
         AppLogger.d(
             "project.db.seed.detect projectId=${project.id} " +
-                "sharedNodes=$sharedNodes sharedRoutes=$sharedRoutes " +
-                "scopedNodes=$scopedNodes scopedRoutes=$scopedRoutes"
+                "sharedHasData=$sharedHasData scopedHasData=$scopedHasData"
         )
         if (scopedHasData) {
             AppLogger.d("project.db.seed.skip projectId=${project.id} reason=scoped_not_empty")
@@ -129,6 +128,7 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             for (entity in payload.tasks) projectDatabase.taskDao().upsert(entity)
             for (entity in payload.sitePhotos) projectDatabase.sitePhotoDao().upsert(entity)
             for (entity in payload.workCategories) projectDatabase.workCategoryDao().upsert(entity)
+            for (entity in payload.reportDrafts) projectDatabase.reportDraftDao().upsert(entity)
         }
         AppLogger.d(
             "project.db.seed.complete projectId=${project.id} " +
@@ -136,7 +136,7 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 "files=${payload.importedFiles.size} nodeProgress=${payload.nodeProgress.size} " +
                 "materialProgress=${payload.materialProgress.size} dailyLogs=${payload.dailyLogs.size} " +
                 "notes=${payload.notes.size} tasks=${payload.tasks.size} " +
-                "sitePhotos=${payload.sitePhotos.size} workCategories=${payload.workCategories.size}"
+                "sitePhotos=${payload.sitePhotos.size} workCategories=${payload.workCategories.size} reportDrafts=${payload.reportDrafts.size}"
         )
     }
 
@@ -151,6 +151,7 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         val tasks = sharedDatabase.taskDao().byProject(projectId)
         val sitePhotos = sharedDatabase.sitePhotoDao().byProject(projectId)
         val workCategories = sharedDatabase.workCategoryDao().byProject(projectId)
+        val reportDrafts = sharedDatabase.reportDraftDao().byProject(projectId)
         if (
             importedFiles.isEmpty() &&
             nodes.isEmpty() &&
@@ -161,7 +162,8 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             notes.isEmpty() &&
             tasks.isEmpty() &&
             sitePhotos.isEmpty() &&
-            workCategories.isEmpty()
+            workCategories.isEmpty() &&
+            reportDrafts.isEmpty()
         ) {
             return null
         }
@@ -175,22 +177,9 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             notes = notes,
             tasks = tasks,
             sitePhotos = sitePhotos,
-            workCategories = workCategories
+            workCategories = workCategories,
+            reportDrafts = reportDrafts
         )
-    }
-
-    private fun countProjectRows(
-        database: MapSupervisionDatabase,
-        tableName: String,
-        projectId: String
-    ): Int {
-        val query = SimpleSQLiteQuery(
-            "SELECT COUNT(*) FROM `$tableName` WHERE `projectId` = ?",
-            arrayOf(projectId)
-        )
-        return database.openHelper.readableDatabase.query(query).use { cursor ->
-            if (cursor.moveToFirst()) cursor.getInt(0) else 0
-        }
     }
 
     private fun hasAnyProjectRows(database: MapSupervisionDatabase, projectId: String): Boolean {
@@ -206,11 +195,12 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 EXISTS(SELECT 1 FROM `note` WHERE `projectId` = ? LIMIT 1) OR
                 EXISTS(SELECT 1 FROM `task` WHERE `projectId` = ? LIMIT 1) OR
                 EXISTS(SELECT 1 FROM `site_photos` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `work_categories` WHERE `projectId` = ? LIMIT 1)
+                EXISTS(SELECT 1 FROM `work_categories` WHERE `projectId` = ? LIMIT 1) OR
+                EXISTS(SELECT 1 FROM `report_draft` WHERE `projectId` = ? LIMIT 1)
             """.trimIndent(),
             arrayOf(
                 projectId, projectId, projectId, projectId, projectId,
-                projectId, projectId, projectId, projectId, projectId
+                projectId, projectId, projectId, projectId, projectId, projectId
             )
         )
         return database.openHelper.readableDatabase.query(query).use { cursor ->
@@ -246,6 +236,7 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         val notes: List<NoteEntity>,
         val tasks: List<TaskEntity>,
         val sitePhotos: List<SitePhotoEntity>,
-        val workCategories: List<WorkCategoryEntity>
+        val workCategories: List<WorkCategoryEntity>,
+        val reportDrafts: List<ReportDraftEntity>
     )
 }

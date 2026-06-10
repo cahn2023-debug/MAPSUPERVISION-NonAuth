@@ -3,10 +3,12 @@ package com.mapsupervision.reporting.ui
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import com.mapsupervision.core.result.AppResult
 import com.mapsupervision.domain.ai.AiOrchestrator
 import com.mapsupervision.domain.ai.ReportDraftPayload
 import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.MaterialProgressRepository
@@ -58,8 +60,17 @@ class ReportingViewModel @Inject constructor(
     private val _lastPackagePath = MutableStateFlow<String?>(null)
     val lastPackagePath: StateFlow<String?> = _lastPackagePath.asStateFlow()
 
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
     private val _materialReportRows = MutableStateFlow<List<MaterialReportRow>>(emptyList())
     val materialReportRows: StateFlow<List<MaterialReportRow>> = _materialReportRows.asStateFlow()
+
+    private val _projectNodes = MutableStateFlow<List<GisNode>>(emptyList())
+    val projectNodes: StateFlow<List<GisNode>> = _projectNodes.asStateFlow()
+
+    private val _projectRoutes = MutableStateFlow<List<GisRoute>>(emptyList())
+    val projectRoutes: StateFlow<List<GisRoute>> = _projectRoutes.asStateFlow()
 
     private val _photos = MutableStateFlow<List<com.mapsupervision.domain.model.SitePhoto>>(emptyList())
     val photos: StateFlow<List<com.mapsupervision.domain.model.SitePhoto>> = _photos.asStateFlow()
@@ -99,11 +110,28 @@ class ReportingViewModel @Inject constructor(
             val rows = (materialProgressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
             val nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
             val routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+            _projectNodes.value = nodes
+            _projectRoutes.value = routes
             _materialReportRows.value = buildMaterialReportRows(nodes, routes, rows)
             _photos.value = (photoRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
             
             // Tự động sinh báo cáo tổng hợp AI khi mở tab hoặc reload dữ liệu
             generateAiReportDraft(projectId)
+        }
+    }
+
+    fun updatePhotoOffset(photo: SitePhoto, offsetMinutes: Int) {
+        viewModelScope.launch {
+            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+            val offsetMs = offsetMinutes.toLong() * 60_000L
+            val updated = photo.copy(
+                matchingTimeOffsetMs = offsetMs,
+                matchedAtEpochMs = photo.capturedAtEpochMs + offsetMs
+            )
+            photoRepository.add(updated)
+            if (photo.projectId == projectId) {
+                refreshReportData()
+            }
         }
     }
 
@@ -148,7 +176,7 @@ class ReportingViewModel @Inject constructor(
         }
 
         val notesSummary = logs.filter { it.note.isNotBlank() }.joinToString("\n") { l ->
-            "- Hạng mục [${l.workItem}]: ${l.note}"
+            "- Hạng mục [${l.workItem}]${l.nodeCode?.let { " ($it)" } ?: ""}: ${l.note}"
         }
 
         val result = aiOrchestrator.execute<ReportDraftResult>(
@@ -172,108 +200,95 @@ class ReportingViewModel @Inject constructor(
         return result
     }
 
+    private fun launchExport(action: suspend () -> Unit) {
+        if (_isExporting.value) return
+        _isExporting.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                action()
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
 
     fun exportPdf(filterNodeCode: String? = null) {
-        viewModelScope.launch {
-            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-            var photos = (photoRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var progress = (progressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var materialRowsRaw = (materialProgressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
-            var routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
-
-            if (filterNodeCode != null) {
-                photos = photos.filter { it.objectCode == filterNodeCode }
-                progress = progress.filter { it.nodeCode == filterNodeCode }
-                materialRowsRaw = materialRowsRaw.filter { it.nodeCode == filterNodeCode }
-                nodes = nodes.filter { it.code == filterNodeCode || it.id == filterNodeCode }
-                routes = routes.filter { it.startNodeCode == filterNodeCode || it.endNodeCode == filterNodeCode }
-            }
-
-            val materialRows = buildMaterialReportRows(nodes, routes, materialRowsRaw)
-
-            val delayed = progress.count { it.delayed }
-            val avg = if (progress.isEmpty()) 0f else progress.map { it.actual }.average().toFloat()
-            
+        launchExport {
+            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launchExport
+            val photos = (photoRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val progress = (progressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val materialRowsRaw = (materialProgressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+            val routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+            val dailyLogs = (dailyLogRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
             val activeDraft = if (filterNodeCode != null) {
                 generateAiReportDraft(projectId, filterNodeCode)
             } else {
                 _aiReportDraft.value ?: generateAiReportDraft(projectId)
             }
-
-            val lines = buildList {
-                if (filterNodeCode != null) {
-                    add("BÁO CÁO CHI TIẾT ĐIỂM GIÁM SÁT: $filterNodeCode")
-                }
-                add("Tổng số điểm giám sát: ${progress.size}")
-                if (filterNodeCode == null) {
-                    add("Số điểm thi công chậm: $delayed")
-                    add("Tiến độ thi công trung bình: ${"%.2f".format(avg)}%")
-                }
-                add("Tổng số ảnh thực địa chụp được: ${photos.size}")
-                add("Tóm tắt AI: ${activeDraft.executiveSummary}")
-                add("Đánh giá rủi ro AI: ${activeDraft.riskSection}")
-                add("Hành động đề xuất AI: ${activeDraft.recommendedActions.joinToString("; ")}")
-            }
-
-            val targetId = if (filterNodeCode != null) "${projectId}_$filterNodeCode" else projectId
-            val file = pdfReportGenerator.exportProjectSummary(context, targetId, lines, materialRows, photos)
+            val exportContent = buildReportExportContent(
+                projectId = projectId,
+                filterNodeCode = filterNodeCode,
+                photos = photos,
+                progress = progress,
+                materialRowsRaw = materialRowsRaw,
+                nodes = nodes,
+                routes = routes,
+                dailyLogs = dailyLogs,
+                activeDraft = activeDraft
+            )
+            val file = pdfReportGenerator.exportProjectSummary(
+                context,
+                exportContent.targetId,
+                exportContent.lines,
+                exportContent.materialRows,
+                exportContent.photos,
+                exportContent.dailyLogLines
+            )
             _lastReportPath.value = file.absolutePath
         }
     }
 
     fun exportWord(filterNodeCode: String? = null) {
-        viewModelScope.launch {
-            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-            var photos = (photoRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var progress = (progressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var materialRowsRaw = (materialProgressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            var nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
-            var routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
-
-            if (filterNodeCode != null) {
-                photos = photos.filter { it.objectCode == filterNodeCode }
-                progress = progress.filter { it.nodeCode == filterNodeCode }
-                materialRowsRaw = materialRowsRaw.filter { it.nodeCode == filterNodeCode }
-                nodes = nodes.filter { it.code == filterNodeCode || it.id == filterNodeCode }
-                routes = routes.filter { it.startNodeCode == filterNodeCode || it.endNodeCode == filterNodeCode }
-            }
-
-            val materialRows = buildMaterialReportRows(nodes, routes, materialRowsRaw)
-
-            val delayed = progress.count { it.delayed }
-            val avg = if (progress.isEmpty()) 0f else progress.map { it.actual }.average().toFloat()
-            
+        launchExport {
+            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launchExport
+            val photos = (photoRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val progress = (progressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val materialRowsRaw = (materialProgressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
+            val nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+            val routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+            val dailyLogs = (dailyLogRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
             val activeDraft = if (filterNodeCode != null) {
                 generateAiReportDraft(projectId, filterNodeCode)
             } else {
                 _aiReportDraft.value ?: generateAiReportDraft(projectId)
             }
-
-            val lines = buildList {
-                if (filterNodeCode != null) {
-                    add("BÁO CÁO CHI TIẾT ĐIỂM GIÁM SÁT: $filterNodeCode")
-                }
-                add("Tổng số điểm giám sát: ${progress.size}")
-                if (filterNodeCode == null) {
-                    add("Số điểm thi công chậm: $delayed")
-                    add("Tiến độ thi công trung bình: ${"%.2f".format(avg)}%")
-                }
-                add("Tổng số ảnh thực địa chụp được: ${photos.size}")
-                add("Tóm tắt AI: ${activeDraft.executiveSummary}")
-                add("Đánh giá rủi ro AI: ${activeDraft.riskSection}")
-                add("Hành động đề xuất AI: ${activeDraft.recommendedActions.joinToString("; ")}")
-            }
-
-            val targetId = if (filterNodeCode != null) "${projectId}_$filterNodeCode" else projectId
-            val file = docxReportGenerator.exportProjectSummary(context, targetId, lines, materialRows, photos)
+            val exportContent = buildReportExportContent(
+                projectId = projectId,
+                filterNodeCode = filterNodeCode,
+                photos = photos,
+                progress = progress,
+                materialRowsRaw = materialRowsRaw,
+                nodes = nodes,
+                routes = routes,
+                dailyLogs = dailyLogs,
+                activeDraft = activeDraft
+            )
+            val file = docxReportGenerator.exportProjectSummary(
+                context,
+                exportContent.targetId,
+                exportContent.lines,
+                exportContent.materialRows,
+                exportContent.photos
+            )
             _lastWordReportPath.value = file.absolutePath
         }
     }
 
     fun exportPackageZip() {
-        viewModelScope.launch {
-            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        launchExport {
+            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launchExport
             val zip = projectPackageService.exportProjectZip(projectId)
             _lastPackagePath.value = zip.absolutePath
         }

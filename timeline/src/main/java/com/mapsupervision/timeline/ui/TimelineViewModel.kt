@@ -96,7 +96,12 @@ class TimelineViewModel @Inject constructor(
                     workItem = workItem,
                     manpower = manpower,
                     note = note,
-                    createdAtEpochMs = System.currentTimeMillis()
+                    createdAtEpochMs = System.currentTimeMillis(),
+                    routeCode = null,
+                    batchGroupId = "",
+                    appliedNodeCodesCsv = "",
+                    linkedPhotoIdsCsv = "",
+                    photoMatchOffsetMinutes = 0
                 )
             )
             refresh()

@@ -62,7 +62,11 @@ class AndroidDeviceCapabilityDetector(private val context: Context) : DeviceCapa
                               board.contains("npu")
         
         // Check for specific chipsets known to have NPUs
-        val chipset = Build.SOC_MODEL.lowercase()
+        val chipset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Build.SOC_MODEL.lowercase()
+        } else {
+            ""
+        }
         val hasKnownNpuChipset = chipset.contains("snapdragon") ||
                                  chipset.contains("mediatek") ||
                                  chipset.contains("exynos") ||

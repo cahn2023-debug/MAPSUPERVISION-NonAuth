@@ -4,7 +4,6 @@ import com.mapsupervision.core.error.DatabaseException
 import com.mapsupervision.core.result.AppResult
 import com.mapsupervision.data.db.dao.ProjectDao
 import com.mapsupervision.data.db.entity.ProjectEntity
-import com.mapsupervision.domain.model.CURRENT_METADATA_VERSION
 import com.mapsupervision.domain.model.Project
 import com.mapsupervision.domain.model.ProjectStorageMode
 import com.mapsupervision.domain.repository.ProjectRepository
@@ -16,6 +15,10 @@ class ProjectRepositoryImpl @Inject constructor(
     private val projectDao: ProjectDao,
     private val storageManager: ProjectStorageManager
 ) : ProjectRepository {
+    private companion object {
+        const val CURRENT_METADATA_VERSION = 3
+    }
+
     override suspend fun create(name: String): AppResult<Project> = runCatching {
         val entity = newProject(name)
         projectDao.upsert(entity)

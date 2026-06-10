@@ -1,17 +1,41 @@
 package com.mapsupervision.reporting.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,12 +45,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.rememberAsyncImagePainter
 import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportPreviewDialog(
     showDialog: Boolean,
@@ -34,15 +62,47 @@ fun ReportPreviewDialog(
     projectId: String,
     filterNodeCode: String? = null,
     selectedExportFormat: String,
-    onConfirmExport: (String) -> Unit, // Returns final selected format: "PDF" or "WORD"
+    isExporting: Boolean,
+    onUpdatePhotoOffset: (SitePhoto, Int) -> Unit,
+    projectNodes: List<GisNode>,
+    projectRoutes: List<GisRoute>,
+    onConfirmExport: (String) -> Unit,
     photos: List<SitePhoto>,
     materialRows: List<MaterialReportRow>,
     aiDraft: ReportDraftResult?
 ) {
     if (!showDialog) return
 
-    var format by remember(selectedExportFormat) { 
-        mutableStateOf(if (selectedExportFormat.isBlank()) "PDF" else selectedExportFormat) 
+    var format by remember(selectedExportFormat) {
+        mutableStateOf(if (selectedExportFormat.isBlank()) "PDF" else selectedExportFormat)
+    }
+    var selectedPhotoFilters by remember(projectId, filterNodeCode) {
+        mutableStateOf(if (filterNodeCode.isNullOrBlank()) emptySet<String>() else setOf("NODE:$filterNodeCode"))
+    }
+    val availableFilters = remember(projectNodes, projectRoutes) {
+        buildList {
+            projectNodes.forEach { if (it.code.isNotBlank()) add("NODE:${it.code}") }
+            projectRoutes.forEach { if (it.code.isNotBlank()) add("ROUTE:${it.code}") }
+        }
+    }
+    val filteredPhotos = remember(photos, selectedPhotoFilters) {
+        if (selectedPhotoFilters.isEmpty()) photos else photos.filter { photo ->
+            selectedPhotoFilters.any { key ->
+                val value = key.substringAfter(":")
+                when {
+                    key.startsWith("NODE:") -> {
+                        photo.objectCode == value ||
+                            photo.matchedNodeCode == value ||
+                            photo.tagCodesCsv.split(',').map(String::trim).any { it == value }
+                    }
+                    key.startsWith("ROUTE:") -> {
+                        photo.matchedRouteCode == value ||
+                            photo.tagCodesCsv.split(',').map(String::trim).any { it == value }
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     Dialog(
@@ -58,17 +118,13 @@ fun ReportPreviewDialog(
                 .padding(16.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (filterNodeCode != null) 
-                            "Xem trước Báo cáo điểm: $filterNodeCode"
-                        else
-                            "Xem trước Báo cáo dự án",
+                        text = if (filterNodeCode != null) "Xem trước Báo cáo điểm: $filterNodeCode" else "Xem trước Báo cáo dự án",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -80,7 +136,6 @@ fun ReportPreviewDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Format Selector Toggles inside dialog
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -88,6 +143,7 @@ fun ReportPreviewDialog(
                     val isPdf = format == "PDF"
                     Button(
                         onClick = { format = "PDF" },
+                        enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isPdf) Color(0xFFEF4444) else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (isPdf) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
@@ -100,6 +156,7 @@ fun ReportPreviewDialog(
                     }
                     Button(
                         onClick = { format = "WORD" },
+                        enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (!isPdf) Color(0xFF3B82F6) else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (!isPdf) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
@@ -114,12 +171,53 @@ fun ReportPreviewDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Scrollable content preview
+                if (isExporting) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("LỌC ẢNH THEO NODE/TUYẾN", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        if (availableFilters.isEmpty()) {
+                            Text("Không có node/tuyến để lọc.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = selectedPhotoFilters.isEmpty(),
+                                    onClick = { selectedPhotoFilters = emptySet() },
+                                    label = { Text("Tất cả") }
+                                )
+                                availableFilters.forEach { key ->
+                                    val label = key.substringAfter(":")
+                                    val selected = selectedPhotoFilters.contains(key)
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = {
+                                            selectedPhotoFilters = if (selected) selectedPhotoFilters - key else selectedPhotoFilters + key
+                                        },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                            Text(
+                                "Đang hiển thị ${filteredPhotos.size}/${photos.size} ảnh",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Section 1: General Project Info & Stats
                     item {
                         ElevatedCard(
                             modifier = Modifier.fillMaxWidth(),
@@ -137,7 +235,6 @@ fun ReportPreviewDialog(
                         }
                     }
 
-                    // Section 2: AI Draft
                     aiDraft?.let { draft ->
                         item {
                             ElevatedCard(
@@ -157,7 +254,6 @@ fun ReportPreviewDialog(
                         }
                     }
 
-                    // Section 3: Material Table
                     item {
                         ElevatedCard(
                             modifier = Modifier.fillMaxWidth(),
@@ -188,12 +284,11 @@ fun ReportPreviewDialog(
                         }
                     }
 
-                    // Section 4: Photo Log List
-                    if (photos.isNotEmpty()) {
+                    if (filteredPhotos.isNotEmpty()) {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("NHẬT KÝ HÌNH ẢNH ĐÃ CHỌN (${photos.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
-                                val chunks = photos.chunked(3)
+                                Text("NHẬT KÝ HÌNH ẢNH ĐÃ CHỌN (${filteredPhotos.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
+                                val chunks = filteredPhotos.chunked(3)
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     chunks.forEach { rowPhotos ->
                                         Row(
@@ -211,7 +306,7 @@ fun ReportPreviewDialog(
                                                 ) {
                                                     if (thumbFile.exists()) {
                                                         androidx.compose.foundation.Image(
-                                                            painter = coil.compose.rememberAsyncImagePainter(thumbFile),
+                                                            painter = rememberAsyncImagePainter(thumbFile),
                                                             contentDescription = photo.objectCode,
                                                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                                             modifier = Modifier.fillMaxSize()
@@ -224,7 +319,6 @@ fun ReportPreviewDialog(
                                                             modifier = Modifier.align(Alignment.Center).size(24.dp)
                                                         )
                                                     }
-                                                    // Badge
                                                     Box(
                                                         modifier = Modifier
                                                             .align(Alignment.BottomStart)
@@ -233,11 +327,42 @@ fun ReportPreviewDialog(
                                                     ) {
                                                         Text(photo.objectCode, color = Color.White, fontSize = 8.sp)
                                                     }
+                                                    Column(
+                                                        modifier = Modifier
+                                                            .align(Alignment.TopEnd)
+                                                            .padding(4.dp),
+                                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                        horizontalAlignment = Alignment.End
+                                                    ) {
+                                                        val matched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+                                                        Text(
+                                                            if (matched) "Khớp" else "Lệch",
+                                                            color = Color.White,
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier
+                                                                .background(
+                                                                    if (matched) Color(0xCC16A34A) else Color(0xCCDC2626),
+                                                                    RoundedCornerShape(999.dp)
+                                                                )
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            OutlinedButton(
+                                                                onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) - 5).toInt()) },
+                                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                                modifier = Modifier.height(26.dp)
+                                                            ) { Text("-5m", fontSize = 8.sp) }
+                                                            OutlinedButton(
+                                                                onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) + 5).toInt()) },
+                                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                                modifier = Modifier.height(26.dp)
+                                                            ) { Text("+5m", fontSize = 8.sp) }
+                                                        }
+                                                    }
                                                 }
                                             }
-                                            repeat(3 - rowPhotos.size) {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
+                                            repeat(3 - rowPhotos.size) { Spacer(modifier = Modifier.weight(1f)) }
                                         }
                                     }
                                 }
@@ -248,7 +373,6 @@ fun ReportPreviewDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Footer actions
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -256,7 +380,8 @@ fun ReportPreviewDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium
+                        shape = MaterialTheme.shapes.medium,
+                        enabled = !isExporting
                     ) {
                         Text("Hủy")
                     }
@@ -264,12 +389,13 @@ fun ReportPreviewDialog(
                         onClick = { onConfirmExport(format) },
                         modifier = Modifier.weight(1f),
                         shape = MaterialTheme.shapes.medium,
+                        enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (format == "PDF") Color(0xFFEF4444) else Color(0xFF3B82F6),
                             contentColor = Color.White
                         )
                     ) {
-                        Text("Xác nhận xuất ${if (format == "PDF") "PDF" else "Word"}", fontWeight = FontWeight.Bold)
+                        Text(if (isExporting) "Đang xuất..." else "Xác nhận xuất ${if (format == "PDF") "PDF" else "Word"}", fontWeight = FontWeight.Bold)
                     }
                 }
             }

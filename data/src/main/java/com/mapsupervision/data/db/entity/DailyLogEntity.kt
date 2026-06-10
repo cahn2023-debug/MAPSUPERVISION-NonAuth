@@ -21,8 +21,13 @@ data class DailyLogEntity(
     val weather: String,
     val temperature: Double,
     val nodeCode: String?,
+    val routeCode: String?,
     val dateEpochDay: Long,
     val volume: Double,
     val unit: String,
-    val categoryName: String
+    val categoryName: String,
+    val batchGroupId: String,
+    val appliedNodeCodesCsv: String,
+    val linkedPhotoIdsCsv: String,
+    val photoMatchOffsetMinutes: Int
 )

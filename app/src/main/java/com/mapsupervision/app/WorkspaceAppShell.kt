@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Description
@@ -19,6 +20,18 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,15 +48,21 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.mapsupervision.app.workspace.MapHubScreen
+import com.mapsupervision.app.workspace.ChatDictionaryResolver
 import com.mapsupervision.app.workspace.WorkspaceAction
 import com.mapsupervision.app.workspace.WorkspaceEffect
 import com.mapsupervision.app.workspace.WorkspaceLayoutMode
 import com.mapsupervision.app.workspace.WorkspaceTab
 import com.mapsupervision.app.workspace.WorkspaceViewModel
+import com.mapsupervision.app.workspace.GemmaChatViewModel
+import com.mapsupervision.app.workspace.GemmaChatSheet
+import com.mapsupervision.app.workspace.buildChatContextSummary
+import com.mapsupervision.app.workspace.buildChatNormalizationSummary
 import com.mapsupervision.app.workspace.DataHubRoute
 import com.mapsupervision.app.workspace.ProgressHubRoute
 import com.mapsupervision.app.workspace.addConstructionProgress
 import com.mapsupervision.app.workspace.addDailyLog
+import com.mapsupervision.app.workspace.addDailyLogBatch
 import com.mapsupervision.app.workspace.addNote
 import com.mapsupervision.app.workspace.addTask
 import com.mapsupervision.app.workspace.addWorkCategory
@@ -131,21 +150,58 @@ fun WorkspaceAppShell(
     locationProvider: IPhotoLocationProvider
 ) {
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
+    val chatViewModel: GemmaChatViewModel = hiltViewModel()
     val projectViewModel: ProjectViewModel = hiltViewModel()
     val reportingViewModel: ReportingViewModel = hiltViewModel()
 
     val workspaceState by workspaceViewModel.state.collectAsState()
     val workspaceUiState by workspaceViewModel.uiState.collectAsState()
+    val chatState by chatViewModel.uiState.collectAsState()
     val projectState by projectViewModel.uiState.collectAsState()
     val reportingPhotos by reportingViewModel.photos.collectAsState()
     val lastPdfPath by reportingViewModel.lastReportPath.collectAsState()
     val lastWordPath by reportingViewModel.lastWordReportPath.collectAsState()
+    val reportExporting by reportingViewModel.isExporting.collectAsState()
 
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isExpanded = configuration.screenWidthDp >= 840
+    val chatContextSummary = remember(
+        workspaceState.activeProjectId,
+        workspaceState.dashboard.totalDesignNodes,
+        workspaceState.dashboard.totalDesignRoutes,
+        workspaceState.dashboard.completionPercent,
+        workspaceState.dashboard.delayedCount,
+        workspaceState.dashboard.materialCompletionPercent,
+        workspaceState.mapUi.selectedNode?.code,
+        workspaceState.mapUi.selectedRoute?.code,
+        workspaceState.selectedNodePhotos.size,
+        workspaceState.importUi.warnings,
+        workspaceState.constructionProgress,
+        workspaceState.dailyLogs
+    ) {
+        buildChatContextSummary(workspaceState)
+    }
+    val chatNormalizationSummary = remember(
+        workspaceState.activeProjectId,
+        workspaceState.mapUi.selectedNode?.code,
+        workspaceState.mapUi.selectedRoute?.code,
+        workspaceState.designNodes,
+        workspaceState.designRoutes,
+        workspaceState.workCategories
+    ) {
+        buildChatNormalizationSummary(workspaceState)
+    }
+    val chatDictionaryResolver: ChatDictionaryResolver = remember(
+        workspaceState.activeProjectId,
+        workspaceState.designNodes,
+        workspaceState.designRoutes,
+        workspaceState.workCategories
+    ) {
+        ChatDictionaryResolver.from(workspaceState)
+    }
 
     LaunchedEffect(isExpanded) {
         workspaceViewModel.dispatch(
@@ -177,6 +233,12 @@ fun WorkspaceAppShell(
     LaunchedEffect(lastWordPath) {
         if (!lastWordPath.isNullOrBlank()) {
             workspaceViewModel.onReportExported(lastWordPath!!)
+        }
+    }
+
+    LaunchedEffect(workspaceState.activeProjectId) {
+        if (chatState.isOpen) {
+            chatViewModel.open(workspaceState.activeProjectId)
         }
     }
 
@@ -325,6 +387,9 @@ fun WorkspaceAppShell(
                     onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, dateDay, volume, unit, categoryName ->
                         workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, dateDay, volume, unit, categoryName)
                     },
+                    onAddDailyLogBatch = { workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName ->
+                        workspaceViewModel.addDailyLogBatch(workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName)
+                    },
                     onAddWorkCategory = workspaceViewModel::addWorkCategory,
                     onFetchWeatherAuto = workspaceViewModel::fetchWeatherAuto
                 )
@@ -386,30 +451,39 @@ fun WorkspaceAppShell(
         }
     }
 
-    if (workspaceUiState.layoutMode == WorkspaceLayoutMode.EXPANDED) {
-        Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            navChrome()
-            Box(modifier = Modifier.weight(1f)) {
-                Scaffold(
-                    snackbarHost = { SnackbarHost(snackbarHostState) },
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0)
-                ) { padding ->
-                    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                        hostContent()
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (workspaceUiState.layoutMode == WorkspaceLayoutMode.EXPANDED) {
+            Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                navChrome()
+                Box(modifier = Modifier.weight(1f)) {
+                    Scaffold(
+                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+                    ) { padding ->
+                        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                            hostContent()
+                        }
                     }
                 }
             }
-        }
-    } else {
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            bottomBar = navChrome,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { padding ->
-            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                hostContent()
+        } else {
+            Scaffold(
+                snackbarHost = { SnackbarHost(snackbarHostState) },
+                bottomBar = navChrome,
+                contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            ) { padding ->
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    hostContent()
+                }
             }
         }
+
+        FloatingChatBubble(
+            onClick = { chatViewModel.open(workspaceState.activeProjectId) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 20.dp, bottom = 86.dp)
+        )
     }
 
     val pendingCapture = workspaceState.pendingCaptureNodeCode
@@ -425,12 +499,62 @@ fun WorkspaceAppShell(
         )
     }
 
+    if (chatState.isOpen) {
+        GemmaChatSheet(
+            state = chatState,
+            contextSummary = chatContextSummary,
+            projectId = workspaceState.activeProjectId,
+            currentTab = workspaceUiState.selectedTab.name,
+            selectedNodeCode = workspaceState.mapUi.selectedNode?.code,
+            selectedRouteCode = workspaceState.mapUi.selectedRoute?.code,
+              onDismiss = chatViewModel::close,
+              onDownload = chatViewModel::downloadSelectedModel,
+              onConfirmCellularDownload = chatViewModel::confirmCellularDownload,
+              onDismissCellularWarning = chatViewModel::dismissCellularWarning,
+              onDeleteModel = chatViewModel::deleteModel,
+              onCancelDownload = chatViewModel::cancelDownload,
+              onOpenModelPicker = chatViewModel::openModelPicker,
+              onDismissModelPicker = chatViewModel::dismissModelPicker,
+              onSelectModel = chatViewModel::selectModel,
+              onInputChange = chatViewModel::updateInput,
+              onConfirmPendingAction = { chatViewModel.confirmPendingAction(workspaceViewModel) },
+              onDismissPendingAction = chatViewModel::dismissPendingAction,
+              onSend = {
+                  val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
+                  val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
+                  val canonicalUserMessage = chatDictionaryResolver.canonicalizeMessage(
+                    chatState.input,
+                    selectedNodeCode,
+                    selectedRouteCode
+                )
+                  val inputHints = chatDictionaryResolver.buildInputHints(
+                    chatState.input,
+                    selectedNodeCode,
+                    selectedRouteCode
+                )
+                  chatViewModel.sendMessage(
+                    contextSummary = chatContextSummary,
+                    normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
+                    canonicalUserMessage = canonicalUserMessage,
+                    projectId = workspaceState.activeProjectId,
+                    tab = workspaceUiState.selectedTab.name,
+                    selectedNodeCode = selectedNodeCode,
+                    selectedRouteCode = selectedRouteCode
+                )
+            }
+        )
+    }
+
     ReportPreviewDialog(
         showDialog = workspaceUiState.showReportPreview,
         onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview) },
         projectId = projectState.activeProjectId ?: "",
         filterNodeCode = workspaceUiState.previewNodeCode,
         selectedExportFormat = "PDF",
+        isExporting = reportExporting,
+        onUpdatePhotoOffset = reportingViewModel::updatePhotoOffset,
+        projectNodes = reportingViewModel.projectNodes.collectAsState().value,
+        projectRoutes = reportingViewModel.projectRoutes.collectAsState().value,
         onConfirmExport = { format ->
             if (format == "PDF") {
                 reportingViewModel.exportPdf(workspaceUiState.previewNodeCode)
@@ -460,4 +584,45 @@ private fun openExportedFile(context: android.content.Context, path: String) {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(Intent.createChooser(intent, "Mở báo cáo"))
+}
+
+@Composable
+private fun BoxScope.FloatingChatBubble(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+
+    Box(
+        modifier = modifier
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    offsetX += dragAmount.x
+                    offsetY += dragAmount.y
+                }
+            }
+            .size(56.dp)
+            .shadow(elevation = 6.dp, shape = CircleShape)
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary,
+                        MaterialTheme.colorScheme.secondary
+                    )
+                ),
+                shape = CircleShape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.AutoAwesome,
+            contentDescription = "Chatbot AI",
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(28.dp)
+        )
+    }
 }

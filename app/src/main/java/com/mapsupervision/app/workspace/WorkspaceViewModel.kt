@@ -66,6 +66,7 @@ class WorkspaceViewModel @Inject constructor(
     internal val taskRepository: TaskRepository,
     internal val workCategoryRepository: WorkCategoryRepository,
     internal val weatherService: WeatherService,
+    internal val reportDraftRepository: com.mapsupervision.domain.repository.ReportDraftRepository,
     private val observeWorkspaceSnapshot: ObserveWorkspaceSnapshotUseCase
 ) : ViewModel() {
 

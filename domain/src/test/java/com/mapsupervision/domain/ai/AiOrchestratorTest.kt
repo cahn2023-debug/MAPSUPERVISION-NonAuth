@@ -1,6 +1,11 @@
 package com.mapsupervision.domain.ai
 
 import com.mapsupervision.domain.repository.AiRepository
+import com.mapsupervision.domain.repository.LocalLlmRepository
+import com.mapsupervision.domain.repository.LocalLlmRequest
+import com.mapsupervision.domain.repository.LocalLlmResponse
+import com.mapsupervision.domain.ai.engines.LocalLiteRtEngine
+import com.mapsupervision.domain.ai.engines.RuleBasedEngine
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -40,12 +45,10 @@ class AiOrchestratorTest {
         val fakeRepo = FakeAiRepository(shouldFail = false)
         val orchestrator = AiOrchestrator(fakeRepo)
         val payload = ImportMappingPayload(headers = listOf("node", "lat", "lon"), sampleRows = emptyList())
-        
-        // Cuộc gọi đầu tiên thực thi qua Model bình thường
+
         val decision1 = runBlocking { orchestrator.execute<ImportMappingResult>(payload) }
         assertEquals(AiDecisionSource.MODEL, decision1.source)
-        
-        // Cuộc gọi thứ hai với payload giống hệt sẽ chạm cache (cache_hit)
+
         val decision2 = runBlocking { orchestrator.execute<ImportMappingResult>(payload) }
         assertEquals(AiDecisionSource.RULE_BASED, decision2.source)
         assertEquals("cache_hit", decision2.reason)
@@ -55,7 +58,7 @@ class AiOrchestratorTest {
     fun `ImportMappingHelper suggestions with accented Vietnamese headers`() {
         val headers = listOf("Mã trạm kỹ thuật", "Vĩ độ GPS", "Kinh độ GPS", "Nhà thầu chính", "Cáp quang lắp ráp", "Đào đất móng")
         val result = com.mapsupervision.domain.ai.engines.ImportMappingHelper.suggestMapping(headers)
-        
+
         assertEquals("Mã trạm kỹ thuật", result.nodeCodeColumn)
         assertEquals("Vĩ độ GPS", result.latitudeColumn)
         assertEquals("Kinh độ GPS", result.longitudeColumn)
@@ -70,8 +73,42 @@ class AiOrchestratorTest {
         val normalized = com.mapsupervision.domain.ai.engines.ImportMappingHelper.normalize("Nhà Thầu Kéo Cáp vĩ độ")
         assertEquals("nha thau keo cap vi do", normalized)
     }
-}
 
+    @Test
+    fun `uses rule based fallback for report draft when local model is unsafe`() {
+        val orchestrator = AiOrchestrator(
+            deviceCapabilityDetector = object : DeviceCapabilityDetector {
+                override suspend fun detectCapabilities(): DeviceCapabilities = DeviceCapabilities(
+                    totalRamMb = 2048,
+                    availableRamMb = 512,
+                    cpuCoreCount = 4,
+                    hasNpu = false,
+                    batteryLevel = 12,
+                    isCharging = false,
+                    thermalStatus = ThermalStatus.SEVERE
+                )
+            },
+            resourceGate = NoOpResourceGate,
+            initialEngines = listOf(
+                LocalLiteRtEngine(FakeLocalLlmRepository()),
+                RuleBasedEngine()
+            ),
+            decisionCacheStore = null
+        )
+
+        val payload = ReportDraftPayload(
+            projectId = "P1",
+            totalNodes = 10,
+            delayedNodes = 2,
+            avgActualProgress = 60f,
+            totalPhotos = 0
+        )
+
+        val decision = runBlocking { orchestrator.execute<ReportDraftResult>(payload) }
+        assertEquals(AiDecisionSource.RULE_BASED, decision.source)
+        assertTrue(decision.result.executiveSummary.isNotBlank())
+    }
+}
 
 private class FakeAiRepository(private val shouldFail: Boolean) : AiRepository {
     override suspend fun suggestMapping(payload: ImportMappingPayload): ImportMappingResult {
@@ -103,4 +140,20 @@ private class FakeAiRepository(private val shouldFail: Boolean) : AiRepository {
         if (shouldFail) error("boom")
         return OpsRecommendationResult(emptyList(), 1)
     }
+}
+
+private class FakeLocalLlmRepository : LocalLlmRepository {
+    override suspend fun isReady(): Boolean = true
+
+    override suspend fun warmUp(): Boolean = true
+
+    override suspend fun generate(request: LocalLlmRequest): LocalLlmResponse {
+        return LocalLlmResponse(
+            text = "EXECUTIVE_SUMMARY: ok\nRISK_SECTION: ok",
+            modelName = "fake-local",
+            backendUsed = "fake-local"
+        )
+    }
+
+    override fun cancel() = Unit
 }

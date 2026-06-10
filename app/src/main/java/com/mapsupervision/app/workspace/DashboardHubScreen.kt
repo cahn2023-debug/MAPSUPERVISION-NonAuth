@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mapsupervision.app.ui.theme.extendedColors
 
 @Composable
 fun DashboardHubScreen(
@@ -23,15 +24,17 @@ fun DashboardHubScreen(
     onRefresh: () -> Unit = {}
 ) {
     val d = state.dashboard
-
-    val darkBg = Color(0xFF0F172A)
-    val cardBg = Color(0xFF1E293B)
-    val orange = Color(0xFFF5A623)
-    val textColor = Color(0xFFF8FAFC)
-    val secondaryText = Color(0xFF94A3B8)
-    val green = Color(0xFF22C55E)
-    val red = Color(0xFFEF4444)
-    val blue = Color(0xFF3B82F6)
+    val colors = MaterialTheme.colorScheme
+    val extendedColors = MaterialTheme.extendedColors
+    val darkBg = colors.background
+    val cardBg = extendedColors.panelBackgroundAlt
+    val orange = extendedColors.mapAccent
+    val textColor = colors.onBackground
+    val secondaryText = colors.onSurfaceVariant
+    val green = extendedColors.success
+    val red = extendedColors.danger
+    val blue = colors.primary
+    val dividerColor = colors.outlineVariant
 
     WorkspaceRefreshContainer(
         isRefreshing = state.isRefreshing,
@@ -211,7 +214,7 @@ fun DashboardHubScreen(
                                 .height(10.dp)
                                 .clip(RoundedCornerShape(5.dp)),
                             color = orange,
-                            trackColor = Color(0xFF334155)
+                            trackColor = dividerColor
                         )
                         Text(
                             "Hoàn thành: ${String.format("%.1f", d.materialCompletionPercent)}%",
@@ -272,7 +275,7 @@ fun DashboardHubScreen(
                                 .height(10.dp)
                                 .clip(RoundedCornerShape(5.dp)),
                             color = blue,
-                            trackColor = Color(0xFF334155)
+                            trackColor = dividerColor
                         )
 
                         Row(
@@ -320,7 +323,7 @@ fun DashboardHubScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
-                    HorizontalDivider(color = Color(0xFF334155))
+                    HorizontalDivider(color = dividerColor)
 
                     SummaryRow(
                         label = "Dự án đang hoạt động",

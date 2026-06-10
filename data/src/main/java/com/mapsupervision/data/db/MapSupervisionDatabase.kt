@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mapsupervision.data.db.dao.AiDecisionCacheDao
+import com.mapsupervision.data.db.dao.ChatHistoryDao
 import com.mapsupervision.data.db.dao.DailyLogDao
 import com.mapsupervision.data.db.dao.GisNodeDao
 import com.mapsupervision.data.db.dao.GisRouteDao
@@ -16,9 +17,12 @@ import com.mapsupervision.data.db.dao.NoteDao
 import com.mapsupervision.data.db.dao.TaskDao
 import com.mapsupervision.data.db.dao.ProjectDao
 import com.mapsupervision.data.db.dao.SitePhotoDao
+import com.mapsupervision.data.db.dao.ReportDraftDao
 import com.mapsupervision.data.db.dao.WorkCategoryDao
 import com.mapsupervision.data.db.entity.DailyLogEntity
 import com.mapsupervision.data.db.entity.AiDecisionCacheEntity
+import com.mapsupervision.data.db.entity.ChatHistoryEntity
+import com.mapsupervision.data.db.entity.ReportDraftEntity
 import com.mapsupervision.data.db.entity.GisNodeEntity
 import com.mapsupervision.data.db.entity.GisRouteEntity
 import com.mapsupervision.data.db.entity.ImportedFileEntity
@@ -43,9 +47,11 @@ import com.mapsupervision.data.db.entity.WorkCategoryEntity
         NoteEntity::class,
         TaskEntity::class,
         WorkCategoryEntity::class,
-        AiDecisionCacheEntity::class
+        AiDecisionCacheEntity::class,
+        ChatHistoryEntity::class,
+        ReportDraftEntity::class
     ],
-    version = 16,
+    version = 19,
     exportSchema = true
 )
 @TypeConverters(DbTypeConverters::class)
@@ -62,6 +68,8 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
     abstract fun workCategoryDao(): WorkCategoryDao
     abstract fun aiDecisionCacheDao(): AiDecisionCacheDao
+    abstract fun chatHistoryDao(): ChatHistoryDao
+    abstract fun reportDraftDao(): ReportDraftDao
 
     companion object {
         val MIGRATION_8_9 = object : Migration(8, 9) {
@@ -191,6 +199,63 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_task_objectCode` ON `task` (`objectCode`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_site_photos_objectCode` ON `site_photos` (`objectCode`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_categories_projectId_createdAtEpochMs` ON `work_categories` (`projectId`, `createdAtEpochMs`)")
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `routeCode` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `batchGroupId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `appliedNodeCodesCsv` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `linkedPhotoIdsCsv` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `photoMatchOffsetMinutes` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `tagCodesCsv` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `matchedNodeCode` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `matchedRouteCode` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `matchedAtEpochMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `matchingTimeOffsetMs` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_log_projectId_batchGroupId` ON `daily_log` (`projectId`, `batchGroupId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_site_photos_projectId_matchedNodeCode` ON `site_photos` (`projectId`, `matchedNodeCode`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_site_photos_projectId_matchedRouteCode` ON `site_photos` (`projectId`, `matchedRouteCode`)")
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chat_history` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `text` TEXT NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_history_projectId` ON `chat_history` (`projectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_history_projectId_createdAtEpochMs` ON `chat_history` (`projectId`, `createdAtEpochMs`)")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `report_draft` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `executiveSummary` TEXT NOT NULL,
+                        `riskSection` TEXT NOT NULL,
+                        `recommendedActionsCsv` TEXT NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_report_draft_projectId_createdAtEpochMs` ON `report_draft` (`projectId`, `createdAtEpochMs`)")
             }
         }
     }

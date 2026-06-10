@@ -18,6 +18,7 @@ fun ProgressHubRoute(
     activeProjectName: String? = null,
     onAddConstruction: (String, Float, Float) -> Unit,
     onAddDailyLog: (String, Int, String, String, Double, String?, Long, Double, String, String) -> Unit,
+    onAddDailyLogBatch: (String, Int, String, String, Double, List<String>, Long, Double, String, String) -> Unit,
     onAddWorkCategory: (String, String) -> Unit,
     onFetchWeatherAuto: (String?, (String, Double) -> Unit) -> Unit,
     viewModel: ProgressHubViewModel = hiltViewModel()
@@ -74,6 +75,7 @@ fun ProgressHubRoute(
         onResetLogForm = viewModel::resetLogForm,
         onAddConstruction = onAddConstruction,
         onAddDailyLog = onAddDailyLog,
+        onAddDailyLogBatch = onAddDailyLogBatch,
         onAddWorkCategory = onAddWorkCategory
     )
 }
