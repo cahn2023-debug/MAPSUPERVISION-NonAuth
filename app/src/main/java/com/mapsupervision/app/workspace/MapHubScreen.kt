@@ -101,6 +101,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Category
 import androidx.compose.ui.text.style.TextDecoration
 import android.graphics.Color as AndroidColor
 import com.mapsupervision.gis.ui.GisLabelField
@@ -129,6 +130,7 @@ fun MapHubScreen(
     routeProperties: List<Pair<String, String>>,
     materialProgress: Map<String, String>,
     contractorOptions: List<String>,
+    materialTypeOptions: List<String> = emptyList(),
     selectedNodeMaterialLines: List<PreparedMaterialLine>,
     showNumberOnMap: Boolean,
     colorByContractorOnMap: Boolean,
@@ -150,6 +152,7 @@ fun MapHubScreen(
     onToggleMeasure: () -> Unit,
     onLabelFieldChanged: (GisLabelField) -> Unit,
     onFilterContractorChanged: (String?) -> Unit,
+    onFilterMaterialTypeChanged: (String?) -> Unit = {},
     onContractorColorChanged: (String, String) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onUpdateMaterialProgress: (String, String, String) -> Unit,
@@ -178,6 +181,14 @@ fun MapHubScreen(
     onResolveDuplicateProject: (Uri, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onDismissDuplicateDialog: () -> Unit = {}
 ) {
+    val defaultPalette = remember { listOf("#f97316", "#22c55e", "#06b6d4", "#a855f7", "#ef4444", "#f59e0b", "#3b82f6") }
+    val extendedColorPalette = remember {
+        listOf(
+            "#f97316", "#22c55e", "#06b6d4", "#a855f7",
+            "#ef4444", "#f59e0b", "#3b82f6", "#ec4899",
+            "#14b8a6", "#84cc16", "#f43f5e", "#8b5cf6"
+        )
+    }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val zipImportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -187,6 +198,7 @@ fun MapHubScreen(
     }
     var projectName by remember { mutableStateOf("") }
     var showContractorMenu by remember { mutableStateOf(false) }
+    var showMaterialMenu by remember { mutableStateOf(false) }
     var showLayerMenu by remember { mutableStateOf(false) }
     var showNotesAndTasksSheet by remember { mutableStateOf(false) }
     var notesAndTasksObjectCode by remember { mutableStateOf("") }
@@ -208,9 +220,7 @@ fun MapHubScreen(
     LaunchedEffect(
         designNodes.size,
         designNodes.firstOrNull()?.id,
-        designNodes.lastOrNull()?.id,
-        mapUi.selectedNode?.id,
-        mapUi.selectedRoute?.id
+        designNodes.lastOrNull()?.id
     ) {
         if ((designNodes.isNotEmpty() || designRoutes.isNotEmpty()) &&
             mapUi.selectedNode == null &&
@@ -460,8 +470,7 @@ fun MapHubScreen(
                                     val isSelected = mapUi.filterContractor == contractor
                                     val customHex = mapUi.contractorColors[contractor]
                                     val defaultHex = run {
-                                        val palette = listOf("#f97316", "#22c55e", "#06b6d4", "#a855f7", "#ef4444", "#f59e0b", "#3b82f6")
-                                        palette[Math.abs(contractor.hashCode()) % palette.size]
+                                        defaultPalette[Math.abs(contractor.hashCode()) % defaultPalette.size]
                                     }
                                     val hexColor = customHex ?: defaultHex
                                     val swatchColor = try {
@@ -475,12 +484,8 @@ fun MapHubScreen(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                // Color swatch � tap to cycle color
-                                                val colorPalette = listOf(
-                                                    "#f97316", "#22c55e", "#06b6d4", "#a855f7",
-                                                    "#ef4444", "#f59e0b", "#3b82f6", "#ec4899",
-                                                    "#14b8a6", "#84cc16", "#f43f5e", "#8b5cf6"
-                                                )
+                                                // Color swatch – tap to cycle color
+                                                val colorPalette = extendedColorPalette
                                                 Box(
                                                     modifier = Modifier
                                                         .size(16.dp)
@@ -518,6 +523,76 @@ fun MapHubScreen(
                                             onFilterContractorChanged(
                                                 if (isSelected) null else contractor
                                             )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showMaterialMenu = true }) {
+                                Icon(
+                                    Icons.Outlined.Category,
+                                    contentDescription = "Vật tư",
+                                    tint = if (mapUi.filterMaterialType != null) orangeColor else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showMaterialMenu,
+                                onDismissRequest = { showMaterialMenu = false }
+                            ) {
+                                val allSelected = mapUi.filterMaterialType == null
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(12.dp)
+                                                    .background(Color.Transparent, CircleShape)
+                                                    .border(1.dp, if (allSelected) orangeColor else dividerColor, CircleShape)
+                                            )
+                                            Text(
+                                                "Tất cả",
+                                                fontWeight = if (allSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (allSelected) orangeColor else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        onFilterMaterialTypeChanged(null)
+                                        showMaterialMenu = false
+                                    }
+                                )
+                                materialTypeOptions.forEach { materialType ->
+                                    val isSelected = mapUi.filterMaterialType == materialType
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(12.dp)
+                                                        .background(if (isSelected) orangeColor else Color.Transparent, CircleShape)
+                                                        .border(1.dp, if (isSelected) orangeColor else dividerColor, CircleShape)
+                                                )
+                                                Text(
+                                                    materialType,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) orangeColor else MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            onFilterMaterialTypeChanged(
+                                                if (isSelected) null else materialType
+                                            )
+                                            showMaterialMenu = false
                                         }
                                     )
                                 }
@@ -580,7 +655,7 @@ fun MapHubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        androidx.compose.material.icons.Icons.Outlined.Straighten.let {
+                        Icons.Outlined.Straighten.let {
                             Icon(it, contentDescription = null, tint = onSurfaceColor, modifier = Modifier.size(16.dp))
                         }
                         Text(

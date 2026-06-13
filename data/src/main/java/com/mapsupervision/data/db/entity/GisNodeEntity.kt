@@ -1,14 +1,29 @@
 package com.mapsupervision.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "gis_node",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProjectEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["projectId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = ImportedFileEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["importedFileId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
     indices = [
         Index("importedFileId"),
-        Index(value = ["projectId", "code"])
+        Index(value = ["projectId", "code"], unique = true)
     ]
 )
 data class GisNodeEntity(

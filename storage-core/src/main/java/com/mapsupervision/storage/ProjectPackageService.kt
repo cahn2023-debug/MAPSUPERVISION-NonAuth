@@ -67,4 +67,16 @@ class ProjectPackageService @Inject constructor(
             }
         }
     }
+
+    fun copyImportedFilesToPrivateStorage(tempDir: File, targetSlug: String) {
+        val privateRoot = storageManager.privateProjectRoot(targetSlug)
+        tempDir.walkTopDown().forEach { file ->
+            if (file.isFile && file.name != "project_metadata.json") {
+                val relativePath = file.relativeTo(tempDir).invariantSeparatorsPath
+                val targetFile = File(privateRoot, relativePath)
+                targetFile.parentFile?.mkdirs()
+                file.copyTo(targetFile, overwrite = true)
+            }
+        }
+    }
 }

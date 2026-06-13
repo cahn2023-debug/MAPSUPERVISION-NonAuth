@@ -6,6 +6,7 @@ data class NormalizationRefs(
     val categoryName: String? = null,
     val categoryUnit: String? = null,
     val categories: List<NormalizationCategoryRef> = emptyList(),
+    val routeRefs: List<NormalizationRouteRef> = emptyList(),
     val nodeCodes: List<String> = emptyList(),
     val routeCodes: List<String> = emptyList()
 )
@@ -15,6 +16,13 @@ data class NormalizationCategoryRef(
     val unit: String
 )
 
+data class NormalizationRouteRef(
+    val code: String,
+    val startNodeCode: String,
+    val endNodeCode: String,
+    val contractor: String
+)
+
 object NormalizationRefsParser {
     fun parse(normalizationContext: String): NormalizationRefs {
         var nodeCode: String? = null
@@ -22,6 +30,7 @@ object NormalizationRefsParser {
         var categoryName: String? = null
         var categoryUnit: String? = null
         val categories = mutableListOf<NormalizationCategoryRef>()
+        val routeRefs = mutableListOf<NormalizationRouteRef>()
         val nodeCodes = mutableListOf<String>()
         val routeCodes = mutableListOf<String>()
 
@@ -52,6 +61,23 @@ object NormalizationRefsParser {
                     .map { it.trim() }
                     .filter { it.isNotBlank() }
                     .forEach { routeCodes += it }
+            } else if (trimmed.startsWith("route_aliases=")) {
+                trimmed.removePrefix("route_aliases=")
+                    .split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .forEach { alias ->
+                        val pieces = alias.split('>')
+                        val code = pieces.getOrNull(0)?.trim().orEmpty()
+                        if (code.isNotBlank()) {
+                            routeRefs += NormalizationRouteRef(
+                                code = code,
+                                startNodeCode = pieces.getOrNull(1)?.trim().orEmpty(),
+                                endNodeCode = pieces.getOrNull(2)?.trim().orEmpty(),
+                                contractor = pieces.getOrNull(3)?.trim().orEmpty()
+                            )
+                        }
+                    }
             }
             
             if (trimmed.startsWith("canonical_refs=")) {
@@ -97,6 +123,7 @@ object NormalizationRefsParser {
             categoryName = categoryName,
             categoryUnit = categoryUnit,
             categories = categories,
+            routeRefs = routeRefs,
             nodeCodes = nodeCodes,
             routeCodes = routeCodes
         )

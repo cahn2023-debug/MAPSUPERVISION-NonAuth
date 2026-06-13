@@ -111,15 +111,18 @@ fun WorkspaceViewModel.addDailyLog(
     weather: String = "",
     temperature: Double = 0.0,
     nodeCode: String? = null,
+    routeCode: String? = null,
     dateEpochDay: Long = 0L,
     volume: Double = 0.0,
     unit: String = "",
-    categoryName: String = ""
+    categoryName: String = "",
+    id: String? = null
 ) {
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
 
         val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        val normalizedRouteCode = routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
         val categoryMatch = if (categoryName.isNotBlank()) {
             findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.materialRows)
         } else null
@@ -134,7 +137,7 @@ fun WorkspaceViewModel.addDailyLog(
                 (it.nodeCode == normalizedNodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == normalizedNodeCode) &&
                     it.materialName.equals(normalizedCategory, ignoreCase = true)
             }
-            val currentActual = (existing?.actualQty ?: 0f) + volume.toFloat()
+            val currentActual = volume.toFloat()
             val newMaterial = MaterialProgress(
                 id = existing?.id ?: UUID.randomUUID().toString(),
                 projectId = projectId,
@@ -142,7 +145,8 @@ fun WorkspaceViewModel.addDailyLog(
                 materialName = existing?.materialName ?: normalizedCategory,
                 plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                 actualQty = currentActual,
-                updatedAtEpochMs = System.currentTimeMillis()
+                updatedAtEpochMs = System.currentTimeMillis(),
+                unit = normalizedUnit
             )
             materialProgressRepository.upsert(newMaterial)
 
@@ -155,16 +159,21 @@ fun WorkspaceViewModel.addDailyLog(
             addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, calculatedProgress)
         }
 
+        val finalId = if (!id.isNullOrBlank()) id else UUID.randomUUID().toString()
+        val originalLog = _state.value.dailyLogs.firstOrNull { it.id == finalId }
+        val createdAt = originalLog?.createdAtEpochMs ?: System.currentTimeMillis()
+
         val log = com.mapsupervision.domain.model.DailyLog(
-            id = UUID.randomUUID().toString(),
+            id = finalId,
             projectId = projectId,
             workItem = workItem,
             manpower = manpower,
             note = note,
-            createdAtEpochMs = System.currentTimeMillis(),
+            createdAtEpochMs = createdAt,
             weather = weather,
             temperature = temperature,
             nodeCode = normalizedNodeCode.takeIf { !it.isNullOrBlank() },
+            routeCode = normalizedRouteCode.takeIf { !it.isNullOrBlank() },
             dateEpochDay = dateEpochDay,
             volume = volume,
             unit = normalizedUnit,
@@ -206,10 +215,33 @@ fun WorkspaceViewModel.addWorkCategory(name: String, unit: String) {
     }
 }
 
-fun WorkspaceViewModel.fetchWeatherAuto(nodeCode: String?, onResult: (String, Double) -> Unit) {
+fun WorkspaceViewModel.fetchWeatherAuto(
+    nodeCode: String?,
+    routeCode: String? = null,
+    onResult: (String, Double) -> Unit
+) {
     viewModelScope.launch {
-        val node = ensureIndexes().nodesByCode[nodeCode]
+        val node = nodeCode?.let { ensureIndexes().nodesByCode[it] }
         val coords = node?.let { it.latitude to it.longitude }
+            ?: routeCode?.let { rCode ->
+                val matchingRouteCode = findBestMatchingRouteCode(rCode, _state.value.designRoutes)
+                val route = ensureIndexes().routesByCode[matchingRouteCode]
+                if (route != null) {
+                    val startNode = ensureIndexes().nodesByCode[route.startNodeCode]
+                    val endNode = ensureIndexes().nodesByCode[route.endNodeCode]
+                    if (startNode != null && endNode != null) {
+                        val midLat = (startNode.latitude + endNode.latitude) / 2.0
+                        val midLng = (startNode.longitude + endNode.longitude) / 2.0
+                        midLat to midLng
+                    } else if (startNode != null) {
+                        startNode.latitude to startNode.longitude
+                    } else if (endNode != null) {
+                        endNode.latitude to endNode.longitude
+                    } else {
+                        null
+                    }
+                } else null
+            }
             ?: locationProvider.lastKnownLocation().let { snapshot ->
                 snapshot.latitude?.let { lat -> snapshot.longitude?.let { lng -> lat to lng } }
             }
@@ -234,7 +266,7 @@ fun WorkspaceViewModel.selectMapNode(node: GisNode) {
             message = ""
         )
     )
-    GisMapBridgeRegistry.bridge?.centerOnLocation(node.latitude, node.longitude, 20.0)
+    GisMapBridgeRegistry.bridge?.centerOnLocation(node.latitude, node.longitude, 18.0)
 }
 
 fun WorkspaceViewModel.clearMapNodeSelection() {
@@ -256,7 +288,7 @@ fun WorkspaceViewModel.selectMapRoute(route: GisRoute) {
     if (startNode != null && endNode != null) {
         val midLat = (startNode.latitude + endNode.latitude) / 2.0
         val midLng = (startNode.longitude + endNode.longitude) / 2.0
-        GisMapBridgeRegistry.bridge?.centerOnLocation(midLat, midLng, 20.0)
+        GisMapBridgeRegistry.bridge?.centerOnLocation(midLat, midLng, 18.0)
     }
 }
 
@@ -407,12 +439,10 @@ fun WorkspaceViewModel.suggestTasks(objectCode: String) {
 
 fun WorkspaceViewModel.onMapZoomIn() {
     GisMapBridgeRegistry.bridge?.zoomIn()
-    _state.value = _state.value.copy(mapUi = _state.value.mapUi.copy(message = "Phóng to"))
 }
 
 fun WorkspaceViewModel.onMapZoomOut() {
     GisMapBridgeRegistry.bridge?.zoomOut()
-    _state.value = _state.value.copy(mapUi = _state.value.mapUi.copy(message = "Thu nhỏ"))
 }
 
 fun WorkspaceViewModel.onMapMyLocation() {
@@ -458,6 +488,18 @@ fun WorkspaceViewModel.onFilterContractorChanged(contractor: String?) {
         )
     )
     AppLogger.d("map.filter change applied contractor=${_state.value.mapUi.filterContractor}")
+    updateFilteredMapData()
+}
+
+fun WorkspaceViewModel.onFilterMaterialTypeChanged(materialType: String?) {
+    val normalized = materialType?.takeIf { it.isNotBlank() }
+    _state.value = _state.value.copy(
+        mapUi = _state.value.mapUi.copy(
+            filterMaterialType = normalized,
+            message = ""
+        )
+    )
+    updateFilteredMapData()
 }
 
 fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: String) {
@@ -466,6 +508,11 @@ fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: St
     _state.value = _state.value.copy(
         mapUi = _state.value.mapUi.copy(contractorColors = updated)
     )
+    val projectId = _state.value.activeProjectId
+    if (projectId != null) {
+        saveContractorColor(projectId, contractor, hexColor)
+    }
+    updateFilteredMapData()
 }
 
 fun WorkspaceViewModel.onSearchQueryChanged(query: String) {
@@ -660,6 +707,35 @@ private fun WorkspaceViewModel.findBestMatchingNodeCode(inputCode: String, nodes
     return inputCode
 }
 
+private fun WorkspaceViewModel.findBestMatchingRouteCode(inputCode: String, routes: List<GisRoute>): String {
+    if (inputCode.isBlank()) return inputCode
+    val cleanInput = inputCode.trim().lowercase()
+
+    // 1. Exact or case-insensitive match
+    val directMatch = routes.firstOrNull { it.code.trim().equals(inputCode.trim(), ignoreCase = true) }
+    if (directMatch != null) return directMatch.code
+
+    // 2. Accent-stripped and non-alphanumeric stripped match
+    val normInput = normalizeForMatching(cleanInput)
+    val normMatch = routes.firstOrNull { normalizeForMatching(it.code).equals(normInput, ignoreCase = true) }
+    if (normMatch != null) return normMatch.code
+
+    // 3. Similarity score match (threshold e.g. 0.7)
+    var bestScore = 0.0
+    var bestMatch: GisRoute? = null
+    routes.forEach { route ->
+        val score = StringSimilarity.similarityScore(normalizeForMatching(route.code), normInput)
+        if (score > bestScore) {
+            bestScore = score
+            bestMatch = route
+        }
+    }
+    if (bestScore >= 0.7 && bestMatch != null) {
+        return bestMatch!!.code
+    }
+    return inputCode
+}
+
 private fun WorkspaceViewModel.findBestMatchingCategory(
     inputCategory: String,
     categories: List<WorkCategory>,
@@ -797,85 +873,81 @@ fun WorkspaceViewModel.getRouteProperties(route: GisRoute): List<Pair<String, St
     val basePrefix = if (markerIndex >= 0) route.code.substring(0, markerIndex) else ""
     val suffixChar = if (route.code.contains("#pm")) "_s" else "_R"
 
-    if (basePrefix.isNotBlank()) {
-        val lineSegments = _state.value.designRoutes.filter { it.code.startsWith(basePrefix + suffixChar) }
-        val lineNodes = _state.value.designNodes.filter { it.code.startsWith(basePrefix + "_p") }
-        val startNode = lineNodes.firstOrNull { it.code.endsWith("_p1") }
-        val endNode = lineNodes.maxByOrNull { n -> n.code.substringAfterLast("_p").toIntOrNull() ?: 0 }
+    val points = route.points
+    val hasPoints = points.size > 1
 
-        var totalDistM = 0.0
-        lineSegments.forEach { seg ->
-            val s = nodesByCode[seg.startNodeCode]
-            val e = nodesByCode[seg.endNodeCode]
-            if (s != null && e != null) {
-                totalDistM += com.mapsupervision.domain.util.Haversine.distanceInMeters(
-                    s.latitude, s.longitude,
-                    e.latitude, e.longitude
+    val totalDistM = if (hasPoints) {
+        var sum = 0.0
+        for (i in 1 until points.size) {
+            sum += com.mapsupervision.domain.util.Haversine.distanceInMeters(
+                points[i - 1].first, points[i - 1].second,
+                points[i].first, points[i].second
+            )
+        }
+        sum
+    } else {
+        if (basePrefix.isNotBlank()) {
+            val lineSegments = _state.value.designRoutes.filter { it.code.startsWith(basePrefix + suffixChar) }
+            var sum = 0.0
+            lineSegments.forEach { seg ->
+                val s = nodesByCode[seg.startNodeCode]
+                val e = nodesByCode[seg.endNodeCode]
+                if (s != null && e != null) {
+                    sum += com.mapsupervision.domain.util.Haversine.distanceInMeters(
+                        s.latitude, s.longitude,
+                        e.latitude, e.longitude
+                    )
+                }
+            }
+            sum
+        } else {
+            val startNode = nodesByCode[route.startNodeCode]
+            val endNode   = nodesByCode[route.endNodeCode]
+            if (startNode != null && endNode != null) {
+                com.mapsupervision.domain.util.Haversine.distanceInMeters(
+                    startNode.latitude, startNode.longitude,
+                    endNode.latitude, endNode.longitude
                 )
-            }
+            } else 0.0
         }
+    }
 
-        val distanceText = if (totalDistM >= 1000) "${"%.2f".format(totalDistM / 1000)} km"
+    val distanceText = if (totalDistM > 0.0) {
+        if (totalDistM >= 1000) "${"%.2f".format(totalDistM / 1000)} km"
         else "${totalDistM.toInt()} m"
+    } else ""
 
-        val cleanRouteCode = if (route.code.contains("#pm")) basePrefix.substringBefore("#pm") else basePrefix
-
-        return buildList {
-            add("Mã tuyến" to cleanRouteCode)
-            if (route.contractor.isNotBlank()) add("Nhà thầu" to route.contractor)
-            add("Điểm đầu" to (startNode?.code ?: route.startNodeCode))
-            add("Điểm cuối" to (endNode?.code ?: route.endNodeCode))
-            if (distanceText.isNotBlank()) add("Chiều dài tuyến" to distanceText)
-            startNode?.let { n ->
-                if (n.contractor.isNotBlank() && n.contractor != route.contractor)
-                    add("Nhà thầu điểm đầu" to n.contractor)
-                add("Tọa độ điểm đầu" to "${"%.6f".format(n.latitude)}, ${"%.6f".format(n.longitude)}")
-            }
-            endNode?.let { n ->
-                if (n.contractor.isNotBlank() && n.contractor != route.contractor)
-                    add("Nhà thầu điểm cuối" to n.contractor)
-                add("Tọa độ điểm cuối" to "${"%.6f".format(n.latitude)}, ${"%.6f".format(n.longitude)}")
-            }
-            val routeLength = extractRouteLength(startNode?.materialSummary, endNode?.materialSummary)
-            if (routeLength.isNotBlank()) add("Chiều dài thiết kế" to routeLength)
-            collectSummaryProperties(startNode?.materialSummary, endNode?.materialSummary).forEach { (k, v) ->
-                add(k to v)
-            }
-        }
+    val startCoordText = if (hasPoints) {
+        "${"%.6f".format(points.first().first)}, ${"%.6f".format(points.first().second)}"
     } else {
         val startNode = nodesByCode[route.startNodeCode]
-        val endNode   = nodesByCode[route.endNodeCode]
+        startNode?.let { "${"%.6f".format(it.latitude)}, ${"%.6f".format(it.longitude)}" } ?: ""
+    }
 
-        val distanceText = if (startNode != null && endNode != null) {
-            val distM = com.mapsupervision.domain.util.Haversine.distanceInMeters(
-                startNode.latitude, startNode.longitude,
-                endNode.latitude, endNode.longitude
-            )
-            if (distM >= 1000) "${"%.2f".format(distM / 1000)} km"
-            else "${distM.toInt()} m"
-        } else ""
+    val endCoordText = if (hasPoints) {
+        "${"%.6f".format(points.last().first)}, ${"%.6f".format(points.last().second)}"
+    } else {
+        val endNode = nodesByCode[route.endNodeCode]
+        endNode?.let { "${"%.6f".format(it.latitude)}, ${"%.6f".format(it.longitude)}" } ?: ""
+    }
 
-        return buildList {
-            add("Mã tuyến" to route.code)
-            if (route.contractor.isNotBlank()) add("Nhà thầu" to route.contractor)
-            add("Điểm đầu" to route.startNodeCode)
-            add("Điểm cuối" to route.endNodeCode)
-            if (distanceText.isNotBlank()) add("Chiều dài tuyến" to distanceText)
-            startNode?.let { n ->
-                if (n.contractor.isNotBlank() && n.contractor != route.contractor)
-                    add("Nhà thầu điểm đầu" to n.contractor)
-                add("Tọa độ điểm đầu" to "${"%.6f".format(n.latitude)}, ${"%.6f".format(n.longitude)}")
-            }
-            endNode?.let { n ->
-                if (n.contractor.isNotBlank() && n.contractor != route.contractor)
-                    add("Nhà thầu điểm cuối" to n.contractor)
-                add("Tọa độ điểm cuối" to "${"%.6f".format(n.latitude)}, ${"%.6f".format(n.longitude)}")
-            }
-            val routeLength = extractRouteLength(startNode?.materialSummary, endNode?.materialSummary)
-            if (routeLength.isNotBlank()) add("Chiều dài thiết kế" to routeLength)
-            collectSummaryProperties(startNode?.materialSummary, endNode?.materialSummary).forEach { (k, v) ->
-                add(k to v)
-            }
+    val cleanRouteCode = if (basePrefix.isNotBlank()) {
+        if (route.code.contains("#pm")) basePrefix.substringBefore("#pm") else basePrefix
+    } else route.code
+
+    return buildList {
+        add("Mã tuyến" to cleanRouteCode)
+        if (route.contractor.isNotBlank()) add("Nhà thầu" to route.contractor)
+        if (startCoordText.isNotBlank()) add("Tọa độ điểm đầu" to startCoordText)
+        if (endCoordText.isNotBlank()) add("Tọa độ điểm cuối" to endCoordText)
+        if (distanceText.isNotBlank()) add("Chiều dài tuyến" to distanceText)
+        val routeLength = route.designLength.orEmpty()
+        if (routeLength.isNotBlank()) add("Chiều dài thiết kế" to routeLength)
+        
+        val startNode = nodesByCode[route.startNodeCode]
+        val endNode = nodesByCode[route.endNodeCode]
+        collectSummaryProperties(startNode?.materialSummary, endNode?.materialSummary).forEach { (k, v) ->
+            add(k to v)
         }
     }
 }
@@ -927,10 +999,10 @@ fun WorkspaceViewModel.focusPhotosBySelectedNode() {
 }
 
 fun WorkspaceViewModel.loadPhotosForSelectedNode() {
-    val nodeCode = _state.value.mapUi.selectedNode?.code ?: return
+    val targetCode = _state.value.mapUi.selectedNode?.code ?: _state.value.mapUi.selectedRoute?.code ?: return
     val projectId = _state.value.activeProjectId ?: return
     viewModelScope.launch {
-        val photos = (photoRepository.byObjectCode(projectId, nodeCode) as? AppResult.Success)?.data.orEmpty()
+        val photos = (photoRepository.byObjectCode(projectId, targetCode) as? AppResult.Success)?.data.orEmpty()
         _state.value = _state.value.copy(selectedNodePhotos = photos)
     }
 }
@@ -984,7 +1056,7 @@ fun WorkspaceViewModel.getPreviewMaterialRows(previewNodeCode: String?): List<co
 
 fun WorkspaceViewModel.triggerCapture() {
     _state.value = _state.value.copy(
-        pendingCaptureNodeCode = _state.value.mapUi.selectedNode?.code ?: ""
+        pendingCaptureNodeCode = _state.value.mapUi.selectedNode?.code ?: _state.value.mapUi.selectedRoute?.code ?: ""
     )
 }
 
@@ -998,13 +1070,18 @@ fun WorkspaceViewModel.savePhoto(file: java.io.File, nodeCode: String) {
         withContext(Dispatchers.IO) {
             val loc = locationProvider.lastKnownLocation()
             val thumb = photoPipelineService.createThumbnail(projectId, file)
+            val isRoute = _state.value.designRoutes.any { it.code == nodeCode }
+            val matchedNode = if (!isRoute) nodeCode else null
+            val matchedRoute = if (isRoute) nodeCode else null
             val photo = createStoredSitePhoto(
                 projectId = projectId,
                 objectCode = nodeCode,
                 file = file,
                 thumbnailFile = thumb,
                 location = loc,
-                engineer = "Field"
+                engineer = "Field",
+                matchedNodeCode = matchedNode,
+                matchedRouteCode = matchedRoute
             )
             photoRepository.add(photo)
             storageManager.scanFile(file)
@@ -1055,15 +1132,7 @@ private suspend fun WorkspaceViewModel.geocodeByNominatim(query: String): Pair<D
     }.getOrNull()
 }
 
-private fun WorkspaceViewModel.extractRouteLength(startSummary: String?, endSummary: String?): String {
-    val combined = sequenceOf(startSummary, endSummary)
-        .filterNotNull()
-        .flatMap { it.split('\n').asSequence() }
-        .map { it.trim() }
-        .firstOrNull { it.startsWith("routeLength:", ignoreCase = true) }
-        ?: return ""
-    return combined.substringAfter(':').trim()
-}
+
 
 internal fun retainRouteEndpointNodes(
     filteredNodes: List<GisNode>,
@@ -1093,28 +1162,36 @@ internal fun buildMapDesignNodes(
     indexes: WorkspaceIndexes
 ): List<GisNode> {
     val mapUi = state.mapUi
-    AppLogger.d("buildMapDesignNodes: filterContractor=${mapUi.filterContractor}, searchQuery='${mapUi.searchQuery}', showNodes=${mapUi.showNodes}")
+    AppLogger.d("buildMapDesignNodes: filterContractor=${mapUi.filterContractor}, filterMaterialType=${mapUi.filterMaterialType}, searchQuery='${mapUi.searchQuery}', showNodes=${mapUi.showNodes}")
     AppLogger.d("buildMapDesignNodes: total designNodes=${state.designNodes.size}, total designRoutes=${state.designRoutes.size}")
     
-    if (mapUi.filterContractor.isNullOrBlank() && mapUi.searchQuery.isBlank()) {
+    if (mapUi.filterContractor.isNullOrBlank() && mapUi.filterMaterialType.isNullOrBlank() && mapUi.searchQuery.isBlank()) {
         AppLogger.d("buildMapDesignNodes: No filter, returning all ${state.designNodes.size} nodes")
         return state.designNodes
     }
 
     val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeMapSearchText(mapUi.searchQuery)
+    val lowerMaterialType = mapUi.filterMaterialType?.trim()?.lowercase()
+
     val filteredNodes = state.designNodes.filter { node ->
         val byContractor = mapUi.filterContractor.isNullOrBlank() ||
             node.contractor.equals(mapUi.filterContractor, ignoreCase = true)
         val byQuery = mapUi.searchQuery.isBlank() ||
             indexes.normalizedNodeSearch[node.id].orEmpty().contains(normalizedQuery)
-        byContractor && byQuery
+        val byMaterial = lowerMaterialType.isNullOrBlank() || run {
+            val nodeMaterials = (indexes.parsedMaterialsByNodeKey[node.id].orEmpty().map { it.itemName } +
+                                 indexes.materialRowsByNodeKey[node.id].orEmpty().map { it.materialName })
+                                 .map { it.trim().lowercase() }
+            nodeMaterials.contains(lowerMaterialType)
+        }
+        byContractor && byQuery && byMaterial
     }
 
     AppLogger.d("buildMapDesignNodes: final result nodes=${filteredNodes.size}")
     return filteredNodes
 }
 
-private fun normalizeMapSearchText(text: String): String {
+internal fun normalizeMapSearchText(text: String): String {
     val stripped = java.text.Normalizer
         .normalize(text.lowercase(java.util.Locale.US), java.text.Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
@@ -1131,7 +1208,7 @@ private fun WorkspaceViewModel.collectSummaryProperties(startSummary: String?, e
         .filterNotNull()
         .flatMap { it.split('\n').asSequence() }
         .map { it.trim() }
-        .filter { it.isNotBlank() && !it.startsWith("routeLength:", ignoreCase = true) }
+        .filter { it.isNotBlank() }
         .forEach { line ->
             val key = line.substringBefore(':').trim()
             val value = line.substringAfter(':', "").trim()
@@ -1258,7 +1335,7 @@ fun WorkspaceViewModel.addDailyLogBatch(
                     (it.nodeCode == nodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == nodeCode) &&
                         it.materialName.equals(normalizedCategory, ignoreCase = true)
                 }
-                val currentActual = (existing?.actualQty ?: 0f) + volume.toFloat()
+                val currentActual = volume.toFloat()
                 val newMaterial = MaterialProgress(
                     id = existing?.id ?: UUID.randomUUID().toString(),
                     projectId = projectId,
@@ -1266,7 +1343,8 @@ fun WorkspaceViewModel.addDailyLogBatch(
                     materialName = existing?.materialName ?: normalizedCategory,
                     plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                     actualQty = currentActual,
-                    updatedAtEpochMs = System.currentTimeMillis()
+                    updatedAtEpochMs = System.currentTimeMillis(),
+                    unit = normalizedUnit
                 )
                 materialProgressRepository.upsert(newMaterial)
 

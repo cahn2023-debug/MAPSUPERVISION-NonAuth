@@ -55,7 +55,7 @@ interface GisMapBridge {
     fun setLayerVisibility(showNodes: Boolean, showRoutes: Boolean) {}
     fun setMeasureEnabled(enabled: Boolean) {}
     fun setBaseMap(type: MapLayerType) {}
-    fun centerOnLocation(lat: Double, lng: Double, zoom: Double = 20.0) {}
+    fun centerOnLocation(lat: Double, lng: Double, zoom: Double = 18.0) {}
 }
 
 /**

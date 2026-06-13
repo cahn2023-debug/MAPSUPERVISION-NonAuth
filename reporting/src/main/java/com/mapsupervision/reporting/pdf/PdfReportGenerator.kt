@@ -182,11 +182,11 @@ class PdfReportGenerator @Inject constructor() {
                     
                     if (imgFile.exists()) {
                         runCatching {
-                            // Decode scale-down to save memory
-                            val options = BitmapFactory.Options().apply {
-                                inSampleSize = 4
-                            }
-                            val rawBitmap = BitmapFactory.decodeFile(imgFile.absolutePath, options)
+                            val rawBitmap = decodeBitmapForCell(
+                                imgFile,
+                                reqWidth = cellWidth.toInt(),
+                                reqHeight = (cellHeight - 35f).toInt()
+                            )
                             if (rawBitmap != null) {
                                 val rectDst = RectF(startX, y, startX + cellWidth, y + cellHeight - 35f)
                                 canvas.drawBitmap(rawBitmap, null, rectDst, null)
@@ -235,5 +235,30 @@ class PdfReportGenerator @Inject constructor() {
         val dir = File(downloads, "MapSupervision/Reports")
         dir.mkdirs()
         return dir
+    }
+
+    private fun decodeBitmapForCell(file: File, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, reqWidth, reqHeight)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        return BitmapFactory.decodeFile(file.absolutePath, options)
+    }
+
+    private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            inSampleSize *= 2
+        }
+        return inSampleSize.coerceAtLeast(1)
     }
 }

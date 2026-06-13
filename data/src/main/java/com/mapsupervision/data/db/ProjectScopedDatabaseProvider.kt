@@ -2,6 +2,7 @@ package com.mapsupervision.data.db
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.mapsupervision.core.logging.AppLogger
@@ -62,15 +63,31 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     }
 
     private suspend fun openProjectDb(project: ProjectEntity): MapSupervisionDatabase = mutex.withLock {
-        val existing = holders[project.projectDbPath]
+        val dbPath = if (project.projectDbPath.contains("/Download/MapSupervision/Projects/")) {
+            val privateBase = File(context.filesDir, "MapSupervision")
+            File(privateBase, "Projects/${project.slug}/db/project.sqlite").absolutePath
+        } else {
+            project.projectDbPath
+        }
+
+        val existing = holders[dbPath]
         if (existing != null) {
             existing.lastAccessEpochMs = System.currentTimeMillis()
             return existing.database
         }
 
-        val dbFile = File(project.projectDbPath)
+        val dbFile = File(dbPath)
         dbFile.parentFile?.mkdirs()
         val database = Room.databaseBuilder(context, MapSupervisionDatabase::class.java, dbFile.absolutePath)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    db.execSQL("PRAGMA foreign_keys = ON")
+                    db.execSQL("PRAGMA synchronous = NORMAL")
+                    db.execSQL("PRAGMA temp_store = MEMORY")
+                }
+            })
             .addMigrations(
                 MapSupervisionDatabase.MIGRATION_8_9,
                 MapSupervisionDatabase.MIGRATION_9_10,
@@ -82,13 +99,17 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 MapSupervisionDatabase.MIGRATION_15_16,
                 MapSupervisionDatabase.MIGRATION_16_17,
                 MapSupervisionDatabase.MIGRATION_17_18,
-                MapSupervisionDatabase.MIGRATION_18_19
+                MapSupervisionDatabase.MIGRATION_18_19,
+                MapSupervisionDatabase.MIGRATION_19_20,
+                MapSupervisionDatabase.MIGRATION_20_21,
+                MapSupervisionDatabase.MIGRATION_21_22,
+                MapSupervisionDatabase.MIGRATION_22_23,
+                MapSupervisionDatabase.MIGRATION_23_24
             )
-            .fallbackToDestructiveMigration()
             .build()
         AppLogger.d("project.db.open path=${dbFile.absolutePath}")
         ensureLegacyHydrated(project, database)
-        holders[project.projectDbPath] = DatabaseHolder(database)
+        holders[dbPath] = DatabaseHolder(database)
         database
     }
 
@@ -214,6 +235,10 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         while (iterator.hasNext()) {
             val entry = iterator.next()
             if (now - entry.value.lastAccessEpochMs >= idleTimeoutMs) {
+                runCatching {
+                    val db = entry.value.database.openHelper.writableDatabase
+                    db.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+                }
                 runCatching { entry.value.database.close() }
                 AppLogger.d("project.db.close path=${entry.key}")
                 iterator.remove()

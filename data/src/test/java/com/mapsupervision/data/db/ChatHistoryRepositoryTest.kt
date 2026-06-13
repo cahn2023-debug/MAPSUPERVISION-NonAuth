@@ -44,6 +44,20 @@ class ChatHistoryRepositoryTest {
     fun testAppendAndListRecentByProject() = runBlocking {
         val projectId = "project-abc"
         
+        database.projectDao().upsert(
+            com.mapsupervision.data.db.entity.ProjectEntity(
+                id = projectId,
+                name = "Project ABC",
+                slug = "project-abc",
+                isArchived = false,
+                createdAtEpochMs = 1000L,
+                metadataVersion = 3,
+                updatedAtEpochMs = 1000L,
+                storageMode = com.mapsupervision.domain.model.ProjectStorageMode.LEGACY_SHARED,
+                projectDbPath = ""
+            )
+        )
+        
         // Append 55 messages with increasing timestamps
         for (i in 1..55) {
             val message = ChatHistoryMessage(

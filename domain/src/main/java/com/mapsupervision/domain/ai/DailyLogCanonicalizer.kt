@@ -5,7 +5,8 @@ object DailyLogCanonicalizer {
         params: Map<String, String>,
         message: String,
         normalizationContext: String,
-        selectedNodeCode: String?
+        selectedNodeCode: String?,
+        selectedRouteCode: String? = null
     ): DailyLogDraft {
         val refs = NormalizationRefsParser.parse(normalizationContext)
         
@@ -13,6 +14,12 @@ object DailyLogCanonicalizer {
         val resolvedNode = ChatDictionaryResolver.resolveNode(
             message = message,
             selectedNodeCode = params["nodeCode"] ?: selectedNodeCode,
+            refs = refs
+        ).first
+
+        val resolvedRoute = ChatDictionaryResolver.resolveRoute(
+            message = message,
+            selectedRouteCode = params["routeCode"] ?: selectedRouteCode,
             refs = refs
         ).first
         
@@ -30,6 +37,10 @@ object DailyLogCanonicalizer {
         val weather = params["weather"]?.takeIf { it.isNotBlank() } ?: ChatDictionaryResolver.resolveWeather(message)
         val temperature = params["temperature"]?.toDoubleOrNull() ?: 0.0
         val volume = params["volume"]?.toDoubleOrNull() ?: 0.0
+        val dateEpochDay = DailyLogDateResolver.resolveEpochDay(
+            message = message,
+            explicitDate = params["date"] ?: params["logDate"]
+        )
 
         return DailyLogDraft(
             workItem = workItem,
@@ -38,7 +49,8 @@ object DailyLogCanonicalizer {
             weather = weather,
             temperature = temperature,
             nodeCode = resolvedNode,
-            dateEpochDay = System.currentTimeMillis() / (24 * 60 * 60 * 1000L),
+            routeCode = resolvedRoute,
+            dateEpochDay = dateEpochDay,
             volume = volume,
             unit = unit.orEmpty(),
             categoryName = categoryName.orEmpty()

@@ -6,6 +6,8 @@ import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.MaterialProgress
 import com.mapsupervision.domain.model.NodeProgress
 
+import com.mapsupervision.domain.model.WorkTemplateOption
+
 data class SelectorOption(
     val key: String,
     val label: String
@@ -30,13 +32,16 @@ data class DataHubDisplayItem(
 data class ProgressUiState(
     val nonStructuralNodes: List<GisNode> = emptyList(),
     val nodesByCode: Map<String, GisNode> = emptyMap(),
+    val routeSelectorOptions: List<SelectorOption> = emptyList(),
     val progressByNodeCode: Map<String, NodeProgress> = emptyMap(),
     val allDisplayItems: List<NodeProgress> = emptyList(),
     val activeNodeCodes: Set<String> = emptySet(),
     val criticalNodes: List<NodeProgress> = emptyList(),
     val nodeSelectorOptions: List<SelectorOption> = emptyList(),
     val logEpochDays: Set<Long> = emptySet(),
-    val materialOptionsByNodeCode: Map<String, List<SelectorOption>> = emptyMap()
+    val materialOptionsByNodeCode: Map<String, List<SelectorOption>> = emptyMap(),
+    val templateOptions: List<WorkTemplateOption> = emptyList(),
+    val materialRows: List<MaterialProgress> = emptyList()
 )
 
 data class DataHubUiState(
@@ -55,6 +60,7 @@ internal data class WorkspaceIndexes(
     val parsedMaterialsByNodeKey: Map<String, List<PreparedMaterialLine>> = emptyMap(),
     val normalizedNodeSearch: Map<String, String> = emptyMap(),
     val normalizedRouteSearch: Map<String, String> = emptyMap(),
+    val materialTypeOptions: List<String> = emptyList(),
     val progressUi: ProgressUiState = ProgressUiState(),
     val dataHubUi: DataHubUiState = DataHubUiState()
 )
@@ -107,6 +113,24 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
             .map { SelectorOption(it.itemName, it.itemName) }
         materialOptionsByNodeCode[node.code] = options
     }
+
+    val routeSelectorOptions = state.designRoutes
+        .sortedWith(compareBy<GisRoute>({ it.code }, { it.startNodeCode }, { it.endNodeCode }))
+        .map { route ->
+            SelectorOption(
+                key = route.code,
+                label = buildString {
+                    append(route.code)
+                    if (route.startNodeCode.isNotBlank() || route.endNodeCode.isNotBlank()) {
+                        append(" (")
+                        append(route.startNodeCode)
+                        if (route.startNodeCode.isNotBlank() && route.endNodeCode.isNotBlank()) append(" -> ")
+                        append(route.endNodeCode)
+                        append(")")
+                    }
+                }
+            )
+        }
 
     val allDisplayItems = nonStructuralNodes.map { node ->
         progressByNodeCode[node.code] ?: NodeProgress(
@@ -197,6 +221,74 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
 
     val logEpochDays = state.dailyLogs.mapTo(linkedSetOf()) { log -> resolveLogEpochDay(log) }
 
+    val materialTypeOptions = (state.designNodes.flatMap { node ->
+        parsedMaterialsByNodeKey[node.id].orEmpty().map { it.itemName }
+    } + state.materialRows.map { it.materialName })
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .groupBy { it.lowercase() }
+        .map { (_, group) -> group.first() }
+        .sortedWith(String.CASE_INSENSITIVE_ORDER)
+        .toList()
+
+    val dbMaterials = LinkedHashMap<String, WorkTemplateOption>()
+    for (row in state.materialRows) {
+        val trimmedName = row.materialName.trim()
+        if (trimmedName.isEmpty()) continue
+        val key = trimmedName.lowercase()
+        val existing = dbMaterials[key]
+        if (existing == null || (existing.unit.isBlank() && row.unit.isNotBlank())) {
+            dbMaterials[key] = WorkTemplateOption(
+                name = trimmedName,
+                unit = row.unit.trim(),
+                source = "Vật tư / Thiết bị"
+            )
+        }
+    }
+
+    for (node in state.designNodes) {
+        val parsedList = parsedMaterialsByNodeKey[node.id].orEmpty()
+        for (parsed in parsedList) {
+            val trimmedName = parsed.itemName.trim()
+            if (trimmedName.isEmpty()) continue
+            val key = trimmedName.lowercase()
+            if (!dbMaterials.containsKey(key)) {
+                dbMaterials[key] = WorkTemplateOption(
+                    name = trimmedName,
+                    unit = "",
+                    source = "Vật tư / Thiết bị"
+                )
+            }
+        }
+    }
+
+    val manualCategories = LinkedHashMap<String, WorkTemplateOption>()
+    for (cat in state.workCategories) {
+        val trimmedName = cat.name.trim()
+        if (trimmedName.isEmpty()) continue
+        val key = trimmedName.lowercase()
+        if (!manualCategories.containsKey(key)) {
+            manualCategories[key] = WorkTemplateOption(
+                name = trimmedName,
+                unit = cat.unit.trim(),
+                source = "Hạng mục công việc chung"
+            )
+        }
+    }
+
+    val sortedMaterials = dbMaterials.values.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    val sortedManual = manualCategories.values.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+    val templateOptions = sortedMaterials + sortedManual
+    val preferredTemplateOptions = templateOptions
+        .groupBy { it.name.trim().lowercase() }
+        .mapNotNull { (_, options) ->
+            options.firstOrNull { it.source == "Hạng mục công việc chung" && it.unit.isNotBlank() }
+                ?: options.firstOrNull { it.unit.isNotBlank() }
+                ?: options.firstOrNull()
+        }
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+
     return WorkspaceIndexes(
         nodesById = nodesById,
         nodesByCode = nodesByCode,
@@ -207,16 +299,20 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
         parsedMaterialsByNodeKey = parsedMaterialsByNodeKey,
         normalizedNodeSearch = state.designNodes.associate { node -> node.id to buildNodeSearchBlob(node) },
         normalizedRouteSearch = state.designRoutes.associate { route -> route.code to buildRouteSearchBlob(route) },
+        materialTypeOptions = materialTypeOptions,
         progressUi = ProgressUiState(
             nonStructuralNodes = nonStructuralNodes,
             nodesByCode = nodesByCode,
+            routeSelectorOptions = routeSelectorOptions,
             progressByNodeCode = progressByNodeCode,
             allDisplayItems = allDisplayItems,
             activeNodeCodes = activeNodeCodes,
             criticalNodes = criticalNodes,
             nodeSelectorOptions = nodeSelectorOptions,
             logEpochDays = logEpochDays,
-            materialOptionsByNodeCode = materialOptionsByNodeCode
+            materialOptionsByNodeCode = materialOptionsByNodeCode,
+            templateOptions = preferredTemplateOptions,
+            materialRows = state.materialRows
         ),
         dataHubUi = DataHubUiState(
             nonStructuralNodes = nonStructuralNodes,

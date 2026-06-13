@@ -28,4 +28,7 @@ interface GisNodeDao {
 
     @Query("SELECT * FROM gis_node WHERE projectId = :projectId AND code = :code LIMIT 1")
     suspend fun findByCode(projectId: String, code: String): GisNodeEntity?
+
+    @Query("DELETE FROM gis_node WHERE projectId = :projectId AND importedFileId = :importedFileId")
+    suspend fun deleteByImportedFileId(projectId: String, importedFileId: String)
 }

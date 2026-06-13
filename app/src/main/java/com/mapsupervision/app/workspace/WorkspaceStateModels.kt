@@ -130,19 +130,19 @@ internal object DedupQualityAdvisor {
             skippedDuplicateRoutes = skippedDuplicateRoutes
         )
         if (metrics.confidence == "low") {
-            return " (goi y: mau import con it, nen doi chieu them truoc khi ket luan)"
+            return " (gợi ý: mẫu import còn ít, nên đối chiếu thêm trước khi kết luận)"
         }
         return when (metrics.focus) {
             "self" ->
-                " (goi y: kiem tra mapping diem dau/cuoi de tranh tuyen start=end)"
+                " (gợi ý: kiểm tra mapping điểm đầu/cuối để tránh tuyến start=end)"
             "weak" ->
-                " (goi y: chuan hoa cot ma/toa do de giam match yeu)"
+                " (gợi ý: chuẩn hóa cột mã/tọa độ để giảm match yếu)"
             "coordReject" ->
-                " (goi y: doi chieu ma + nha thau cho cac diem gan nhau)"
+                " (gợi ý: đối chiếu mã + nhà thầu cho các điểm gần nhau)"
             "dup" ->
-                " (goi y: loc bot du lieu tuyen trung truoc import)"
+                " (gợi ý: lọc bớt dữ liệu tuyến trùng trước import)"
             else ->
-                " (goi y: kiem tra ngau nhien 5-10 dong dau vao de doi chieu)"
+                " (gợi ý: kiểm tra ngẫu nhiên 5-10 dòng đầu vào để đối chiếu)"
         }
     }
 
@@ -204,9 +204,9 @@ internal object DedupQualityAdvisor {
 
     fun actionNote(action: String): String {
         return when (action) {
-            "review_required" -> "doi chieu thu cong truoc khi chot du lieu"
-            "review_recommended" -> "kiem tra mau 5-10 ban ghi tieu bieu"
-            else -> "theo doi va tiep tuc import theo lo"
+            "review_required" -> "đối chiếu thủ công trước khi chốt dữ liệu"
+            "review_recommended" -> "kiểm tra mẫu 5-10 bản ghi tiêu biểu"
+            else -> "theo dõi và tiếp tục import theo lô"
         }
     }
 
@@ -721,6 +721,7 @@ data class MapUiState(
     val measureEnabled: Boolean = false,
     val measureDistanceText: String = "",   // e.g. "1.23 km" or "456 m"
     val filterContractor: String? = null,
+    val filterMaterialType: String? = null,
     val contractorColors: Map<String, String> = emptyMap(), // contractor name -> hex color
     val searchQuery: String = "",
     val message: String = "",
@@ -733,3 +734,9 @@ internal val GisLabelField.displayName: String
         GisLabelField.CONTRACTOR -> "Nhà thầu"
         GisLabelField.COORDINATE -> "Tọa độ"
     }
+
+fun dedupeImportedFilesById(files: List<ImportedFile>): List<ImportedFile> {
+    val seenIds = mutableSetOf<String>()
+    return files.filter { seenIds.add(it.id) }
+}
+

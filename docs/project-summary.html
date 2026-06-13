@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MAPSUPERVISION-NonAuth - Project Summary</title>
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#11192b; --panel2:#16213a; --text:#e8eefc; --muted:#a9b7d0;
+      --line:#274064; --accent:#64b5f6; --accent2:#7ee7c7; --warn:#ffcc66; --bad:#ff7a88;
+    }
+    html,body{margin:0;background:linear-gradient(180deg,#07101d 0%,#0b1220 100%);color:var(--text);font:14px/1.55 Arial,Helvetica,sans-serif}
+    body{padding:24px}
+    .wrap{max-width:1200px;margin:0 auto}
+    h1,h2,h3{line-height:1.15;margin:0 0 12px}
+    h1{font-size:34px}
+    h2{font-size:22px;margin-top:28px}
+    h3{font-size:16px;margin-top:18px;color:#d9e7ff}
+    p,li{color:var(--muted)}
+    .hero,.card,.stat,.timeline li{background:rgba(17,25,43,.88);border:1px solid var(--line);border-radius:12px}
+    .hero{padding:22px 24px;margin-bottom:18px}
+    .grid{display:grid;gap:14px}
+    .grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card,.stat{padding:16px}
+    .stat strong{display:block;color:var(--text);font-size:20px;margin-bottom:2px}
+    .tag{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--accent2);margin:0 6px 6px 0}
+    table{width:100%;border-collapse:collapse;background:rgba(17,25,43,.72);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+    th{color:#dce8ff;background:rgba(22,33,58,.9)}
+    tr:last-child td{border-bottom:0}
+    a{color:var(--accent)}
+    code{background:#0b1324;color:#d7e8ff;padding:2px 5px;border-radius:5px}
+    .timeline{list-style:none;padding:0;margin:0}
+    .timeline li{padding:12px 14px;margin-bottom:10px}
+    .good{color:var(--accent2)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+    .small{font-size:12px;color:var(--muted)}
+    .section-note{margin-top:-4px;margin-bottom:14px}
+    .footer{margin:26px 0 8px;color:var(--muted);font-size:12px}
+    @media (max-width: 900px){ .grid.cols-3,.grid.cols-2{grid-template-columns:1fr} body{padding:14px} h1{font-size:28px} }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <h1>MAPSUPERVISION-NonAuth</h1>
+    <p class="section-note">Tổng hợp kiến trúc, module, luồng nghiệp vụ và danh sách cleanup ưu tiên của dự án Android Kotlin đa module.</p>
+    <div>
+      <span class="tag">Android</span>
+      <span class="tag">Kotlin</span>
+      <span class="tag">Compose</span>
+      <span class="tag">Hilt</span>
+      <span class="tag">Room</span>
+      <span class="tag">MapLibre</span>
+      <span class="tag">WorkManager</span>
+      <span class="tag">Offline-first</span>
+    </div>
+  </section>
+
+  <section class="grid cols-3">
+    <div class="stat"><strong>12</strong><span>Gradle modules chính trong `settings.gradle.kts`</span></div>
+    <div class="stat"><strong>230</strong><span>file Kotlin tracked trong repo</span></div>
+    <div class="stat"><strong>312</strong><span>file tracked tổng cộng trong `git ls-files`</span></div>
+  </section>
+
+  <h2>1. Tổng Quan</h2>
+  <div class="card">
+    <p>Dự án là một ứng dụng Android quản lý giám sát công trường và hạ tầng, dùng Clean Architecture theo kiểu multi-module. Trung tâm điều phối nằm ở <code>:app</code>, dữ liệu ở <code>:data</code>, nghiệp vụ ở <code>:domain</code>, còn các feature như GIS, photo, reporting, timeline và project là những module tách riêng.</p>
+    <p>Hệ thống nổi bật ở ba trục chính: bản đồ GIS/MapLibre, import file thiết kế KML/KMZ/Excel/Word/PDF, và pipeline ảnh hiện trường chạy ngầm bằng WorkManager.</p>
+  </div>
+
+  <h2>2. Module</h2>
+  <table>
+    <thead><tr><th>Module</th><th>Vai trò</th><th>Điểm cần chú ý</th></tr></thead>
+    <tbody>
+      <tr><td><code>:app</code></td><td>Shell điều hướng, workspace, camera, chat, report</td><td>File lớn, nhiều wiring, có vài chỗ dùng coroutine chưa sạch</td></tr>
+      <tr><td><code>:domain</code></td><td>Entities, repositories, use cases, AI contracts</td><td>Đây là lớp nên giữ thuần Kotlin</td></tr>
+      <tr><td><code>:data</code></td><td>Room DB, repositories, AI local/cloud implementations</td><td>Có stub cũ và fallback API key mẫu</td></tr>
+      <tr><td><code>:storage-core</code>, <code>:storage-crypto</code>, <code>:storage-import</code></td><td>Lưu trữ, mã hóa, parser/import file</td><td>Import parser là nơi có nhiều deprecated entry</td></tr>
+      <tr><td><code>:gis</code>, <code>:gis-maplibre</code></td><td>Map UI và bridge MapLibre</td><td>Giữ ranh giới abstraction/implementation rõ</td></tr>
+      <tr><td><code>:photo</code></td><td>Camera, location, pipeline ảnh</td><td>Vùng dễ phát sinh coroutine/lifecycle bug</td></tr>
+      <tr><td><code>:timeline</code>, <code>:reporting</code>, <code>:project</code></td><td>UI nghiệp vụ theo mảng chức năng</td><td>Phụ thuộc nhiều vào workspace state</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Luồng Chính</h2>
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Nhập thiết kế</h3>
+      <p>Người dùng nhập file KML/KMZ/Excel/Word/PDF, dữ liệu được parse trong <code>storage-import</code>, map vào nodes/routes/progress rồi đẩy vào SQLite qua <code>:data</code>.</p>
+    </div>
+    <div class="card">
+      <h3>Ảnh hiện trường</h3>
+      <p>Camera/location đi qua <code>:photo</code>, ảnh được chụp, gắn stamp và lưu nền. Dữ liệu ảnh sau đó quay về workspace/map/report.</p>
+    </div>
+    <div class="card">
+      <h3>Tiến độ</h3>
+      <p><code>WorkspaceViewModel</code> tổng hợp snapshot, tính dashboard, lọc nodes/routes, và phát các action cho map/progress/data/report.</p>
+    </div>
+    <div class="card">
+      <h3>Báo cáo</h3>
+      <p><code>:reporting</code> dựng PDF/DOCX từ daily logs, ảnh, material rows và snapshot hiện tại của project.</p>
+    </div>
+  </div>
+
+  <h2>4. Cleanup Hotspots</h2>
+  <ul class="timeline">
+    <li><span class="good">Đã dọn</span>: bỏ <code>System.gc()</code> khỏi <a href="../app/src/main/java/com/mapsupervision/app/MapSupervisionApplication.kt">MapSupervisionApplication.kt</a>.</li>
+    <li><span class="good">Đã dọn</span>: thay <code>MainScope()</code> trong <a href="../app/src/main/java/com/mapsupervision/app/CameraOverlay.kt">CameraOverlay.kt</a> bằng coroutine scope của Compose.</li>
+    <li><span class="good">Đã dọn</span>: xóa hẳn stub <code>MediaPipeRepositoryImpl</code> không còn caller thật.</li>
+    <li><span class="warn">Nên xử lý tiếp</span>: chuẩn hóa encoding tiếng Việt trong các UI/docs còn mojibake.</li>
+    <li><span class="warn">Nên xử lý tiếp</span>: kiểm tra các file lớn trên 900 dòng để tách theo trách nhiệm.</li>
+    <li><span class="warn">Nên xử lý tiếp</span>: rà soát docs cũ đang nhắc module stale như <code>:storage</code> và <code>:photo-lite</code>.</li>
+  </ul>
+
+  <h2>5. Kế Hoạch Dọn Code</h2>
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>1. Ổn định build</h3>
+      <p>Chạy theo module thay vì full <code>check</code> ngay nếu timeout. Ưu tiên <code>:domain:test</code>, <code>:data:test</code>, <code>:storage-import:test</code>, <code>:app:test</code>.</p>
+    </div>
+    <div class="card">
+      <h3>2. Loại bỏ stub/deprecated</h3>
+      <p>Giữ lại một API import chính, bỏ object deprecated sau khi caller đã chuyển hết. Dọn các implementation placeholder không còn dùng.</p>
+    </div>
+    <div class="card">
+      <h3>3. Tách hotspot</h3>
+      <p>Ưu tiên các file lớn nhất ở workspace, import mapping, map screen và reporting components. Mục tiêu là giảm độ dày của <code>:app</code>.</p>
+    </div>
+    <div class="card">
+      <h3>4. Sửa docs</h3>
+      <p>Tạo lại tài liệu tổng hợp từ repo hiện tại để tránh lỗi encoding và mô tả module sai.</p>
+    </div>
+  </div>
+
+  <h2>6. File Tham Chiếu</h2>
+  <div class="card">
+    <p>
+      <a href="../settings.gradle.kts">settings.gradle.kts</a> |
+      <a href="../build.gradle.kts">build.gradle.kts</a> |
+      <a href="../app/build.gradle.kts">app/build.gradle.kts</a> |
+      <a href="../data/build.gradle.kts">data/build.gradle.kts</a> |
+      <a href="../domain/build.gradle.kts">domain/build.gradle.kts</a> |
+      <a href="../docs/PROJECT_DOCUMENTATION.html">docs/PROJECT_DOCUMENTATION.html</a> |
+      <a href="../docs/PROJECT_SOURCE_CODE.html">docs/PROJECT_SOURCE_CODE.html</a>
+    </p>
+    <p class="small">File này là bản tổng hợp mới, được tạo từ trạng thái repository hiện tại thay vì sao chép nguyên các tài liệu cũ.</p>
+  </div>
+
+  <div class="footer">Generated for MAPSUPERVISION-NonAuth.</div>
+</div>
+</body>
+</html>

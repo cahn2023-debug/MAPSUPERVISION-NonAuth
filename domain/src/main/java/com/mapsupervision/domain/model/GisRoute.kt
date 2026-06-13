@@ -19,6 +19,8 @@ data class GisRoute(
     val contractor: String,
     val startNodeCode: String,
     val endNodeCode: String,
-    val importedFileId: String? = null
+    val points: List<Pair<Double, Double>> = emptyList(),
+    val importedFileId: String? = null,
+    val designLength: String? = null
 )
 

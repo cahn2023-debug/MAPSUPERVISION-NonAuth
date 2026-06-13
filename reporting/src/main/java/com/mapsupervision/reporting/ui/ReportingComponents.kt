@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,6 +35,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +50,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -93,7 +97,7 @@ fun PhotoGrid(photos: List<SitePhoto>) {
 
 @Composable
 fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val thumbFile = File(photo.thumbnailPath.ifBlank { photo.filePath })
+    val thumbFile = remember(photo) { File(photo.thumbnailPath.ifBlank { photo.filePath }) }
     Box(
         modifier = modifier
             .aspectRatio(1f)
@@ -105,14 +109,17 @@ fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> U
                 onClick = onClick
             )
     ) {
-        if (thumbFile.exists()) {
-            Image(
-                painter = rememberAsyncImagePainter(thumbFile),
-                contentDescription = photo.objectCode,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        } else {
+        val painter = rememberAsyncImagePainter(thumbFile)
+        Image(
+            painter = painter,
+            contentDescription = photo.objectCode,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        val painterState = painter.state
+        if (painterState is coil.compose.AsyncImagePainter.State.Error ||
+            painterState is coil.compose.AsyncImagePainter.State.Empty) {
             Icon(
                 Icons.Outlined.Image,
                 contentDescription = null,
@@ -157,7 +164,7 @@ private fun MatchStatusBadge(photo: SitePhoto, modifier: Modifier = Modifier) {
 @Composable
 fun PhotoFullscreenDialog(photo: SitePhoto, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val imageFile = File(photo.filePath)
+    val imageFile = remember(photo) { File(photo.filePath) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -173,12 +180,22 @@ fun PhotoFullscreenDialog(photo: SitePhoto, onDismiss: () -> Unit) {
                     onClick = onDismiss
                 )
         ) {
-            if (imageFile.exists()) {
-                Image(
-                    painter = rememberAsyncImagePainter(imageFile),
-                    contentDescription = photo.objectCode,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
+            val painter = rememberAsyncImagePainter(imageFile)
+            Image(
+                painter = painter,
+                contentDescription = photo.objectCode,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            val painterState = painter.state
+            if (painterState is coil.compose.AsyncImagePainter.State.Error ||
+                painterState is coil.compose.AsyncImagePainter.State.Empty) {
+                Icon(
+                    Icons.Outlined.Image,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.align(Alignment.Center).size(36.dp)
                 )
             }
 
@@ -311,10 +328,13 @@ fun MaterialReportTable(
     rows: List<MaterialReportRow>,
     sortBy: SortKey,
     isAscending: Boolean,
-    onHeaderClick: (SortKey) -> Unit
+    onHeaderClick: (SortKey) -> Unit,
+    modifier: Modifier = Modifier,
+    bodyMaxHeight: Dp = 420.dp
 ) {
     Column(
         modifier = Modifier
+            .then(modifier)
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0F172A))
@@ -340,35 +360,46 @@ fun MaterialReportTable(
         
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
 
-        // Rows
-        rows.forEachIndexed { index, row ->
-            val isLast = index == rows.lastIndex
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val sttText = if (row.isTotal) "" else (index + 1).toString()
-                GridCell(sttText, 0.09f, isTotal = row.isTotal, alignment = Alignment.Center)
-                Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
-                GridCell(row.materialName, 0.44f, isTotal = row.isTotal)
-                Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
-                GridCell(row.totalPlannedQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
-                GridCell(row.totalActualQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
-                GridCell("${row.completionPercent.toInt()}%", 0.13f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-            }
-            if (!isLast) {
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = bodyMaxHeight)
+        ) {
+            itemsIndexed(
+                items = rows,
+                key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+            ) { index, row ->
+                val isLast = index == rows.lastIndex
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val sttText = if (row.isTotal) "" else (index + 1).toString()
+                    GridCell(sttText, 0.09f, isTotal = row.isTotal, alignment = Alignment.Center)
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    GridCell(row.materialName, 0.44f, isTotal = row.isTotal)
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    GridCell(row.totalPlannedQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    GridCell(row.totalActualQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    GridCell("${row.completionPercent.toInt()}%", 0.13f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                }
+                if (!isLast) {
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+                }
             }
         }
     }
 }
 
 @Composable
-fun AiSummaryDetailTable(rows: List<MaterialReportRow>) {
+fun AiSummaryDetailTable(
+    rows: List<MaterialReportRow>,
+    bodyMaxHeight: Dp = 320.dp
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -390,26 +421,35 @@ fun AiSummaryDetailTable(rows: List<MaterialReportRow>) {
 
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
 
-        rows.forEachIndexed { index, row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AiSummaryDetailCell(row.materialName, 0.38f, isTotal = row.isTotal)
-                AiSummaryDetailCell(row.nodeCount.toString(), 0.12f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                AiSummaryDetailCell(row.routeCount.toString(), 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                AiSummaryDetailCell(
-                    "${row.totalActualQty.toInt()}/${row.totalPlannedQty.toInt()}",
-                    0.22f,
-                    isTotal = row.isTotal,
-                    alignment = Alignment.CenterEnd
-                )
-                AiSummaryDetailCell("${row.completionPercent.toInt()}%", 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-            }
-            if (index != rows.lastIndex) {
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = bodyMaxHeight)
+        ) {
+            itemsIndexed(
+                items = rows,
+                key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+            ) { index, row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AiSummaryDetailCell(row.materialName, 0.38f, isTotal = row.isTotal)
+                    AiSummaryDetailCell(row.nodeCount.toString(), 0.12f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                    AiSummaryDetailCell(row.routeCount.toString(), 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                    AiSummaryDetailCell(
+                        "${row.totalActualQty.toInt()}/${row.totalPlannedQty.toInt()}",
+                        0.22f,
+                        isTotal = row.isTotal,
+                        alignment = Alignment.CenterEnd
+                    )
+                    AiSummaryDetailCell("${row.completionPercent.toInt()}%", 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
+                }
+                if (index != rows.lastIndex) {
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+                }
             }
         }
     }

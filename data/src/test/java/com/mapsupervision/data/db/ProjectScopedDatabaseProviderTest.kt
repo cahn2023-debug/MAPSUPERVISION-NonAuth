@@ -84,6 +84,7 @@ class ProjectScopedDatabaseProviderTest {
                 contractor = "Nam Ky",
                 startNodeCode = "N-1",
                 endNodeCode = "N-2",
+                points = emptyList(),
                 importedFileId = "file-1"
             )
         )

@@ -2,6 +2,7 @@ package com.mapsupervision.data
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import com.mapsupervision.data.db.MapSupervisionDatabase
 import com.mapsupervision.data.db.dao.DailyLogDao
 import com.mapsupervision.data.db.dao.GisNodeDao
@@ -55,6 +56,15 @@ object DataModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): MapSupervisionDatabase =
         Room.databaseBuilder(context, MapSupervisionDatabase::class.java, "mapsupervision.db")
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    db.execSQL("PRAGMA foreign_keys = ON")
+                    db.execSQL("PRAGMA synchronous = NORMAL")
+                    db.execSQL("PRAGMA temp_store = MEMORY")
+                }
+            })
             .addMigrations(
                 MapSupervisionDatabase.MIGRATION_8_9,
                 MapSupervisionDatabase.MIGRATION_9_10,
@@ -66,9 +76,13 @@ object DataModule {
                 MapSupervisionDatabase.MIGRATION_15_16,
                 MapSupervisionDatabase.MIGRATION_16_17,
                 MapSupervisionDatabase.MIGRATION_17_18,
-                MapSupervisionDatabase.MIGRATION_18_19
+                MapSupervisionDatabase.MIGRATION_18_19,
+                MapSupervisionDatabase.MIGRATION_19_20,
+                MapSupervisionDatabase.MIGRATION_20_21,
+                MapSupervisionDatabase.MIGRATION_21_22,
+                MapSupervisionDatabase.MIGRATION_22_23,
+                MapSupervisionDatabase.MIGRATION_23_24
             )
-            .fallbackToDestructiveMigration()
             .build()
 
     @Provides

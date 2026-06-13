@@ -17,16 +17,16 @@ fun ProgressHubRoute(
     photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
     activeProjectName: String? = null,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onAddDailyLog: (String, Int, String, String, Double, String?, Long, Double, String, String) -> Unit,
+    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?) -> Unit,
     onAddDailyLogBatch: (String, Int, String, String, Double, List<String>, Long, Double, String, String) -> Unit,
     onAddWorkCategory: (String, String) -> Unit,
-    onFetchWeatherAuto: (String?, (String, Double) -> Unit) -> Unit,
+    onFetchWeatherAuto: (String?, String?, (String, Double) -> Unit) -> Unit,
     viewModel: ProgressHubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(uiState.selectedNodeCodeForLog, uiState.selectedDateMillis) {
-        onFetchWeatherAuto(uiState.selectedNodeCodeForLog) { cond, temp ->
+    LaunchedEffect(uiState.selectedNodeCodeForLog, uiState.selectedRouteCodeForLog, uiState.selectedDateMillis) {
+        onFetchWeatherAuto(uiState.selectedNodeCodeForLog, uiState.selectedRouteCodeForLog) { cond, temp ->
             viewModel.updateWeatherSelection(cond)
             viewModel.updateTemperatureInput(temp.toInt().toString())
         }
@@ -54,6 +54,7 @@ fun ProgressHubRoute(
         onUpdateCustomWeather = viewModel::updateCustomWeather,
         onUpdateTemperatureInput = viewModel::updateTemperatureInput,
         onUpdateSelectedNodeCodeForLog = viewModel::updateSelectedNodeCodeForLog,
+        onUpdateSelectedRouteCodeForLog = viewModel::updateSelectedRouteCodeForLog,
         onUpdateManpowerInput = viewModel::updateManpowerInput,
         onUpdateWorkItemInput = viewModel::updateWorkItemInput,
         onUpdateNoteInput = viewModel::updateNoteInput,
@@ -61,8 +62,10 @@ fun ProgressHubRoute(
         onUpdateActualProgressChecked = viewModel::updateActualProgressChecked,
         onUpdateLogFormError = viewModel::updateLogFormError,
         onSetNodeDropdownExpanded = viewModel::setNodeDropdownExpanded,
+        onSetRouteDropdownExpanded = viewModel::setRouteDropdownExpanded,
         onUpdateVolumeInput = viewModel::updateVolumeInput,
         onUpdateUnitInput = viewModel::updateUnitInput,
+        onSelectWorkTemplate = viewModel::selectWorkTemplate,
         onUpdateSelectedCategoryName = viewModel::updateSelectedCategoryName,
         onSetCategoryDropdownExpanded = viewModel::setCategoryDropdownExpanded,
         onSetShowAddCategoryDialog = viewModel::setShowAddCategoryDialog,
@@ -76,6 +79,7 @@ fun ProgressHubRoute(
         onAddConstruction = onAddConstruction,
         onAddDailyLog = onAddDailyLog,
         onAddDailyLogBatch = onAddDailyLogBatch,
-        onAddWorkCategory = onAddWorkCategory
+        onAddWorkCategory = onAddWorkCategory,
+        onEditDailyLog = viewModel::startEditingDailyLog
     )
 }

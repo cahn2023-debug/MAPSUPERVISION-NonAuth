@@ -5,7 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.mapsupervision.app.GemmaModelDownloadService
+import com.mapsupervision.app.GemmaModelDownloadWorker
 import com.mapsupervision.data.mediapipe.GemmaChatController
 import com.mapsupervision.data.mediapipe.GemmaDownloadState
 import com.mapsupervision.data.mediapipe.GemmaLiteRtChatService
@@ -15,6 +15,8 @@ import com.mapsupervision.domain.ai.ChatActionParser
 import com.mapsupervision.domain.ai.ChatAssistantPayload
 import com.mapsupervision.domain.ai.ChatAssistantResult
 import com.mapsupervision.domain.ai.ChatActionType
+import com.mapsupervision.domain.ai.DailyLogDraft
+import com.mapsupervision.domain.ai.DailyLogDateResolver
 import com.mapsupervision.domain.ai.ChatPendingAction
 import com.mapsupervision.domain.ai.SitePhotoUpdateDraft
 import com.mapsupervision.domain.ai.ReportDraftDbSaveDraft
@@ -172,7 +174,7 @@ class GemmaChatViewModel @Inject constructor(
 
     fun deleteModel() {
         val model = _uiState.value.selectedModel ?: return
-        GemmaModelDownloadService.cancel(context)
+        GemmaModelDownloadWorker.cancel(context)
         modelManager.delete(model)
         modelManager.clearDownloadState()
         viewModelScope.launch {
@@ -182,7 +184,7 @@ class GemmaChatViewModel @Inject constructor(
     }
 
     fun cancelDownload() {
-        GemmaModelDownloadService.cancel(context)
+        GemmaModelDownloadWorker.cancel(context)
     }
 
     fun sendMessage(
@@ -223,7 +225,8 @@ class GemmaChatViewModel @Inject constructor(
                     message = canonicalUserMessage.ifBlank { text },
                     contextSummary = boundedContext,
                     selectedNodeCode = selectedNodeCode,
-                    normalizationContext = normalizationContext
+                    normalizationContext = normalizationContext,
+                    selectedRouteCode = selectedRouteCode
                 )
                 if (fastResult.pendingAction != null && fastResult.writeDisposition != com.mapsupervision.domain.ai.WriteDisposition.REJECT) {
                     _uiState.update {
@@ -269,7 +272,8 @@ class GemmaChatViewModel @Inject constructor(
                         ChatActionParser.parseLlmResponse(
                             llmResponse = llmReplyText,
                             selectedNodeCode = selectedNodeCode,
-                            normalizationContext = normalizationContext
+                            normalizationContext = normalizationContext,
+                            selectedRouteCode = selectedRouteCode
                         )
                     } else {
                         val orchestratorDecision = aiOrchestrator.execute<ChatAssistantResult>(
@@ -325,6 +329,7 @@ class GemmaChatViewModel @Inject constructor(
                         weather = draft.weather,
                         temperature = draft.temperature,
                         nodeCode = draft.nodeCode,
+                        routeCode = draft.routeCode,
                         dateEpochDay = draft.dateEpochDay,
                         volume = draft.volume,
                         unit = draft.unit,
@@ -371,6 +376,45 @@ class GemmaChatViewModel @Inject constructor(
         _uiState.update { it.copy(pendingAction = null) }
     }
 
+    fun updatePendingDailyLogDraft(transform: (DailyLogDraft) -> DailyLogDraft) {
+        _uiState.update { state ->
+            val action = state.pendingAction ?: return@update state
+            val draft = action.dailyLog ?: return@update state
+            val updated = transform(draft)
+            state.copy(
+                pendingAction = action.copy(
+                    dailyLog = updated,
+                    draftJson = buildDailyLogDraftJson(updated)
+                )
+            )
+        }
+    }
+
+    private fun buildDailyLogDraftJson(draft: DailyLogDraft): String {
+        val nodeCode = draft.nodeCode
+        val routeCode = draft.routeCode
+        return buildString {
+            append("{")
+            append("\"workItem\":\"").append(escapeJson(draft.workItem)).append("\",")
+            append("\"manpower\":").append(draft.manpower).append(",")
+            append("\"note\":\"").append(escapeJson(draft.note)).append("\",")
+            append("\"weather\":\"").append(escapeJson(draft.weather)).append("\",")
+            append("\"temperature\":").append(draft.temperature).append(",")
+            append("\"nodeCode\":")
+            if (nodeCode == null) append("null") else append("\"").append(escapeJson(nodeCode)).append("\"")
+            append(",")
+            append("\"routeCode\":")
+            if (routeCode == null) append("null") else append("\"").append(escapeJson(routeCode)).append("\"")
+            append(",")
+            append("\"dateEpochDay\":").append(draft.dateEpochDay).append(",")
+            append("\"date\":\"").append(escapeJson(DailyLogDateResolver.formatEpochDay(draft.dateEpochDay))).append("\",")
+            append("\"volume\":").append(draft.volume).append(",")
+            append("\"unit\":\"").append(escapeJson(draft.unit)).append("\",")
+            append("\"categoryName\":\"").append(escapeJson(draft.categoryName)).append("\"")
+            append("}")
+        }
+    }
+
     private fun startDownload(model: GemmaModelInfo) {
         _uiState.update {
             it.copy(
@@ -383,7 +427,7 @@ class GemmaChatViewModel @Inject constructor(
                 downloadHttpCode = 0
             )
         }
-        GemmaModelDownloadService.start(context, model.downloadFileName)
+        GemmaModelDownloadWorker.start(context, model.downloadFileName)
     }
 
     private fun applyDownloadState(state: GemmaDownloadState) {
@@ -406,7 +450,7 @@ class GemmaChatViewModel @Inject constructor(
                     downloadMessage = if (state.warningMessage.isNotBlank()) {
                         state.warningMessage
                     } else {
-                        "Dang tai ${progressOf(state.bytesDownloaded, state.totalBytes)}%"
+                        "Đang tải ${progressOf(state.bytesDownloaded, state.totalBytes)}%"
                     },
                     downloadFailureCode = state.warningCode,
                     downloadFailureReason = state.warningMessage,
@@ -419,18 +463,18 @@ class GemmaChatViewModel @Inject constructor(
                     warmUpSelectedModel()
                     current.copy(
                         downloadProgress = 100,
-                        downloadMessage = "Tai xong",
+                        downloadMessage = "Tải xong",
                         downloadFailureCode = "",
                         downloadFailureReason = "",
                         downloadHttpCode = 0,
                         modelStatus = if (modelManager.isModelDownloadComplete(selectedModel)) GemmaModelStatus.READY else GemmaModelStatus.LOAD_FAILED,
-                        chatStatus = "Model da san sang.",
+                        chatStatus = "Model đã sẵn sàng.",
                         lastError = ""
                     )
                 }
                 is GemmaDownloadState.Failed -> current.copy(
                     downloadProgress = progressOf(state.bytesDownloaded, state.totalBytes),
-                    downloadMessage = "Tai that bai",
+                    downloadMessage = "Tải thất bại",
                     downloadFailureCode = state.errorCode,
                     downloadFailureReason = state.message,
                     downloadHttpCode = state.httpCode,
@@ -509,5 +553,9 @@ class GemmaChatViewModel @Inject constructor(
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
         return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+    }
+
+    private fun escapeJson(value: String): String {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
     }
 }

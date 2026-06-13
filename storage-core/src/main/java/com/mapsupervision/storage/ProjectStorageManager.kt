@@ -26,6 +26,18 @@ class ProjectStorageManager @Inject constructor(
     }
 
     /**
+     * Returns the app-private project root under context.filesDir/Projects/<slug>.
+     */
+    fun privateProjectRoot(projectSlug: String): File {
+        val base = File(context.filesDir, "MapSupervision")
+        val root = File(base, "Projects/$projectSlug")
+        listOf("photos/Nodes", "thumbs", "reports", "exports", "imports", "imports/pending", "imports/processed", "imports/failed", "db").forEach { child ->
+            File(root, child).mkdirs()
+        }
+        return root
+    }
+
+    /**
      * Returns Downloads/MapSupervision, creating it if needed.
      * Falls back to internal filesDir/MapSupervision on failure.
      */

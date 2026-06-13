@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MapSupervision — Báo Cáo Phân Tích</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --red: #f85149;
+    --orange: #e3b341;
+    --yellow: #d29922;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --cyan: #39c5cf;
+    --accent: #1f6feb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 24px;
+  }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+  h2 { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--blue); text-transform: uppercase; letter-spacing: 0.06em; }
+  h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .meta { color: var(--muted); font-size: 12px; margin-bottom: 28px; }
+  .meta span { margin-right: 16px; }
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: 1fr 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .card.red-border { border-left: 3px solid var(--red); }
+  .card.orange-border { border-left: 3px solid var(--orange); }
+  .card.yellow-border { border-left: 3px solid var(--yellow); }
+  .card.green-border { border-left: 3px solid var(--green); }
+  .card.blue-border { border-left: 3px solid var(--blue); }
+  .card.purple-border { border-left: 3px solid var(--purple); }
+  .stat { text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; display: block; }
+  .stat-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    margin-right: 4px;
+  }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-orange { background: rgba(227,179,65,0.15); color: var(--orange); border: 1px solid rgba(227,179,65,0.3); }
+  .badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid rgba(210,153,34,0.3); }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+  .bug-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .bug-item:hover { border-color: var(--blue); }
+  .bug-item .bug-id { font-size: 11px; color: var(--muted); font-family: monospace; }
+  .bug-item .bug-title { font-size: 13px; color: var(--text); margin-top: 2px; }
+  .bug-item .bug-loc { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+  .section { margin-bottom: 24px; }
+  .module-graph {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .module-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .module-box {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: monospace;
+    font-weight: 600;
+    border: 1px solid;
+  }
+  .mod-app { background: rgba(88,166,255,0.1); border-color: var(--blue); color: var(--blue); }
+  .mod-core { background: rgba(63,185,80,0.1); border-color: var(--green); color: var(--green); }
+  .mod-domain { background: rgba(188,140,255,0.1); border-color: var(--purple); color: var(--purple); }
+  .mod-data { background: rgba(210,153,34,0.1); border-color: var(--yellow); color: var(--yellow); }
+  .mod-feature { background: rgba(57,197,207,0.1); border-color: var(--cyan); color: var(--cyan); }
+  .mod-ai { background: rgba(248,81,73,0.1); border-color: var(--red); color: var(--red); }
+  .arrow { color: var(--muted); font-size: 16px; }
+  .sprint-block {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .sprint-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .sprint-title { font-weight: 600; font-size: 13px; }
+  .sprint-time { font-size: 11px; color: var(--muted); }
+  .sprint-tasks { display: flex; flex-direction: column; gap: 4px; }
+  .sprint-task {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .sprint-task::before { content: '◦'; color: var(--blue); }
+  .perf-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .perf-label { font-size: 12px; width: 200px; flex-shrink: 0; }
+  .perf-track { flex: 1; background: var(--surface2); border-radius: 4px; height: 8px; }
+  .perf-fill { height: 100%; border-radius: 4px; }
+  .perf-val { font-size: 12px; color: var(--muted); width: 60px; text-align: right; }
+  code {
+    background: var(--surface2);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: monospace;
+    color: var(--cyan);
+    border: 1px solid var(--border);
+  }
+  hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .ai-phase {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    align-items: flex-start;
+  }
+  .ai-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(88,166,255,0.15);
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .ai-content h3 { font-size: 13px; margin-bottom: 4px; }
+  .ai-content p { font-size: 12px; color: var(--muted); }
+  .matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .matrix-table th { 
+    background: var(--surface2); padding: 8px 10px; text-align: left; 
+    border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 600;
+    text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em;
+  }
+  .matrix-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .matrix-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 6px;">
+  <div>
+    <h1>🗺 MapSupervision NonAuth — Báo Cáo Phân Tích</h1>
+    <div class="meta">
+      <span>📁 cahn2023-debug/MAPSUPERVISION-NonAuth</span>
+      <span>🗓 11/06/2026</span>
+      <span>🔤 Kotlin 99.5% · Android</span>
+    </div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+    <div class="badge badge-red">4 Critical bugs</div>
+    <div class="badge badge-orange">4 Major bugs</div>
+    <div class="badge badge-yellow">4 Minor bugs</div>
+  </div>
+</div>
+
+<!-- STAT ROW -->
+<div class="grid grid-4 section">
+  <div class="card stat red-border">
+    <span class="stat-num" style="color:var(--red)">4</span>
+    <span class="stat-label">🔴 Critical Issues</span>
+  </div>
+  <div class="card stat orange-border">
+    <span class="stat-num" style="color:var(--orange)">4</span>
+    <span class="stat-label">🟠 Major Issues</span>
+  </div>
+  <div class="card stat blue-border">
+    <span class="stat-num" style="color:var(--blue)">11</span>
+    <span class="stat-label">📦 Modules</span>
+  </div>
+  <div class="card stat green-border">
+    <span class="stat-num" style="color:var(--green)">5</span>
+    <span class="stat-label">📅 Sprint Plan</span>
+  </div>
+</div>
+
+<div class="grid grid-2 section">
+
+  <!-- BUG LIST -->
+  <div class="card red-border">
+    <h2>🔴 Lỗi Nghiêm Trọng (Critical)</h2>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-01 <span class="badge badge-red">Build</span></div>
+      <div class="bug-title">suppressUnsupportedCompileSdk=35 — Che giấu lỗi SDK</div>
+      <div class="bug-loc">gradle.properties:9 → Fix: Upgrade AGP 8.7.3 hoặc downgrade compileSdk=34</div>
+    </div>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-02 <span class="badge badge-red">Architecture</span></div>
+      <div class="bug-title">enforceModuleBoundaries chỉ check 1/20+ cặp module cần kiểm tra</div>
+      <div class="bug-loc">build.gradle.kts:17–31 → Fix: Dùng dependency-guard plugin</div>
+    </div>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-03 <span class="badge badge-red">Architecture</span></div>
+      <div class="bug-title">:gis và :gis-maplibre không có boundary rule — DIP có thể bị vi phạm</div>
+      <div class="bug-loc">settings.gradle.kts → Fix: Thêm rule ngăn :app import :gis-maplibre trực tiếp</div>
+    </div>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-04 <span class="badge badge-orange">Repository</span></div>
+      <div class="bug-title">Artifacts đã commit vào repo root (extracted_lines.txt, match.json, .ps1)</div>
+      <div class="bug-loc">/ root → Fix: Thêm vào .gitignore, xóa khỏi history</div>
+    </div>
+    
+    <hr>
+    <h2 style="margin-top:14px;">🟠 Lỗi Trung Bình (Major)</h2>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-05 <span class="badge badge-orange">Performance</span></div>
+      <div class="bug-title">JVM Heap 6GB + 2GB Kotlin Daemon = 8GB+ yêu cầu RAM</div>
+      <div class="bug-loc">gradle.properties → Fix: -Xmx4g / -Xmx1500m</div>
+    </div>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-06 <span class="badge badge-orange">Build</span></div>
+      <div class="bug-title">nonTransitiveRClass=true chưa được migrate đủ trong multi-module</div>
+      <div class="bug-loc">gradle.properties:8 → Fix: Audit R class usage trong :core, :domain</div>
+    </div>
+    
+    <div class="bug-item">
+      <div class="bug-id">BUG-07 <span class="badge badge-orange">Build</span></div>
+      <div class="bug-title">enforceModuleBoundaries task vi phạm configuration cache</div>
+      <div class="bug-loc">build.gradle.kts → Fix: Convert sang typed DefaultTask với @InputFiles</div>
+    </div>
+  </div>
+
+  <!-- MODULE GRAPH -->
+  <div>
+    <div class="card blue-border" style="margin-bottom:16px;">
+      <h2>📦 Kiến Trúc Module</h2>
+      <div class="module-graph">
+        <div class="module-row">
+          <div class="module-box mod-app">:app</div>
+          <span class="arrow">→</span>
+          <div class="module-box mod-core">:core</div>
+          <div class="module-box mod-domain">:domain</div>
+          <div class="module-box mod-data">:data</div>
+        </div>
+        <div class="module-row" style="margin-left:50px;">
+          <span class="arrow">↘ feature modules</span>
+        </div>
+        <div class="module-row" style="flex-wrap:wrap; gap:6px;">
+          <div class="module-box mod-feature">:gis</div>
+          <div class="module-box mod-feature">:gis-maplibre</div>
+          <div class="module-box mod-feature">:photo</div>
+          <div class="module-box mod-feature">:timeline</div>
+          <div class="module-box mod-feature">:reporting</div>
+          <div class="module-box mod-feature">:project</div>
+          <div class="module-box mod-feature">:storage</div>
+        </div>
+        <div class="module-row" style="margin-top: 6px;">
+          <div class="module-box mod-ai">:core-ai (đề xuất thêm mới)</div>
+        </div>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--muted);">
+        ⚠️ Rule hiện tại: chỉ block <code>:gis → :reporting</code><br>
+        ✅ Cần thêm: feature modules không được import nhau trực tiếp
+      </div>
+    </div>
+
+    <div class="card purple-border">
+      <h2>🔧 Tech Stack</h2>
+      <div class="tag-row">
+        <span class="badge badge-blue">Kotlin 2.0.21 (K2)</span>
+        <span class="badge badge-blue">AGP 8.5.2</span>
+        <span class="badge badge-blue">Hilt 2.52</span>
+        <span class="badge badge-blue">KSP 2.0.21-1.0.28</span>
+        <span class="badge badge-cyan">MapLibre</span>
+        <span class="badge badge-cyan">Jetpack Compose</span>
+        <span class="badge badge-red">Qwen (local LLM)</span>
+        <span class="badge badge-red">MediaPipe GenAI</span>
+        <span class="badge badge-purple">Room DB</span>
+        <span class="badge badge-purple">Coil 3</span>
+        <span class="badge badge-green">Kiro IDE specs</span>
+        <span class="badge badge-green">Configuration Cache</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AI LOCAL PLAN -->
+<div class="card blue-border section">
+  <h2>🤖 Phương Án Tối Ưu AI Local (Qwen On-Device)</h2>
+  <div class="grid grid-2">
+    <div>
+      <div class="ai-phase">
+        <div class="ai-num">1</div>
+        <div class="ai-content">
+          <h3>Chọn Inference Engine</h3>
+          <p>Dùng <code>MediaPipe LLM Inference API</code> (Google) — hỗ trợ Qwen2, stable, có GPU/NPU acceleration. Dependency: <code>tasks-genai:0.10.22</code></p>
+        </div>
+      </div>
+      <div class="ai-phase">
+        <div class="ai-num">2</div>
+        <div class="ai-content">
+          <h3>Model Size & Quantization</h3>
+          <p>Qwen2-1.5B INT4 quantized (~800MB). Kiểm tra RAM trước khi load: thiết bị &lt;4GB RAM → hiện thông báo "Không hỗ trợ AI" thay vì crash OOM.</p>
+        </div>
+      </div>
+      <div class="ai-phase">
+        <div class="ai-num">3</div>
+        <div class="ai-content">
+          <h3>Prompt Templates chuẩn hóa</h3>
+          <p>Object <code>InspectionPrompts</code> với Qwen chat template (<code>&lt;|im_start|&gt;</code>). Cover: anomaly detection, report summary, photo classification.</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="ai-phase">
+        <div class="ai-num">4</div>
+        <div class="ai-content">
+          <h3>Streaming Response + StateFlow</h3>
+          <p>Dùng <code>generateResponseAsync</code> callback → emit từng token → Compose recompose smooth với <code>AiState.Generating(partialText)</code>.</p>
+        </div>
+      </div>
+      <div class="ai-phase">
+        <div class="ai-num">5</div>
+        <div class="ai-content">
+          <h3>Lifecycle Management</h3>
+          <p>Close inference engine khi app background &gt;5 phút. Re-initialize on resume. Tránh memory leak từ native model handle.</p>
+        </div>
+      </div>
+      <div class="ai-phase">
+        <div class="ai-num">6</div>
+        <div class="ai-content">
+          <h3>DeviceCapability Check</h3>
+          <p>Enum: <code>OPTIMAL</code> / <code>CPU_ONLY_SLOW</code> / <code>INSUFFICIENT_RAM</code>. Detect Qualcomm Hexagon, MediaTek APU cho GPU acceleration.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PERFORMANCE PLAN -->
+<div class="card orange-border section">
+  <h2>⚡ Kế Hoạch Tối Ưu Hiệu Năng</h2>
+  
+  <h3 style="margin-bottom: 10px; color: var(--muted); font-size: 12px; text-transform: uppercase;">Kỳ vọng cải thiện sau optimization</h3>
+  
+  <div class="perf-bar">
+    <span class="perf-label">Cold Start Time</span>
+    <div class="perf-track"><div class="perf-fill" style="width:70%; background:linear-gradient(90deg, var(--red), var(--orange));"></div></div>
+    <span class="perf-val" style="color:var(--red)">−30–40%</span>
+  </div>
+  <div class="perf-bar">
+    <span class="perf-label">Compose Recompositions</span>
+    <div class="perf-track"><div class="perf-fill" style="width:55%; background:linear-gradient(90deg, var(--orange), var(--yellow));"></div></div>
+    <span class="perf-val" style="color:var(--orange)">−50–60%</span>
+  </div>
+  <div class="perf-bar">
+    <span class="perf-label">Map Tile Load Time</span>
+    <div class="perf-track"><div class="perf-fill" style="width:50%; background:linear-gradient(90deg, var(--yellow), var(--green));"></div></div>
+    <span class="perf-val" style="color:var(--yellow)">−40–50%</span>
+  </div>
+  <div class="perf-bar">
+    <span class="perf-label">Room Query Time</span>
+    <div class="perf-track"><div class="perf-fill" style="width:40%; background:linear-gradient(90deg, var(--green), var(--cyan));"></div></div>
+    <span class="perf-val" style="color:var(--green)">−60–80%</span>
+  </div>
+  <div class="perf-bar">
+    <span class="perf-label">Gradle Build Time</span>
+    <div class="perf-track"><div class="perf-fill" style="width:30%; background:linear-gradient(90deg, var(--cyan), var(--blue));"></div></div>
+    <span class="perf-val" style="color:var(--cyan)">−20–30%</span>
+  </div>
+  
+  <div class="tag-row" style="margin-top: 14px;">
+    <span class="badge badge-blue">Baseline Profiles</span>
+    <span class="badge badge-blue">@Immutable + ImmutableList</span>
+    <span class="badge badge-cyan">MapLibre Tile Cache 500MB</span>
+    <span class="badge badge-cyan">Room Composite Index</span>
+    <span class="badge badge-green">WorkManager Photo Compression</span>
+    <span class="badge badge-green">Coil3 DiskCache 200MB</span>
+    <span class="badge badge-purple">Compose Compiler Metrics</span>
+    <span class="badge badge-purple">R8 Full Mode</span>
+  </div>
+</div>
+
+<!-- SPRINT PLAN -->
+<div class="card green-border section">
+  <h2>📅 Kế Hoạch Refactor — 5 Sprints (10 Tuần)</h2>
+  <div class="grid grid-2" style="gap: 10px;">
+    
+    <div class="sprint-block" style="border-left: 3px solid var(--red);">
+      <div class="sprint-header">
+        <span class="sprint-title">Sprint 1 — Fix Critical Bugs</span>
+        <span class="sprint-time">Tuần 1–2</span>
+      </div>
+      <div class="sprint-tasks">
+        <div class="sprint-task">Fix suppressUnsupportedCompileSdk (2h)</div>
+        <div class="sprint-task">Xóa artifacts khỏi repo (30m)</div>
+        <div class="sprint-task">Fix configuration cache task (3h)</div>
+        <div class="sprint-task">Điều chỉnh JVM memory (30m)</div>
+      </div>
+    </div>
+    
+    <div class="sprint-block" style="border-left: 3px solid var(--orange);">
+      <div class="sprint-header">
+        <span class="sprint-title">Sprint 2 — Architecture Cleanup</span>
+        <span class="sprint-time">Tuần 3–4</span>
+      </div>
+      <div class="sprint-tasks">
+        <div class="sprint-task">Cải thiện module boundary enforcement</div>
+        <div class="sprint-task">Tạo :core-ai module mới</div>
+        <div class="sprint-task">Tạo libs.versions.toml Version Catalog</div>
+        <div class="sprint-task">Tách :core thành :core-ui + :core-data</div>
+      </div>
+    </div>
+    
+    <div class="sprint-block" style="border-left: 3px solid var(--blue);">
+      <div class="sprint-header">
+        <span class="sprint-title">Sprint 3 — AI Local Integration</span>
+        <span class="sprint-time">Tuần 5–6</span>
+      </div>
+      <div class="sprint-tasks">
+        <div class="sprint-task">Integrate MediaPipe LLM Inference</div>
+        <div class="sprint-task">Model Management & Download manager</div>
+        <div class="sprint-task">AiAssistantViewModel + Streaming UI</div>
+        <div class="sprint-task">InspectionPrompts templates</div>
+      </div>
+    </div>
+    
+    <div class="sprint-block" style="border-left: 3px solid var(--yellow);">
+      <div class="sprint-header">
+        <span class="sprint-title">Sprint 4 — Performance</span>
+        <span class="sprint-time">Tuần 7–8</span>
+      </div>
+      <div class="sprint-tasks">
+        <div class="sprint-task">Baseline Profile generation</div>
+        <div class="sprint-task">Compose @Immutable stability fixes</div>
+        <div class="sprint-task">MapLibre tile caching 500MB</div>
+        <div class="sprint-task">Room N+1 query fix + indices</div>
+      </div>
+    </div>
+    
+    <div class="sprint-block" style="border-left: 3px solid var(--green); grid-column: 1/-1;">
+      <div class="sprint-header">
+        <span class="sprint-title">Sprint 5 — Refactor Core Patterns</span>
+        <span class="sprint-time">Tuần 9–10</span>
+      </div>
+      <div class="sprint-tasks" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+        <div class="sprint-task">AppResult sealed class chuẩn hóa</div>
+        <div class="sprint-task">UseCase + FlowUseCase base classes</div>
+        <div class="sprint-task">MVI ViewModel pattern (MviViewModel)</div>
+        <div class="sprint-task">Testing infrastructure (fakes, Hilt test)</div>
+      </div>
+    </div>
+    
+  </div>
+</div>
+
+<!-- RISK MATRIX -->
+<div class="card" style="border-color: var(--border);">
+  <h2>⚠️ Ma Trận Rủi Ro</h2>
+  <table class="matrix-table">
+    <tr>
+      <th>Rủi Ro</th>
+      <th>Xác Suất</th>
+      <th>Mức Độ</th>
+      <th>Giảm Thiểu</th>
+    </tr>
+    <tr>
+      <td>AI model quá lớn cho thiết bị low-end</td>
+      <td><span class="badge badge-red">Cao</span></td>
+      <td><span class="badge badge-red">Cao</span></td>
+      <td>Kiểm tra RAM trước load; fallback message rõ ràng</td>
+    </tr>
+    <tr>
+      <td>K2 compiler edge cases với Compose</td>
+      <td><span class="badge badge-green">Thấp</span></td>
+      <td><span class="badge badge-orange">Trung bình</span></td>
+      <td>Pin Kotlin 2.0.21 stable, không upgrade vội</td>
+    </tr>
+    <tr>
+      <td>MapLibre offline tiles chiếm nhiều storage</td>
+      <td><span class="badge badge-orange">Trung bình</span></td>
+      <td><span class="badge badge-orange">Trung bình</span></td>
+      <td>Hạn mức cache + UI xóa cache thủ công</td>
+    </tr>
+    <tr>
+      <td>Refactor MVI làm break existing features</td>
+      <td><span class="badge badge-orange">Trung bình</span></td>
+      <td><span class="badge badge-red">Cao</span></td>
+      <td>Migrate từng màn hình, không big-bang rewrite</td>
+    </tr>
+    <tr>
+      <td>Configuration cache conflict sau fix</td>
+      <td><span class="badge badge-green">Thấp</span></td>
+      <td><span class="badge badge-green">Thấp</span></td>
+      <td>Test CI sau mỗi Gradle change</td>
+    </tr>
+  </table>
+</div>
+
+<div style="text-align:center; margin-top: 20px; color: var(--muted); font-size: 11px;">
+  Báo cáo tạo bởi Claude Sonnet 4.6 · 11/06/2026 · Phân tích static từ cấu trúc repository
+</div>
+
+</body>
+</html>

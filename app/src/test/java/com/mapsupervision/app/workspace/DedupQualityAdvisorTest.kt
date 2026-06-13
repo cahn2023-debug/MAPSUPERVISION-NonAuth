@@ -39,7 +39,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 10,
             skippedDuplicateRoutes = 2
         )
-        assertTrue(hint.contains("diem dau/cuoi"))
+        assertTrue(hint.contains("điểm đầu/cuối"))
     }
 
     @Test
@@ -54,7 +54,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 1,
             skippedDuplicateRoutes = 2
         )
-        assertTrue(hint.contains("cot ma/toa do"))
+        assertTrue(hint.contains("cột mã/tọa độ"))
     }
 
     @Test
@@ -69,7 +69,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 1,
             skippedDuplicateRoutes = 15
         )
-        assertTrue(hint.contains("du lieu tuyen trung"))
+        assertTrue(hint.contains("dữ liệu tuyến trùng"))
     }
 
     @Test
@@ -84,7 +84,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 1,
             skippedDuplicateRoutes = 1
         )
-        assertTrue(hint.contains("doi chieu ma + nha thau"))
+        assertTrue(hint.contains("đối chiếu mã + nhà thầu"))
     }
 
     @Test
@@ -99,7 +99,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 0,
             skippedDuplicateRoutes = 0
         )
-        assertTrue(hint.contains("kiem tra ngau nhien"))
+        assertTrue(hint.contains("kiểm tra ngẫu nhiên"))
     }
 
     @Test
@@ -114,7 +114,7 @@ class DedupQualityAdvisorTest {
             skippedSelfRoutes = 0,
             skippedDuplicateRoutes = 0
         )
-        assertTrue(hint.contains("mau import con it"))
+        assertTrue(hint.contains("mẫu import còn ít"))
     }
 
     @Test
@@ -236,16 +236,16 @@ class DedupQualityAdvisorTest {
 
     @Test
     fun action_note_for_review_required() {
-        assertEquals("doi chieu thu cong truoc khi chot du lieu", DedupQualityAdvisor.actionNote("review_required"))
+        assertEquals("đối chiếu thủ công trước khi chốt dữ liệu", DedupQualityAdvisor.actionNote("review_required"))
     }
 
     @Test
     fun action_note_for_review_recommended() {
-        assertEquals("kiem tra mau 5-10 ban ghi tieu bieu", DedupQualityAdvisor.actionNote("review_recommended"))
+        assertEquals("kiểm tra mẫu 5-10 bản ghi tiêu biểu", DedupQualityAdvisor.actionNote("review_recommended"))
     }
 
     @Test
     fun action_note_for_monitor() {
-        assertEquals("theo doi va tiep tuc import theo lo", DedupQualityAdvisor.actionNote("monitor"))
+        assertEquals("theo dõi và tiếp tục import theo lô", DedupQualityAdvisor.actionNote("monitor"))
     }
 }

@@ -151,19 +151,13 @@ class UserFileImportService @Inject constructor(
         val routes = if (!shouldIncludeGeometry) {
             emptyList()
         } else {
-            draft.suggestedRoutes
-        }
-        val routeLengthText = if (confirmed.routeLengthField && draft.routeLengthMeters > 0.0) {
-            "routeLength: ${"%.2f".format(Locale.US, draft.routeLengthMeters)} m"
-        } else ""
-        val mappedNodes = if (routeLengthText.isBlank()) {
-            nodes
-        } else {
-            nodes.map { node ->
-                val mergedSummary = if (node.materialSummary.isBlank()) routeLengthText else "${node.materialSummary}\n$routeLengthText"
-                node.copy(materialSummary = mergedSummary)
+            draft.suggestedRoutes.map { route ->
+                route.copy(
+                    designLength = if (confirmed.routeLengthField) route.designLength else null
+                )
             }
         }
+        val mappedNodes = nodes
         val applied = confirmedFieldNames(confirmed).joinToString(",")
         val mappedDraft = draft.copy(
             summary = "${draft.summary}; confirmed=[$applied]",
@@ -373,7 +367,27 @@ class UserFileImportService @Inject constructor(
                     }
                 }
             }
-            if (kind != ObjectKind.ROUTE) {
+            val isRoute = kind == ObjectKind.ROUTE || (kind == ObjectKind.AUTO && parsedCoords.size > 1)
+            if (isRoute) {
+                val designLength = if (parsedCoords.size > 1) {
+                    var routeLength = 0.0
+                    for (pointIndex in 1 until parsedCoords.size) {
+                        routeLength += haversineMeters(parsedCoords[pointIndex], parsedCoords[pointIndex - 1])
+                    }
+                    "%.2f".format(Locale.US, routeLength) + " m"
+                } else null
+
+                routes += GisRoute(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    code = codeRaw,
+                    contractor = contractor,
+                    startNodeCode = "",
+                    endNodeCode = "",
+                    points = parsedCoords,
+                    designLength = designLength
+                )
+            } else {
                 nodes += GisNode(
                     id = UUID.randomUUID().toString(),
                     projectId = projectId,
@@ -383,42 +397,6 @@ class UserFileImportService @Inject constructor(
                     longitude = lon,
                     mapNumberLabel = mapNumberLabel,
                     materialSummary = materialSummary
-                )
-            }
-
-            if (kind != ObjectKind.NODE && parsedCoords.size > 1) {
-                val routeCode = "${codeRaw}_R"
-                val startCode = "${codeRaw}_S"
-                val endCode = "${codeRaw}_E"
-                val start = parsedCoords.first()
-                val end = parsedCoords.last()
-                nodes += GisNode(
-                    id = UUID.randomUUID().toString(),
-                    projectId = projectId,
-                    code = startCode,
-                    contractor = contractor,
-                    latitude = start.first,
-                    longitude = start.second,
-                    mapNumberLabel = mapNumberLabel,
-                    materialSummary = materialSummary
-                )
-                nodes += GisNode(
-                    id = UUID.randomUUID().toString(),
-                    projectId = projectId,
-                    code = endCode,
-                    contractor = contractor,
-                    latitude = end.first,
-                    longitude = end.second,
-                    mapNumberLabel = mapNumberLabel,
-                    materialSummary = materialSummary
-                )
-                routes += GisRoute(
-                    id = UUID.randomUUID().toString(),
-                    projectId = projectId,
-                    code = routeCode,
-                    contractor = contractor,
-                    startNodeCode = startCode,
-                    endNodeCode = endCode
                 )
             }
         }
@@ -561,6 +539,7 @@ class UserFileImportService @Inject constructor(
         }
         val nodes = mutableListOf<GisNode>()
         val routes = mutableListOf<GisRoute>()
+        val localLineSegments = ArrayList<CollectedLineSegment>()
         var totalRouteLengthMeters = 0.0
         val base = sourceName.substringBeforeLast(".").take(12).uppercase(Locale.US)
 
@@ -722,36 +701,24 @@ class UserFileImportService @Inject constructor(
                         val lat = item.optDouble(1, Double.NaN)
                         if (!lat.isNaN() && !lon.isNaN()) points += lat to lon
                     }
-                    points.forEachIndexed { idx, point ->
-                        nodes += GisNode(
-                            id = UUID.randomUUID().toString(),
-                            projectId = "",
-                            code = "${extractedCode}_p${idx + 1}",
-                            contractor = extractedContractor,
-                            latitude = point.first,
-                            longitude = point.second,
-                            mapNumberLabel = extractedMapNumber,
-                            materialSummary = materialSummary
-                        )
-                    }
-                    if (points.size > 1) {
-                        for (idx in 1 until points.size) {
-                            totalRouteLengthMeters += haversineMeters(points[idx], points[idx - 1])
-                            val startCode = "${extractedCode}_p$idx"
-                            val endCode = "${extractedCode}_p${idx + 1}"
-                            routes += GisRoute(
-                                id = UUID.randomUUID().toString(),
-                                projectId = "",
-                                code = "${extractedCode}_R$idx",
+                    if (points.isNotEmpty()) {
+                        localLineSegments.add(
+                            CollectedLineSegment(
+                                routeDisplayName = extractedCode,
                                 contractor = extractedContractor,
-                                startNodeCode = startCode,
-                                endNodeCode = endCode
+                                mapNumber = extractedMapNumber,
+                                materialSummary = "",
+                                description = "",
+                                points = points,
+                                extendedData = propertiesMap,
+                                customFields = customFields
                             )
-                        }
+                        )
                     }
                 }
             }
         }
+        totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, "", mapping, nodes, routes, base)
         return ParsedImportResult(
             summary = "GeoJSON parsed: features=${features.length()}, nodes=${nodes.size}, routes=${routes.size}, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m",
             nodes = nodes,

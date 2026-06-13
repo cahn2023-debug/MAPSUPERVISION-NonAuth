@@ -55,12 +55,5 @@ class GisViewModel @Inject constructor(
     }
 
     fun seedDemo() {
-        viewModelScope.launch {
-            val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-            gisRepository.upsertNode(GisNode(UUID.randomUUID().toString(), projectId, "N-001", "CTR-A", 10.0, 106.0))
-            gisRepository.upsertNode(GisNode(UUID.randomUUID().toString(), projectId, "N-002", "CTR-B", 10.1, 106.1))
-            gisRepository.upsertRoute(GisRoute(UUID.randomUUID().toString(), projectId, "R-001", "CTR-A", "N-001", "N-002"))
-            search("")
-        }
     }
 }

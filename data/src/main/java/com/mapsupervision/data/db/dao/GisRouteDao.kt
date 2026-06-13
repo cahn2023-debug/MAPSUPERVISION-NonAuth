@@ -25,4 +25,7 @@ interface GisRouteDao {
 
     @Query("SELECT * FROM gis_route WHERE projectId = :projectId AND (code LIKE '%' || :query || '%' OR contractor LIKE '%' || :query || '%') ORDER BY code")
     fun observeSearch(projectId: String, query: String): Flow<List<GisRouteEntity>>
+
+    @Query("DELETE FROM gis_route WHERE projectId = :projectId AND importedFileId = :importedFileId")
+    suspend fun deleteByImportedFileId(projectId: String, importedFileId: String)
 }

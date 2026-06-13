@@ -1,12 +1,21 @@
 package com.mapsupervision.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.mapsupervision.domain.model.Note
 
 @Entity(
     tableName = "note",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProjectEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["projectId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
     indices = [
         Index(value = ["projectId", "createdAtEpochMs"]),
         Index(value = ["projectId", "objectCode", "createdAtEpochMs"]),

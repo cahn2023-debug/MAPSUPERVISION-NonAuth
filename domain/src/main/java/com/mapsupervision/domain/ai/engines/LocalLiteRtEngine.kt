@@ -104,13 +104,13 @@ class LocalLiteRtEngine(
         base: TimelineSummaryResult
     ): String {
         return buildString {
-            append("Viet mot tom tat tien do ngan gon, chinh xac, bang tieng Viet, khong suy dien them so lieu.")
-            append(" Toi da co issue highlights va recommended actions; ban chi viet lai phan summary.")
-            append("\nTong so node: ").append(payload.progress.size)
-            append("\nNode cham: ").append(payload.progress.count { it.delayed })
-            append("\nSo nhat ky: ").append(payload.logs.size)
-            append("\nSo anh hien truong: ").append(payload.photoCount)
-            append("\nSummary hien tai: ").append(base.summary)
+            append("Viết một tóm tắt tiến độ ngắn gọn, chính xác, bằng tiếng Việt, không suy diễn thêm số liệu.")
+            append(" Tôi đã có issue highlights và recommended actions; bạn chỉ viết lại phần summary.")
+            append("\nTổng số node: ").append(payload.progress.size)
+            append("\nNode chậm: ").append(payload.progress.count { it.delayed })
+            append("\nSố nhật ký: ").append(payload.logs.size)
+            append("\nSố ảnh hiện trường: ").append(payload.photoCount)
+            append("\nSummary hiện tại: ").append(base.summary)
             if (base.issueHighlights.isNotEmpty()) {
                 append("\nIssue highlights: ").append(base.issueHighlights.joinToString(" | "))
             }
@@ -140,8 +140,8 @@ class LocalLiteRtEngine(
         base: ReportDraftResult
     ): String {
         return buildString {
-            append("Viet lai hai phan bang tieng Viet ro rang, co cau truc, khong thay doi so lieu.")
-            append("\nTra ve dung dinh dang:")
+            append("Viết lại hai phần bằng tiếng Việt rõ ràng, có cấu trúc, không thay đổi số liệu.")
+            append("\nTrả về đúng định dạng:")
             append("\nEXECUTIVE_SUMMARY: ...")
             append("\nRISK_SECTION: ...")
             append("\nProject: ").append(payload.projectId)

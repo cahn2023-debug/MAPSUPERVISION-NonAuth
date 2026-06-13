@@ -90,7 +90,7 @@ class HeavyAIWorker @AssistedInject constructor(
             return@withContext Result.failure(workDataOf(KEY_ERROR to "AI inference error: ${e.message}"))
         }
 
-        setProgress(workDataOf("progress" to 100, "status" to "Hoan thanh"))
+        setProgress(workDataOf("progress" to 100, "status" to "Hoàn thành"))
         return@withContext Result.success(workDataOf(KEY_RESULT to response.text))
     }
 }

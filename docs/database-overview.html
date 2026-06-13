@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapSupervision - Database Overview</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --panel: rgba(17, 24, 39, 0.92);
+            --panel-2: rgba(31, 41, 55, 0.96);
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #38bdf8;
+            --accent-2: #34d399;
+            --border: rgba(255, 255, 255, 0.08);
+            --warn: #f59e0b;
+            --good: #22c55e;
+            --soft: rgba(56, 189, 248, 0.08);
+        }
+
+        * { box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            color: var(--text);
+            line-height: 1.65;
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.13), transparent 28%),
+                radial-gradient(circle at top right, rgba(52, 211, 153, 0.10), transparent 24%),
+                linear-gradient(180deg, #08111f 0%, #0b1220 100%);
+        }
+
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .wrap {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 28px 18px 56px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.3fr 0.7fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+        }
+
+        .hero-main,
+        .hero-side,
+        .section {
+            backdrop-filter: blur(8px);
+        }
+
+        .hero-main {
+            padding: 28px;
+        }
+
+        .hero-side {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+            padding: 7px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(56, 189, 248, 0.24);
+            background: rgba(56, 189, 248, 0.12);
+            color: #d8f3ff;
+            font-size: 13px;
+        }
+
+        h1, h2, h3, h4 {
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            margin: 14px 0 12px;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 14px;
+        }
+
+        h3 {
+            font-size: 1.08rem;
+            margin-bottom: 8px;
+        }
+
+        p { margin: 0 0 12px; }
+
+        .muted { color: var(--muted); }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin: 18px 0 28px;
+        }
+
+        .stat {
+            background: rgba(17, 24, 39, 0.88);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+        }
+
+        .stat .label {
+            color: var(--muted);
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .stat .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .section {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 22px;
+            margin-bottom: 18px;
+        }
+
+        .section-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .toc {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .toc a {
+            display: block;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: rgba(31, 41, 55, 0.94);
+            border: 1px solid var(--border);
+        }
+
+        .toc a span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(31, 41, 55, 0.88);
+            color: #d1d5db;
+            font-size: 12px;
+        }
+
+        .pill.good {
+            color: #dcfce7;
+            border-color: rgba(34, 197, 94, 0.3);
+            background: rgba(34, 197, 94, 0.12);
+        }
+
+        .pill.warn {
+            color: #ffedd5;
+            border-color: rgba(245, 158, 11, 0.3);
+            background: rgba(245, 158, 11, 0.12);
+        }
+
+        .note {
+            border-left: 4px solid var(--accent);
+            background: var(--soft);
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-top: 14px;
+            color: #dbeafe;
+        }
+
+        .alert {
+            border-left: 4px solid var(--warn);
+            background: rgba(245, 158, 11, 0.08);
+            padding: 12px 14px;
+            border-radius: 12px;
+            margin-top: 14px;
+            color: #fde68a;
+        }
+
+        .cards-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 12px;
+        }
+
+        .mini-card {
+            background: rgba(31, 41, 55, 0.92);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 14px;
+        }
+
+        .mini-card .kicker {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--accent-2);
+            margin-bottom: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 14px;
+            margin-top: 12px;
+        }
+
+        th, td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        th {
+            text-align: left;
+            background: var(--panel-2);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        td {
+            background: rgba(17, 24, 39, 0.76);
+        }
+
+        .compact td, .compact th {
+            font-size: 14px;
+        }
+
+        ul {
+            margin: 10px 0 0 20px;
+            padding: 0;
+        }
+
+        li { margin-bottom: 8px; }
+
+        code, pre {
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        code {
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 6px;
+            color: #dbeafe;
+        }
+
+        pre {
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid var(--border);
+            padding: 14px;
+            border-radius: 14px;
+            overflow: auto;
+            color: #e2e8f0;
+            margin: 14px 0 0;
+            white-space: pre-wrap;
+        }
+
+        .schema-map {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .map-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .map-node {
+            background: rgba(31, 41, 55, 0.96);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 12px;
+        }
+
+        .map-node strong {
+            display: block;
+            margin-bottom: 6px;
+            color: #fff;
+        }
+
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 1080px) {
+            .hero,
+            .grid-4,
+            .cards-2,
+            .map-row {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .hero,
+            .grid-4,
+            .cards-2,
+            .map-row,
+            .toc {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-main,
+            .hero-side,
+            .section {
+                padding: 18px;
+            }
+
+            .section-head {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="hero">
+            <div class="card hero-main">
+                <div class="badge">MapSupervision • Room database overview</div>
+                <h1>Tổng hợp database dự án</h1>
+                <p class="muted">
+                    Tài liệu này gom toàn bộ kiến trúc database của dự án theo góc nhìn Room schema,
+                    metadata dự án, quan hệ logic giữa các bảng và lịch sử migration từ v9 đến v21.
+                    Đây là bản tóm lược bám sát code hiện tại trong <code>data/src/main/java/com/mapsupervision/data/db</code>.
+                </p>
+                <div class="pill-row">
+                    <span class="pill good">1 schema Room</span>
+                    <span class="pill good">2 runtime storage modes</span>
+                    <span class="pill">14 bảng hiện tại</span>
+                    <span class="pill">13 migration</span>
+                    <span class="pill warn">Không dùng foreign key vật lý</span>
+                </div>
+                <div class="toc">
+                    <a href="#overview">Tổng quan
+                        <span>Room DB, shared DB và project-scoped DB</span>
+                    </a>
+                    <a href="#metadata">Metadata dự án
+                        <span>projects và các cột điều phối storage</span>
+                    </a>
+                    <a href="#schema-groups">Schema theo nhóm
+                        <span>14 bảng chia theo nghiệp vụ</span>
+                    </a>
+                    <a href="#relations">Quan hệ schema
+                        <span>Quan hệ logic, index và luồng dữ liệu</span>
+                    </a>
+                    <a href="#room-meta">Metadata kỹ thuật Room
+                        <span>version, hash, converter, schema JSON</span>
+                    </a>
+                    <a href="#migrations">Phụ lục migration
+                        <span>v9 → v21, chỉ giữ mốc kiến trúc chính</span>
+                    </a>
+                </div>
+            </div>
+            <div class="card hero-side">
+                <div class="mini-card">
+                    <div class="kicker">Database class</div>
+                    <strong>MapSupervisionDatabase</strong>
+                    <p class="muted">RoomDatabase trung tâm, khai báo toàn bộ entity và DAO của dự án.</p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">Shared runtime</div>
+                    <strong><code>mapsupervision.db</code></strong>
+                    <p class="muted">Database chung do <code>DataModule</code> cấp, dùng cho storage mode legacy.</p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">Project runtime</div>
+                    <strong>Database theo project</strong>
+                    <p class="muted">Database riêng mở từ <code>ProjectScopedDatabaseProvider</code> khi project chuyển sang <code>PROJECT_DB</code>.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-4">
+            <div class="stat card">
+                <div class="label">Số bảng Room</div>
+                <div class="value">14</div>
+            </div>
+            <div class="stat card">
+                <div class="label">Schema version</div>
+                <div class="value">21</div>
+            </div>
+            <div class="stat card">
+                <div class="label">Migration đã áp dụng</div>
+                <div class="value">13</div>
+            </div>
+            <div class="stat card">
+                <div class="label">Storage modes</div>
+                <div class="value">2</div>
+            </div>
+        </div>
+
+        <section class="section" id="overview">
+            <div class="section-head">
+                <div>
+                    <h2>Tổng Quan</h2>
+                    <p class="muted">
+                        Dự án chỉ có một schema Room trung tâm, nhưng ở runtime có hai cách lưu trữ:
+                        database dùng chung và database riêng theo project. Hai lớp này dùng chung bộ entity,
+                        DAO và migration, nên tài liệu này xem chúng là cùng một hệ schema.
+                    </p>
+                </div>
+            </div>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Loại ROOMDB</th>
+                        <th>File vật lý</th>
+                        <th>Ai mở</th>
+                        <th>Khi nào dùng</th>
+                        <th>Dữ liệu điển hình</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>Shared Room DB</code></td>
+                        <td><code>mapsupervision.db</code></td>
+                        <td><code>DataModule</code></td>
+                        <td>Khi project còn ở <code>LEGACY_SHARED</code> hoặc đang giữ dữ liệu dùng chung.</td>
+                        <td>Projects, GIS, progress, photos, notes, tasks, AI cache, reports.</td>
+                    </tr>
+                    <tr>
+                        <td><code>Project-scoped Room DB</code></td>
+                        <td><code>project.projectDbPath</code></td>
+                        <td><code>ProjectScopedDatabaseProvider</code></td>
+                        <td>Khi project chuyển sang <code>PROJECT_DB</code> và cần tách dữ liệu sang file riêng.</td>
+                        <td>Cùng schema với shared DB, nhưng chỉ chứa dữ liệu của một project.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Điểm vào code</th>
+                        <th>Vai trò</th>
+                        <th>Ghi chú</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>MapSupervisionDatabase.kt</code></td>
+                        <td>Khai báo entity, DAO, migration và type converters cho schema chung.</td>
+                        <td>Đây là nguồn sự thật chính cho Room schema version 21.</td>
+                    </tr>
+                    <tr>
+                        <td><code>DataModule.kt</code></td>
+                        <td>Cấp shared database <code>mapsupervision.db</code> và các DAO singleton.</td>
+                        <td>Đường vào runtime cho storage mode legacy.</td>
+                    </tr>
+                    <tr>
+                        <td><code>ProjectScopedDatabaseProvider.kt</code></td>
+                        <td>Mở database riêng theo project và hydrate dữ liệu legacy khi cần.</td>
+                        <td>Đường vào runtime cho storage mode <code>PROJECT_DB</code>.</td>
+                    </tr>
+                    <tr>
+                        <td><code>DbTypeConverters.kt</code></td>
+                        <td>Chuyển đổi enum và list toạ độ sang kiểu lưu trữ của SQLite.</td>
+                        <td>Ảnh hưởng trực tiếp đến <code>projects</code>, <code>site_photos</code> và <code>gis_route</code>.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="cards-2">
+                <div class="mini-card">
+                    <div class="kicker">1. LEGACY_SHARED</div>
+                    <h3>Shared database</h3>
+                    <p>
+                        File thật là <code>mapsupervision.db</code>, được tạo trong <code>DataModule</code>.
+                        Đây là nơi lưu dữ liệu legacy và cũng là nguồn seed cho project database mới.
+                    </p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">2. PROJECT_DB</div>
+                    <h3>Project-scoped database</h3>
+                    <p>
+                        Khi <code>projects.storageMode = PROJECT_DB</code> và <code>projectDbPath</code> có giá trị,
+                        <code>ProjectScopedDatabaseProvider</code> sẽ mở một file DB riêng cho project đó.
+                    </p>
+                </div>
+            </div>
+            <div class="note">
+                Dữ liệu legacy được hydrate từ shared DB sang project DB khi project DB còn rỗng.
+                Luồng này đọc dữ liệu theo <code>projectId</code>, gom thành payload, rồi ghi vào database mới trong một transaction.
+                Điểm mấu chốt là cả hai database đều dùng cùng một schema Room, nên migration và entity không bị tách nhánh.
+            </div>
+        </section>
+
+        <section class="section" id="metadata">
+            <div class="section-head">
+                <div>
+                    <h2>Metadata Dự Án</h2>
+                    <p class="muted">
+                        Bảng <code>projects</code> là trung tâm điều phối storage mode, đường dẫn database và metadata lịch sử.
+                    </p>
+                </div>
+            </div>
+
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Trường</th>
+                        <th>Ý nghĩa</th>
+                        <th>Ghi chú kỹ thuật</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>metadataVersion</code></td>
+                        <td>Phiên bản metadata của project.</td>
+                        <td>Hiện được default về <code>3</code>, dùng để theo dõi cấu trúc metadata không đồng nhất với Room version.</td>
+                    </tr>
+                    <tr>
+                        <td><code>updatedAtEpochMs</code></td>
+                        <td>Thời điểm cập nhật cuối của metadata project.</td>
+                        <td>Migration v10-v11 đã đảm bảo giá trị này được backfill từ <code>createdAtEpochMs</code> nếu còn 0.</td>
+                    </tr>
+                    <tr>
+                        <td><code>storageMode</code></td>
+                        <td>Chế độ lưu trữ dữ liệu của project.</td>
+                        <td>Hai giá trị chính: <code>LEGACY_SHARED</code> và <code>PROJECT_DB</code>.</td>
+                    </tr>
+                    <tr>
+                        <td><code>projectDbPath</code></td>
+                        <td>Đường dẫn file database riêng của project.</td>
+                        <td>Khi rỗng thì project vẫn ở shared DB; khi có path hợp lệ thì provider mở DB riêng.</td>
+                    </tr>
+                    <tr>
+                        <td><code>projectCode</code></td>
+                        <td>Mã project ở lớp nghiệp vụ.</td>
+                        <td>Xuất hiện sau migration v19-v20, phục vụ chuẩn hóa metadata và tương thích dữ liệu cũ.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="alert">
+                Bảng <code>projects</code> không chỉ là danh sách project. Nó là điểm quyết định project đó đang sống trong shared DB hay database riêng.
+            </div>
+        </section>
+
+        <section class="section" id="schema-groups">
+            <div class="section-head">
+                <div>
+                    <h2>Schema Theo Nhóm Nghiệp Vụ</h2>
+                    <p class="muted">
+                        Dưới đây là toàn bộ 14 bảng Room hiện tại, được chia theo nhóm nghiệp vụ để đọc nhanh hơn.
+                    </p>
+                </div>
+            </div>
+
+            <h3>Nhóm 1. Project metadata</h3>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Bảng</th>
+                        <th>Mục đích</th>
+                        <th>Khóa chính</th>
+                        <th>Cột quan trọng</th>
+                        <th>Index quan trọng</th>
+                        <th>Quan hệ logic</th>
+                        <th>Nghiệp vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>projects</code></td>
+                        <td>Metadata gốc của project và điều phối storage mode.</td>
+                        <td><code>id</code></td>
+                        <td><code>name</code>, <code>slug</code>, <code>storageMode</code>, <code>projectDbPath</code>, <code>projectCode</code></td>
+                        <td>PK trên <code>id</code></td>
+                        <td>Root của mọi dữ liệu theo project.</td>
+                        <td>Tạo project, chuyển sang project DB, quản trị vòng đời project.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:18px;">Nhóm 2. GIS và import</h3>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Bảng</th>
+                        <th>Mục đích</th>
+                        <th>Khóa chính</th>
+                        <th>Cột quan trọng</th>
+                        <th>Index quan trọng</th>
+                        <th>Quan hệ logic</th>
+                        <th>Nghiệp vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>imported_files</code></td>
+                        <td>Metadata của file nhập vào.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>fileName</code>, <code>fileType</code>, <code>storedPath</code>, <code>summary</code>, <code>importedAtEpochMs</code></td>
+                        <td><code>(projectId, importedAtEpochMs)</code></td>
+                        <td>Cha logic của node/route được parse từ file nhập.</td>
+                        <td>Import KML/KMZ, truy vết nguồn dữ liệu.</td>
+                    </tr>
+                    <tr>
+                        <td><code>gis_node</code></td>
+                        <td>Lưu node GIS, toạ độ và thông tin vật tư/tuyến.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>code</code>, <code>contractor</code>, <code>latitude</code>, <code>longitude</code>, <code>importedFileId</code></td>
+                        <td><code>(projectId, code)</code>, <code>importedFileId</code></td>
+                        <td>Liên kết với <code>imported_files</code> qua <code>importedFileId</code>; liên kết logic với <code>node_progress</code>, <code>material_progress</code>, <code>daily_log</code>, <code>site_photos</code> qua <code>code</code>.</td>
+                        <td>Bản đồ GIS, đối soát tiến độ node, dựng snapshot workspace.</td>
+                    </tr>
+                    <tr>
+                        <td><code>gis_route</code></td>
+                        <td>Lưu tuyến GIS và chuỗi điểm đường đi.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>code</code>, <code>startNodeCode</code>, <code>endNodeCode</code>, <code>points</code>, <code>importedFileId</code></td>
+                        <td><code>(projectId, code)</code>, <code>importedFileId</code></td>
+                        <td>Liên kết logic với <code>gis_node</code> qua <code>startNodeCode</code>/<code>endNodeCode</code> và với <code>daily_log</code>, <code>site_photos</code> qua mã tuyến.</td>
+                        <td>Phân tích route, đối soát ảnh/tuyến, hiển thị bản đồ.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:18px;">Nhóm 3. Tiến độ và nhật ký hiện trường</h3>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Bảng</th>
+                        <th>Mục đích</th>
+                        <th>Khóa chính</th>
+                        <th>Cột quan trọng</th>
+                        <th>Index quan trọng</th>
+                        <th>Quan hệ logic</th>
+                        <th>Nghiệp vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>node_progress</code></td>
+                        <td>Tiến độ theo node.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>nodeCode</code>, <code>planned</code>, <code>actual</code>, <code>remain</code>, <code>delayed</code></td>
+                        <td><code>(projectId, nodeCode)</code>, <code>nodeCode</code></td>
+                        <td>Liên kết logic với <code>gis_node.code</code>.</td>
+                        <td>Dashboard tiến độ node, tổng hợp hoàn thành.</td>
+                    </tr>
+                    <tr>
+                        <td><code>material_progress</code></td>
+                        <td>Tiến độ vật tư theo node và tên vật liệu.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>nodeCode</code>, <code>materialName</code>, <code>plannedQty</code>, <code>actualQty</code></td>
+                        <td>Unique <code>(projectId, nodeCode, materialName)</code>, <code>nodeCode</code></td>
+                        <td>Liên kết logic với <code>gis_node.code</code>.</td>
+                        <td>So sánh khối lượng vật tư kế hoạch và thực tế.</td>
+                    </tr>
+                    <tr>
+                        <td><code>daily_log</code></td>
+                        <td>Nhật ký thi công, theo ngày và theo batch.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>workItem</code>, <code>nodeCode</code>, <code>routeCode</code>, <code>dateEpochDay</code>, <code>batchGroupId</code>, <code>linkedPhotoIdsCsv</code></td>
+                        <td><code>(projectId, createdAtEpochMs)</code>, <code>(projectId, dateEpochDay)</code>, <code>(projectId, batchGroupId)</code></td>
+                        <td>Liên kết logic với <code>gis_node.code</code>, <code>gis_route.code</code>, <code>site_photos.id</code> qua CSV/id list.</td>
+                        <td>Nhật ký công trường, tổng hợp sản lượng, đối soát ảnh.</td>
+                    </tr>
+                    <tr>
+                        <td><code>work_categories</code></td>
+                        <td>Danh mục loại công việc theo project.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>name</code>, <code>unit</code>, <code>createdAtEpochMs</code></td>
+                        <td><code>projectId</code>, <code>(projectId, createdAtEpochMs)</code></td>
+                        <td>Phục vụ <code>daily_log</code> và chuẩn hóa taxonomy công việc.</td>
+                        <td>Chọn hạng mục khi nhập nhật ký hoặc báo cáo.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:18px;">Nhóm 4. Cộng tác và bằng chứng hiện trường</h3>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Bảng</th>
+                        <th>Mục đích</th>
+                        <th>Khóa chính</th>
+                        <th>Cột quan trọng</th>
+                        <th>Index quan trọng</th>
+                        <th>Quan hệ logic</th>
+                        <th>Nghiệp vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>note</code></td>
+                        <td>Ghi chú tự do theo object code.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>objectCode</code>, <code>content</code>, <code>createdAtEpochMs</code></td>
+                        <td><code>(projectId, createdAtEpochMs)</code>, <code>(projectId, objectCode, createdAtEpochMs)</code>, <code>objectCode</code></td>
+                        <td>Liên kết logic với GIS object hoặc object nghiệp vụ theo <code>objectCode</code>.</td>
+                        <td>Ghi chú hiện trường, log người dùng.</td>
+                    </tr>
+                    <tr>
+                        <td><code>task</code></td>
+                        <td>Danh sách việc cần làm theo object code.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>objectCode</code>, <code>title</code>, <code>description</code>, <code>status</code>, <code>completedAtEpochMs</code></td>
+                        <td><code>(projectId, createdAtEpochMs)</code>, <code>(projectId, objectCode, createdAtEpochMs)</code>, <code>objectCode</code></td>
+                        <td>Liên kết logic với object được giao việc.</td>
+                        <td>Theo dõi task, trạng thái công việc và đóng việc.</td>
+                    </tr>
+                    <tr>
+                        <td><code>site_photos</code></td>
+                        <td>Ảnh hiện trường, metadata GPS và kết quả matching.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>objectCode</code>, <code>tagCodesCsv</code>, <code>matchedNodeCode</code>, <code>matchedRouteCode</code>, <code>filePath</code>, <code>thumbnailPath</code>, <code>locationStatus</code>, <code>capturedAtEpochMs</code></td>
+                        <td><code>(projectId, capturedAtEpochMs)</code>, <code>(projectId, objectCode, capturedAtEpochMs)</code>, <code>objectCode</code>, <code>(projectId, matchedNodeCode)</code>, <code>(projectId, matchedRouteCode)</code></td>
+                        <td>Liên kết logic với node/route và ảnh đính kèm theo object code.</td>
+                        <td>Kho ảnh hiện trường, đối soát vị trí và nhãn ảnh.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin-top:18px;">Nhóm 5. AI và báo cáo</h3>
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Bảng</th>
+                        <th>Mục đích</th>
+                        <th>Khóa chính</th>
+                        <th>Cột quan trọng</th>
+                        <th>Index quan trọng</th>
+                        <th>Quan hệ logic</th>
+                        <th>Nghiệp vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>ai_decision_cache</code></td>
+                        <td>Cache kết quả AI theo capability và payload hash.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>capability</code>, <code>payloadHash</code>, <code>resultJson</code>, <code>createdAtEpochMs</code></td>
+                        <td>Unique <code>(projectId, capability, payloadHash)</code>, <code>projectId</code></td>
+                        <td>Liên kết theo project, không có FK vật lý.</td>
+                        <td>Cache suy luận AI, giảm gọi lặp.</td>
+                    </tr>
+                    <tr>
+                        <td><code>chat_history</code></td>
+                        <td>Lưu lịch sử chat theo project.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>role</code>, <code>text</code>, <code>createdAtEpochMs</code></td>
+                        <td><code>(projectId, createdAtEpochMs)</code>, <code>projectId</code></td>
+                        <td>Thuộc về project hiện tại.</td>
+                        <td>Chat UI, truy vết hội thoại AI.</td>
+                    </tr>
+                    <tr>
+                        <td><code>report_draft</code></td>
+                        <td>Bản nháp báo cáo tổng hợp.</td>
+                        <td><code>id</code></td>
+                        <td><code>projectId</code>, <code>title</code>, <code>executiveSummary</code>, <code>riskSection</code>, <code>recommendedActionsCsv</code>, <code>createdAtEpochMs</code></td>
+                        <td><code>(projectId, createdAtEpochMs)</code></td>
+                        <td>Thuộc project, dùng chung luồng tạo báo cáo.</td>
+                        <td>Sinh báo cáo, preview, xuất file.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section" id="relations">
+            <div class="section-head">
+                <div>
+                    <h2>Quan Hệ Schema</h2>
+                    <p class="muted">
+                        Dự án này hầu như không khai báo foreign key vật lý trong Room schema.
+                        Quan hệ giữa các bảng chủ yếu được quản lý bằng application logic và index.
+                    </p>
+                </div>
+            </div>
+
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Loại quan hệ</th>
+                        <th>Đặc điểm</th>
+                        <th>Ví dụ trong dự án</th>
+                        <th>Ý nghĩa khi đọc schema</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Quan hệ vật lý</td>
+                        <td>Được biểu diễn bằng primary key, unique index và composite index.</td>
+                        <td><code>projects.id</code>, <code>material_progress</code> unique index trên <code>(projectId, nodeCode, materialName)</code>.</td>
+                        <td>Đảm bảo tính duy nhất, tăng tốc truy vấn, nhưng không ép ràng buộc foreign key.</td>
+                    </tr>
+                    <tr>
+                        <td>Quan hệ logic</td>
+                        <td>Ghép dữ liệu bằng các mã nghiệp vụ như <code>projectId</code>, <code>nodeCode</code>, <code>routeCode</code>, <code>objectCode</code>.</td>
+                        <td><code>gis_node.code</code> nối sang <code>node_progress.nodeCode</code> và <code>daily_log.nodeCode</code>.</td>
+                        <td>Đây là lớp quan hệ chính của hệ thống, do application logic kiểm soát.</td>
+                    </tr>
+                    <tr>
+                        <td>Quan hệ suy diễn</td>
+                        <td>Không lưu foreign key trực tiếp mà suy ra từ nội dung CSV hoặc danh sách id.</td>
+                        <td><code>daily_log.linkedPhotoIdsCsv</code> tham chiếu gián tiếp tới <code>site_photos.id</code>.</td>
+                        <td>Đòi hỏi code đọc/ghi phải hiểu format lưu trữ của cột.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="schema-map">
+                <div class="map-row">
+                    <div class="map-node">
+                        <strong>projects</strong>
+                        Root metadata, điều phối storage mode và đường dẫn DB.
+                    </div>
+                    <div class="map-node">
+                        <strong>imported_files</strong>
+                        Nguồn gốc file nhập, seed cho GIS node/route.
+                    </div>
+                    <div class="map-node">
+                        <strong>gis_node / gis_route</strong>
+                        Lớp GIS trung tâm, nối sang tiến độ và ảnh.
+                    </div>
+                    <div class="map-node">
+                        <strong>daily_log / site_photos / tasks / notes</strong>
+                        Dữ liệu vận hành hằng ngày theo project và object code.
+                    </div>
+                </div>
+                <div class="map-row">
+                    <div class="map-node">
+                        <strong>node_progress / material_progress</strong>
+                        Tiến độ và vật tư, cùng bám vào <code>gis_node.code</code>.
+                    </div>
+                    <div class="map-node">
+                        <strong>ai_decision_cache</strong>
+                        Cache AI theo project/capability/payload hash.
+                    </div>
+                    <div class="map-node">
+                        <strong>chat_history</strong>
+                        Lịch sử hội thoại theo project.
+                    </div>
+                    <div class="map-node">
+                        <strong>report_draft</strong>
+                        Bản nháp báo cáo, đầu ra cuối của luồng tổng hợp.
+                    </div>
+                </div>
+            </div>
+
+            <div class="note">
+                Các liên kết logic quan trọng:
+                <ul>
+                    <li><code>projects -> imported_files -> gis_node/gis_route</code></li>
+                    <li><code>projects -> daily_log / site_photos / tasks / notes</code></li>
+                    <li><code>gis_node.code</code> đối chiếu với <code>node_progress.nodeCode</code>, <code>material_progress.nodeCode</code>, <code>daily_log.nodeCode</code></li>
+                    <li><code>gis_route.code</code> đối chiếu với <code>daily_log.routeCode</code>, <code>site_photos.matchedRouteCode</code></li>
+                    <li><code>site_photos.id</code> được tham chiếu gián tiếp từ <code>daily_log.linkedPhotoIdsCsv</code></li>
+                </ul>
+            </div>
+
+            <div class="alert">
+                Phần lớn quan hệ trong schema này là quan hệ nghiệp vụ, không phải ràng buộc foreign key vật lý trong SQLite schema hiện tại.
+            </div>
+        </section>
+
+        <section class="section" id="room-meta">
+            <div class="section-head">
+                <div>
+                    <h2>Metadata Kỹ Thuật Room</h2>
+                    <p class="muted">
+                        Đây là những thông số trực tiếp mô tả schema Room và file schema JSON đã được export.
+                    </p>
+                </div>
+            </div>
+
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Thuộc tính</th>
+                        <th>Giá trị hiện tại</th>
+                        <th>Ý nghĩa</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Room version</td>
+                        <td><code>21</code></td>
+                        <td>Phiên bản schema hiện tại của <code>MapSupervisionDatabase</code>.</td>
+                    </tr>
+                    <tr>
+                        <td>Identity hash</td>
+                        <td><code>b3bb241307ccdba2df3acd6b32c51b44</code></td>
+                        <td>Hash định danh schema đã export trong JSON.</td>
+                    </tr>
+                    <tr>
+                        <td>Export schema</td>
+                        <td><code>true</code></td>
+                        <td>Room đang xuất schema JSON ra thư mục <code>data/schemas</code>.</td>
+                    </tr>
+                    <tr>
+                        <td>Schema JSON</td>
+                        <td><code>data/schemas/com.mapsupervision.data.db.MapSupervisionDatabase/21.json</code></td>
+                        <td>File gốc dùng để kiểm tra entity, index và create SQL.</td>
+                    </tr>
+                    <tr>
+                        <td>Type converters</td>
+                        <td><code>DbTypeConverters</code></td>
+                        <td>Bộ chuyển đổi kiểu dữ liệu đặc thù của project.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="cards-2">
+                <div class="mini-card">
+                    <div class="kicker">Converter 1</div>
+                    <h3><code>ProjectStorageMode &lt;-&gt; TEXT</code></h3>
+                    <p class="muted">Lưu enum storage mode dưới dạng tên enum trong SQLite.</p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">Converter 2</div>
+                    <h3><code>PhotoLocationStatus &lt;-&gt; TEXT</code></h3>
+                    <p class="muted">Lưu trạng thái GPS của ảnh hiện trường dưới dạng text enum.</p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">Converter 3</div>
+                    <h3><code>List&lt;Pair&lt;Double, Double&gt;&gt; &lt;-&gt; TEXT</code></h3>
+                    <p class="muted">Dùng cho <code>gis_route.points</code>, serialize thành chuỗi phân tách bằng dấu chấm phẩy.</p>
+                </div>
+                <div class="mini-card">
+                    <div class="kicker">Runtime</div>
+                    <h3>WAL + PRAGMA tối ưu</h3>
+                    <p class="muted">Cả shared DB và project DB đều dùng <code>WRITE_AHEAD_LOGGING</code>, <code>synchronous = NORMAL</code> và <code>temp_store = MEMORY</code>.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="migrations">
+            <div class="section-head">
+                <div>
+                    <h2>Phụ Lục Migration</h2>
+                    <p class="muted">
+                        Phần này chỉ tóm tắt các bước thay đổi có ý nghĩa kiến trúc, không liệt kê toàn bộ SQL.
+                    </p>
+                </div>
+            </div>
+
+            <table class="compact">
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>Thay đổi chính</th>
+                        <th>Tác động kiến trúc</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>v9</td>
+                        <td>Baseline schema còn rất nhỏ, làm mốc cho các migration sau.</td>
+                        <td>Đặt nền cho schema hiện đại và room_master_table mới.</td>
+                    </tr>
+                    <tr>
+                        <td>v10</td>
+                        <td>Mở rộng <code>daily_log</code> và thêm <code>work_categories</code>.</td>
+                        <td>Nhật ký thi công bắt đầu có metadata ngày, khối lượng và phân loại công việc.</td>
+                    </tr>
+                    <tr>
+                        <td>v11-v12</td>
+                        <td>Thêm metadata cho <code>projects</code>, bao gồm <code>updatedAtEpochMs</code>, <code>storageMode</code> và <code>projectDbPath</code>.</td>
+                        <td>Đây là điểm tách shared DB và project DB riêng theo runtime.</td>
+                    </tr>
+                    <tr>
+                        <td>v13</td>
+                        <td>Bổ sung metadata GPS cho <code>site_photos</code>.</td>
+                        <td>Ảnh hiện trường có thêm trạng thái location và độ chính xác.</td>
+                    </tr>
+                    <tr>
+                        <td>v14</td>
+                        <td>Thêm <code>ai_decision_cache</code>.</td>
+                        <td>Hệ thống bắt đầu cache kết quả suy luận AI theo payload hash.</td>
+                    </tr>
+                    <tr>
+                        <td>v15-v16</td>
+                        <td>Chuẩn hóa lại index và thêm các cột matching/object lookup.</td>
+                        <td>Tối ưu các truy vấn theo project, node code và object code.</td>
+                    </tr>
+                    <tr>
+                        <td>v17-v18</td>
+                        <td>Thêm batch/matching fields cho <code>daily_log</code> và <code>site_photos</code>, sau đó thêm <code>chat_history</code>.</td>
+                        <td>Luồng đối soát ảnh và hội thoại AI trở thành dữ liệu lưu trữ chính thức.</td>
+                    </tr>
+                    <tr>
+                        <td>v19</td>
+                        <td>Thêm <code>report_draft</code>.</td>
+                        <td>Xuất hiện lớp lưu bản nháp báo cáo trong schema.</td>
+                    </tr>
+                    <tr>
+                        <td>v20</td>
+                        <td>Rebuild nhiều bảng để chuẩn hóa schema và index.</td>
+                        <td>Cập nhật đồng bộ các bảng cốt lõi, đảm bảo backward compatibility tốt hơn.</td>
+                    </tr>
+                    <tr>
+                        <td>v21</td>
+                        <td>Thêm cột <code>gis_route.points</code>.</td>
+                        <td>Route GIS có thể lưu chuỗi toạ độ chi tiết thay vì chỉ metadata đầu-cuối.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="note">
+                Tổng kết: schema Room hiện tại là một lớp dữ liệu thống nhất, nhưng runtime đã tiến hóa từ shared-only sang mô hình hybrid shared + per-project.
+            </div>
+        </section>
+
+        <div class="footer">
+            MapSupervision database overview • Generated for docs/database-overview.html
+        </div>
+    </div>
+</body>
+</html>

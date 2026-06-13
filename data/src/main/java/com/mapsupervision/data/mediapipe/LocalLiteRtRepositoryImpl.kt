@@ -42,7 +42,7 @@ class LocalLiteRtRepositoryImpl @Inject constructor(
         val model = selectModel()
             ?: throw GemmaLiteRtChatService.DiagnosticFailure(
                 code = "MODEL_MISSING",
-                userMessage = "Khong co model local san sang."
+                userMessage = "Không có model local sẵn sàng."
             )
         if (!isSafeToUse(model)) {
             val parsed = ChatActionParser.parse(request.prompt, request.contextSummary, request.selectedNodeCode)

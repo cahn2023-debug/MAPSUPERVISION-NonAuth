@@ -107,26 +107,47 @@ class PhotoViewModel @Inject constructor(
 
     fun updateSelectedPhotoTags(tagCodesCsv: String) {
         val current = _selectedPhotoForReview.value ?: return
-        _selectedPhotoForReview.value = current.copy(
-            tagCodesCsv = tagCodesCsv,
-            matchedNodeCode = tagCodesCsv.split(',').firstOrNull { it.isNotBlank() }?.trim()
-                ?: current.matchedNodeCode,
-            matchedRouteCode = tagCodesCsv.split(',').map { it.trim() }.filter { it.isNotBlank() }
-                .drop(1)
-                .firstOrNull() ?: current.matchedRouteCode
-        )
+        val activeId = activeProjectIdCache ?: return
+        viewModelScope.launch {
+            val nodes = (gisRepository.searchNodes(activeId, "") as? AppResult.Success)?.data.orEmpty()
+            val routes = (gisRepository.searchRoutes(activeId, "") as? AppResult.Success)?.data.orEmpty()
+            val nodeCodes = nodes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
+            val routeCodes = routes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
+
+            val tags = tagCodesCsv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+            val matchedNode = tags.firstOrNull { nodeCodes.contains(it) }
+            val matchedRoute = tags.firstOrNull { routeCodes.contains(it) }
+
+            _selectedPhotoForReview.value = current.copy(
+                tagCodesCsv = tagCodesCsv,
+                matchedNodeCode = matchedNode,
+                matchedRouteCode = matchedRoute
+            )
+        }
     }
 
     fun updateSelectedPhotoOffsetMinutes(offsetMinutes: Int) {
         val current = _selectedPhotoForReview.value ?: return
+        val activeId = activeProjectIdCache ?: return
         val offsetMs = offsetMinutes.toLong() * 60_000L
         val matchedAt = current.capturedAtEpochMs + offsetMs
-        _selectedPhotoForReview.value = current.copy(
-            matchingTimeOffsetMs = offsetMs,
-            matchedAtEpochMs = matchedAt,
-            matchedNodeCode = current.tagCodesCsv.split(',').firstOrNull { it.isNotBlank() }?.trim()
-                ?: current.matchedNodeCode
-        )
+        viewModelScope.launch {
+            val nodes = (gisRepository.searchNodes(activeId, "") as? AppResult.Success)?.data.orEmpty()
+            val routes = (gisRepository.searchRoutes(activeId, "") as? AppResult.Success)?.data.orEmpty()
+            val nodeCodes = nodes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
+            val routeCodes = routes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
+
+            val tags = current.tagCodesCsv.split(',').map { it.trim() }.filter { it.isNotBlank() }
+            val matchedNode = tags.firstOrNull { nodeCodes.contains(it) } ?: current.matchedNodeCode
+            val matchedRoute = tags.firstOrNull { routeCodes.contains(it) } ?: current.matchedRouteCode
+
+            _selectedPhotoForReview.value = current.copy(
+                matchingTimeOffsetMs = offsetMs,
+                matchedAtEpochMs = matchedAt,
+                matchedNodeCode = matchedNode,
+                matchedRouteCode = matchedRoute
+            )
+        }
     }
 
     fun toggleSelectedPhotoTag(tagCode: String) {
@@ -234,13 +255,16 @@ class PhotoViewModel @Inject constructor(
     ) {
         val thumb = photoPipelineService.createThumbnail(projectId, file)
         val capturedAt = System.currentTimeMillis()
+        val isRoute = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty().any { it.code == objectCode }
+        val matchedNode = if (!isRoute) objectCode else null
+        val matchedRoute = if (isRoute) objectCode else null
         val model = SitePhoto(
             id = java.util.UUID.randomUUID().toString(),
             projectId = projectId,
             objectCode = objectCode,
             tagCodesCsv = objectCode,
-            matchedNodeCode = objectCode,
-            matchedRouteCode = null,
+            matchedNodeCode = matchedNode,
+            matchedRouteCode = matchedRoute,
             filePath = file.absolutePath,
             thumbnailPath = thumb.absolutePath,
             latitude = location.latitude,

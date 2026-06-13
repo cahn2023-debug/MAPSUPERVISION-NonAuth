@@ -35,13 +35,11 @@ class MediaPipeLlmEngine(
     }
     
     override suspend fun isAvailable(): Boolean {
-        // TODO: Check if model is loaded - requires data module
-        return false // Disabled for now
+        return false
     }
     
     override suspend fun execute(payload: AiPayload): AiResult {
-        // TODO: Implement actual MediaPipe LLM inference - requires data module
-        throw NotImplementedError("MediaPipe LLM engine not yet implemented - requires data module integration")
+        throw IllegalStateException("MediaPipe LLM engine is disabled in this build")
     }
     
     override fun getResourceUsageScore(): Int = 90 // High resource usage

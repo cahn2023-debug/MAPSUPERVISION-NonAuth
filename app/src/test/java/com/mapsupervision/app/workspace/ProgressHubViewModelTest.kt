@@ -59,4 +59,43 @@ class ProgressHubViewModelTest {
         assertEquals("5", state.manpowerInput)
         assertEquals("", state.logFormError)
     }
+
+    @Test
+    fun `select work template applies template unit`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.updateLogFormError("Error")
+        viewModel.setCategoryDropdownExpanded(true)
+        viewModel.selectWorkTemplate("Bê tông móng", "m3")
+
+        val state = viewModel.uiState.value
+        assertEquals("Bê tông móng", state.selectedCategoryName)
+        assertEquals("m3", state.unitInput)
+        assertEquals(false, state.categoryDropdownExpanded)
+        assertEquals("", state.logFormError)
+    }
+
+    @Test
+    fun `selecting another work template replaces previous unit`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.selectWorkTemplate("Cáp quang", "m")
+        viewModel.selectWorkTemplate("Bê tông móng", "m3")
+
+        val state = viewModel.uiState.value
+        assertEquals("Bê tông móng", state.selectedCategoryName)
+        assertEquals("m3", state.unitInput)
+    }
+
+    @Test
+    fun `clearing work template resets category and unit`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.selectWorkTemplate("Cáp quang", "m")
+        viewModel.selectWorkTemplate("", "")
+
+        val state = viewModel.uiState.value
+        assertEquals("", state.selectedCategoryName)
+        assertEquals("", state.unitInput)
+    }
 }

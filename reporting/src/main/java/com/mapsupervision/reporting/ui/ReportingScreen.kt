@@ -1,4 +1,4 @@
-package com.mapsupervision.reporting.ui
+﻿package com.mapsupervision.reporting.ui
 
 import android.content.Intent
 import androidx.compose.foundation.Image
@@ -55,6 +55,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.ai.ReportDraftResult
 import java.io.File
@@ -63,6 +66,8 @@ import java.util.Date
 import java.util.Locale
 
 enum class SortKey { NONE, STT, NAME, PLANNED, ACTUAL, PERCENT }
+
+private const val ALL_CONTRACTORS_LABEL = "Tất cả nhà thầu"
 
 @Composable
 fun ReportingScreen(
@@ -73,27 +78,49 @@ fun ReportingScreen(
     materialProgress: Map<String, String> = emptyMap(),
     onClearPhotoFilter: () -> Unit = {}
 ) {
-    val path by viewModel.lastReportPath.collectAsState()
-    val wordPath by viewModel.lastWordReportPath.collectAsState()
-    val zipPath by viewModel.lastPackagePath.collectAsState()
-    val aiDraft by viewModel.aiReportDraft.collectAsState()
-    val materialRows by viewModel.materialReportRows.collectAsState()
-    val photos by viewModel.photos.collectAsState()
-    val projectNodes by viewModel.projectNodes.collectAsState()
-    val projectRoutes by viewModel.projectRoutes.collectAsState()
-    val isExporting by viewModel.isExporting.collectAsState()
+    val path by viewModel.lastReportPath.collectAsStateWithLifecycle()
+    val wordPath by viewModel.lastWordReportPath.collectAsStateWithLifecycle()
+    val zipPath by viewModel.lastPackagePath.collectAsStateWithLifecycle()
+    val reportSnapshot by viewModel.reportSnapshot.collectAsStateWithLifecycle()
+    val aiDraft = reportSnapshot.aiDraft
+    val photos = reportSnapshot.photos
+    val isExporting by viewModel.isExporting.collectAsStateWithLifecycle()
 
     var showPhotos by remember { mutableStateOf(false) }
     var showFormatMenu by remember { mutableStateOf(false) }
     var showPreviewDialog by remember { mutableStateOf(false) }
+    var showContractorMenu by remember { mutableStateOf(false) }
     var selectedExportFormat by remember { mutableStateOf("") }
+    var selectedContractor by remember { mutableStateOf(ALL_CONTRACTORS_LABEL) }
 
     var sortBy by remember { mutableStateOf(SortKey.NONE) }
     var isAscending by remember { mutableStateOf(true) }
 
-    val sortedMaterialRows = remember(materialRows, sortBy, isAscending) {
-        val nonTotalRows = materialRows.filter { !it.isTotal }
-        val totalRow = materialRows.find { it.isTotal }
+    val contractorOptions = remember(reportSnapshot.nodes, reportSnapshot.routes) {
+        val contractors = (reportSnapshot.nodes.asSequence().map { it.contractor } + reportSnapshot.routes.asSequence().map { it.contractor })
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+            .sortedWith(String.CASE_INSENSITIVE_ORDER)
+            .toList()
+        listOf(ALL_CONTRACTORS_LABEL) + contractors
+    }
+
+    LaunchedEffect(contractorOptions) {
+        if (selectedContractor != ALL_CONTRACTORS_LABEL &&
+            contractorOptions.none { it.equals(selectedContractor, ignoreCase = true) }
+        ) {
+            selectedContractor = ALL_CONTRACTORS_LABEL
+        }
+    }
+
+    val selectedContractorFilter = selectedContractor.takeUnless { it == ALL_CONTRACTORS_LABEL }
+    val filteredMaterialRows = remember(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.materialRowsRaw, selectedContractorFilter) {
+        buildMaterialReportRows(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.materialRowsRaw, selectedContractorFilter)
+    }
+    val sortedMaterialRows = remember(filteredMaterialRows, sortBy, isAscending) {
+        val nonTotalRows = filteredMaterialRows.filter { !it.isTotal }
+        val totalRow = filteredMaterialRows.find { it.isTotal }
         val sorted = when (sortBy) {
             SortKey.NONE -> nonTotalRows
             SortKey.STT -> nonTotalRows
@@ -107,6 +134,7 @@ fun ReportingScreen(
     }
     val matchedPhotos = remember(photos) { photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
     val unmatchedPhotos = remember(photos) { photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
+    val routeCodes = remember(reportSnapshot.routes) { reportSnapshot.routes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet() }
 
     fun toggleSort(key: SortKey) {
         if (sortBy == key) {
@@ -145,7 +173,7 @@ fun ReportingScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // -- Export buttons � always visible at top ---------------------
+            // -- Export buttons ï¿½ always visible at top ---------------------
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(modifier = Modifier.weight(1.5f)) {
@@ -323,7 +351,7 @@ fun ReportingScreen(
                     grouped.forEach { (nodeCode, nodePhotos) ->
                         item {
                             Text(
-                                "Tổ $nodeCode (${nodePhotos.size} ảnh, khớp ${nodePhotos.count { it.matchedNodeCode != null || it.tagCodesCsv.isNotBlank() }})",
+                                "${if (routeCodes.contains(nodeCode)) "Tuyến" else "Tổ"} $nodeCode (${nodePhotos.size} ảnh, khớp ${nodePhotos.count { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }})",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -364,7 +392,7 @@ fun ReportingScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        "Tổ $nodeCode",
+                                        "${if (routeCodes.contains(nodeCode)) "Tuyến" else "Tổ"} $nodeCode",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -383,19 +411,54 @@ fun ReportingScreen(
                 }
             }
 
-            // -- Material table --------------------------------------------
+                        // -- Material table --------------------------------------------
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        "Bảng tổng hợp khối lượng thi công",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Bảng tổng hợp khối lượng thi công",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Box {
+                            OutlinedButton(
+                                onClick = { showContractorMenu = true },
+                                enabled = contractorOptions.size > 1,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = selectedContractor,
+                                    maxLines = 1
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Outlined.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = showContractorMenu,
+                                onDismissRequest = { showContractorMenu = false }
+                            ) {
+                                contractorOptions.forEach { contractor ->
+                                    DropdownMenuItem(
+                                        text = { Text(contractor) },
+                                        onClick = {
+                                            selectedContractor = contractor
+                                            showContractorMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (sortedMaterialRows.isEmpty()) {
                         Text("Chưa có dữ liệu khối lượng thi công.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
@@ -420,15 +483,13 @@ fun ReportingScreen(
             selectedExportFormat = selectedExportFormat,
             isExporting = isExporting,
             onUpdatePhotoOffset = viewModel::updatePhotoOffset,
-            projectNodes = projectNodes,
-            projectRoutes = projectRoutes,
             onConfirmExport = { finalFormat ->
-                if (finalFormat == "PDF") viewModel.exportPdf()
-                else viewModel.exportWord()
+                if (finalFormat == "PDF") viewModel.exportPdf(selectedContractorFilter)
+                else viewModel.exportWord(selectedContractorFilter)
                 showPreviewDialog = false
             },
             photos = photos,
-            materialRows = materialRows,
+            materialRows = filteredMaterialRows,
             aiDraft = aiDraft
         )
 
@@ -538,3 +599,8 @@ fun ReportingScreen(
         }
     }
 }
+
+
+
+
+

@@ -205,7 +205,7 @@ class GemmaLiteRtChatService @Inject constructor(
         }
         throw DiagnosticFailure(
             code = "INIT_FAILED",
-            userMessage = "Khong the khoi tao Gemma LiteRT tren thiet bi nay. ${failures.joinToString(" | ")}"
+            userMessage = "Không thể khởi tạo Gemma LiteRT trên thiết bị này. ${failures.joinToString(" | ")}"
         )
     }
 

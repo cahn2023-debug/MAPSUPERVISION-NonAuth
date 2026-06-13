@@ -2,6 +2,7 @@ package com.mapsupervision.data.repository
 
 import com.mapsupervision.core.error.DatabaseException
 import com.mapsupervision.core.result.AppResult
+import com.mapsupervision.data.db.MapSupervisionDatabase
 import com.mapsupervision.data.db.ProjectScopedDatabaseProvider
 import com.mapsupervision.data.db.dao.GisNodeDao
 import com.mapsupervision.data.db.dao.GisRouteDao
@@ -9,8 +10,10 @@ import com.mapsupervision.data.db.entity.GisNodeEntity
 import com.mapsupervision.data.db.entity.GisRouteEntity
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
+import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.GisRepository
 import javax.inject.Inject
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -20,9 +23,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 class GisRepositoryImpl @Inject constructor(
-    private val nodeDao: GisNodeDao,
-    private val routeDao: GisRouteDao,
-    private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider
+    private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider,
+    private val sharedDatabase: MapSupervisionDatabase,
+    private val activeProjectRepository: ActiveProjectRepository
 ) : GisRepository {
     override suspend fun upsertNode(node: GisNode): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
         nodeDao(node.projectId).upsert(node.toEntity())
@@ -51,6 +54,27 @@ class GisRepositoryImpl @Inject constructor(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to bulk upsert routes", it)) }
     ) }
+
+    override suspend fun replaceImportedGeometry(importedFileId: String, nodes: List<GisNode>, routes: List<GisRoute>): AppResult<Unit> =
+        withContext(Dispatchers.IO) { runCatching {
+            val projectId = nodes.firstOrNull()?.projectId
+                ?: routes.firstOrNull()?.projectId
+                ?: (activeProjectRepository.getActive() as? AppResult.Success)?.data
+                ?: throw IllegalStateException("Active project is required to replace imported geometry")
+
+            val normalizedNodes = nodes.map { it.copy(projectId = projectId, importedFileId = importedFileId) }
+            val normalizedRoutes = routes.map { it.copy(projectId = projectId, importedFileId = importedFileId) }
+            val db = databaseFor(projectId)
+            db.withTransaction {
+                db.gisNodeDao().deleteByImportedFileId(projectId, importedFileId)
+                db.gisRouteDao().deleteByImportedFileId(projectId, importedFileId)
+                if (normalizedNodes.isNotEmpty()) db.gisNodeDao().upsertAll(normalizedNodes.map { it.toEntity() })
+                if (normalizedRoutes.isNotEmpty()) db.gisRouteDao().upsertAll(normalizedRoutes.map { it.toEntity() })
+            }
+        }.fold(
+            onSuccess = { AppResult.Success(Unit) },
+            onFailure = { AppResult.Error(DatabaseException("Failed to replace imported geometry", it)) }
+        ) }
 
     override suspend fun searchNodes(projectId: String, query: String): AppResult<List<GisNode>> = withContext(Dispatchers.IO) { runCatching {
         val dao = nodeDao(projectId)
@@ -91,13 +115,16 @@ class GisRepositoryImpl @Inject constructor(
     }
 
     private fun GisNode.toEntity() = GisNodeEntity(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, materialSummary, importedFileId)
-    private fun GisRoute.toEntity() = GisRouteEntity(id, projectId, code, contractor, startNodeCode, endNodeCode, importedFileId)
+    private fun GisRoute.toEntity() = GisRouteEntity(id, projectId, code, contractor, startNodeCode, endNodeCode, points, importedFileId, designLength)
     private fun GisNodeEntity.toDomain() = GisNode(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, materialSummary, importedFileId)
-    private fun GisRouteEntity.toDomain() = GisRoute(id, projectId, code, contractor, startNodeCode, endNodeCode, importedFileId)
+    private fun GisRouteEntity.toDomain() = GisRoute(id, projectId, code, contractor, startNodeCode, endNodeCode, points, importedFileId, designLength)
+
+    private suspend fun databaseFor(projectId: String): MapSupervisionDatabase =
+        projectScopedDatabaseProvider.databaseFor(projectId) ?: sharedDatabase
 
     private suspend fun nodeDao(projectId: String): GisNodeDao =
-        projectScopedDatabaseProvider.databaseFor(projectId)?.gisNodeDao() ?: nodeDao
+        databaseFor(projectId).gisNodeDao()
 
     private suspend fun routeDao(projectId: String): GisRouteDao =
-        projectScopedDatabaseProvider.databaseFor(projectId)?.gisRouteDao() ?: routeDao
+        databaseFor(projectId).gisRouteDao()
 }

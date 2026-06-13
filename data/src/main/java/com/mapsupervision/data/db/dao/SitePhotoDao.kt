@@ -19,7 +19,7 @@ interface SitePhotoDao {
     fun observeByProject(projectId: String): Flow<List<SitePhotoEntity>>
 
     @Query(
-        "SELECT * FROM site_photos WHERE projectId = :projectId AND objectCode = :objectCode " +
+        "SELECT * FROM site_photos WHERE projectId = :projectId AND (objectCode = :objectCode OR matchedNodeCode = :objectCode OR matchedRouteCode = :objectCode) " +
             "ORDER BY capturedAtEpochMs DESC"
     )
     suspend fun byObjectCode(projectId: String, objectCode: String): List<SitePhotoEntity>

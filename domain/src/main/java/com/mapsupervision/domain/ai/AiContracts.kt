@@ -185,6 +185,7 @@ data class DailyLogDraft(
     val weather: String = "",
     val temperature: Double = 0.0,
     val nodeCode: String? = null,
+    val routeCode: String? = null,
     val dateEpochDay: Long = 0L,
     val volume: Double = 0.0,
     val unit: String = "",

@@ -8,15 +8,17 @@ object ChatActionParser {
         message: String,
         contextSummary: String = "",
         selectedNodeCode: String? = null,
-        normalizationContext: String = ""
+        normalizationContext: String = "",
+        selectedRouteCode: String? = null
     ): ChatAssistantResult {
-        return parseInternal(message, contextSummary, selectedNodeCode, normalizationContext)
+        return parseInternal(message, contextSummary, selectedNodeCode, selectedRouteCode, normalizationContext)
     }
 
     fun parseLlmResponse(
         llmResponse: String,
         selectedNodeCode: String? = null,
-        normalizationContext: String = ""
+        normalizationContext: String = "",
+        selectedRouteCode: String? = null
     ): ChatAssistantResult {
         val actionRegex = Regex("""\[ACTION:\s*([A-Z_]+)\s*(.*?)\]""", RegexOption.IGNORE_CASE)
         val match = actionRegex.find(llmResponse) ?: return ChatAssistantResult(
@@ -35,6 +37,7 @@ object ChatActionParser {
             message = llmResponse,
             cleanAnswer = cleanAnswer.ifBlank { "Đã xử lý yêu cầu." },
             selectedNodeCode = selectedNodeCode,
+            selectedRouteCode = selectedRouteCode,
             normalizationContext = normalizationContext
         )
     }
@@ -43,6 +46,7 @@ object ChatActionParser {
         message: String,
         contextSummary: String,
         selectedNodeCode: String?,
+        selectedRouteCode: String?,
         normalizationContext: String
     ): ChatAssistantResult {
         val normalized = normalizeText(message)
@@ -101,6 +105,7 @@ object ChatActionParser {
             message = message,
             cleanAnswer = "Mình đã chuẩn bị sẵn phiếu xử lý.",
             selectedNodeCode = selectedNodeCode,
+            selectedRouteCode = selectedRouteCode,
             normalizationContext = normalizationContext
         )
     }
@@ -111,6 +116,7 @@ object ChatActionParser {
         message: String,
         cleanAnswer: String,
         selectedNodeCode: String?,
+        selectedRouteCode: String?,
         normalizationContext: String
     ): ChatAssistantResult {
         val resolvedRefs = NormalizationRefsParser.parse(normalizationContext)
@@ -136,7 +142,7 @@ object ChatActionParser {
 
         val (routeCode, routeConf) = ChatDictionaryResolver.resolveRoute(
             message = message,
-            selectedRouteCode = params["routeCode"] ?: resolvedRefs.routeCode,
+            selectedRouteCode = params["routeCode"] ?: selectedRouteCode ?: resolvedRefs.routeCode,
             refs = resolvedRefs
         )
 
@@ -210,11 +216,13 @@ object ChatActionParser {
                 val weather = params["weather"]?.takeIf { it.isNotBlank() } ?: ChatDictionaryResolver.resolveWeather(message)
                 val temp = params["temperature"]?.toDoubleOrNull() ?: 0.0
                 val vol = params["volume"]?.toDoubleOrNull() ?: params["actualQty"]?.toDoubleOrNull()
+                val explicitDate = params["date"] ?: params["logDate"]
+                val dateEpochDay = DailyLogDateResolver.resolveEpochDay(message = message, explicitDate = explicitDate)
 
-                if (nodeCode != null && workItem.isNotBlank()) {
+                if ((nodeCode != null || routeCode != null) && workItem.isNotBlank()) {
                     isDataComplete = true
                 } else {
-                    if (nodeCode == null) missingFields.add("nodeCode")
+                    if (nodeCode == null && routeCode == null) missingFields.add("nodeCode")
                     if (workItem.isBlank()) missingFields.add("workItem")
                 }
 
@@ -225,7 +233,8 @@ object ChatActionParser {
                     weather = weather,
                     temperature = temp,
                     nodeCode = nodeCode,
-                    dateEpochDay = System.currentTimeMillis() / (24 * 60 * 60 * 1000L),
+                    routeCode = routeCode,
+                    dateEpochDay = dateEpochDay,
                     volume = vol ?: 0.0,
                     unit = categoryUnit.orEmpty(),
                     categoryName = categoryName.orEmpty()
@@ -233,7 +242,7 @@ object ChatActionParser {
                 draftJson = buildDailyLogJson(draft)
                 pendingAction = ChatPendingAction(
                     type = intent,
-                    title = "Thêm nhật ký thi công ${draft.nodeCode ?: ""}",
+                    title = "Thêm nhật ký thi công ${draft.nodeCode ?: draft.routeCode ?: ""}",
                     draftJson = draftJson,
                     dailyLog = draft
                 )
@@ -496,6 +505,9 @@ object ChatActionParser {
             append("\"temperature\":").append(draft.temperature).append(",")
             append("\"nodeCode\":")
             if (draft.nodeCode == null) append("null") else append("\"").append(escapeJson(draft.nodeCode)).append("\"")
+            append(",")
+            append("\"routeCode\":")
+            if (draft.routeCode == null) append("null") else append("\"").append(escapeJson(draft.routeCode)).append("\"")
             append(",")
             append("\"dateEpochDay\":").append(draft.dateEpochDay).append(",")
             append("\"volume\":").append(draft.volume).append(",")

@@ -1,6 +1,7 @@
 package com.mapsupervision.domain.ai
 
 import com.mapsupervision.domain.model.TaskStatus
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -49,6 +50,35 @@ class ChatActionParserTest {
         assertEquals(ChatActionType.ADD_DAILY_LOG, result.pendingAction?.type)
         assertEquals("B", result.pendingAction?.dailyLog?.nodeCode)
         assertEquals(12, result.pendingAction?.dailyLog?.manpower)
+    }
+
+    @Test
+    fun `parses daily log with route and explicit date`() {
+        val response = buildString {
+            append("Nhật ký đã sẵn sàng.\n")
+            append("[ACTION: ADD_DAILY_LOG workItem=\"thi cong\" manpower=8 note=\"khoi luong 12m3\" weather=\"Nang\" ")
+            append("temperature=32 nodeCode=\"N01\" routeCode=\"R01\" date=\"10/06/2026\" volume=12 unit=\"m3\" categoryName=\"Be tong\"]")
+        }
+
+        val result = ChatActionParser.parseLlmResponse(response)
+
+        assertNotNull(result.pendingAction)
+        assertEquals(ChatActionType.ADD_DAILY_LOG, result.pendingAction?.type)
+        assertEquals("N01", result.pendingAction?.dailyLog?.nodeCode)
+        assertEquals("R01", result.pendingAction?.dailyLog?.routeCode)
+        assertEquals(LocalDate.of(2026, 6, 10).toEpochDay(), result.pendingAction?.dailyLog?.dateEpochDay)
+        assertEquals(12.0, result.pendingAction?.dailyLog?.volume ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun `parses route only daily log draft as pending action`() {
+        val response = "[ACTION: ADD_DAILY_LOG workItem=\"bao tri\" manpower=4 note=\"kiem tra tuyen\" weather=\"Mua\" temperature=28 routeCode=\"RT-02\" date=\"2026-06-11\" volume=0 unit=\"\" categoryName=\"\"]"
+        val result = ChatActionParser.parseLlmResponse(response)
+
+        assertNotNull(result.pendingAction)
+        assertEquals(ChatActionType.ADD_DAILY_LOG, result.pendingAction?.type)
+        assertNull(result.pendingAction?.dailyLog?.nodeCode)
+        assertEquals("RT-02", result.pendingAction?.dailyLog?.routeCode)
     }
 
     @Test
@@ -146,22 +176,25 @@ class ChatActionParserTest {
     @Test
     fun `canonicalizes daily log category and unit from normalization context`() {
         val params = mapOf(
-            "workItem" to "Nhật ký thi công",
+            "workItem" to "Daily log",
             "manpower" to "3",
-            "note" to "Đổ bê tông dầm",
-            "categoryName" to "hạng mục bê tông"
+            "note" to "Concrete work",
+            "categoryName" to "be tong",
+            "routeCode" to "R01"
         )
 
         val draft = DailyLogCanonicalizer.canonicalize(
             params = params,
-            message = "hạng mục bê tông",
+            message = "be tong",
             normalizationContext = "work_categories=Be tong:m3,Cap:m,San lap:m2",
-            selectedNodeCode = "N01"
+            selectedNodeCode = "N01",
+            selectedRouteCode = "R01"
         )
 
         assertEquals("Be tong", draft.categoryName)
         assertEquals("m3", draft.unit)
         assertEquals("N01", draft.nodeCode)
+        assertEquals("R01", draft.routeCode)
         assertEquals(3, draft.manpower)
     }
 

@@ -12,6 +12,7 @@ import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.mapsupervision.core.logging.AppLogger
+import com.mapsupervision.gis.maplibre.MapBridgeInstaller
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import timber.log.Timber
@@ -33,9 +34,7 @@ class MapSupervisionApplication : Application(), ImageLoaderFactory, Configurati
 
     private fun installOptionalMapBridge() {
         runCatching {
-            val clazz = Class.forName("com.mapsupervision.gis.maplibre.MapBridgeInstaller")
-            val method = clazz.getMethod("install", android.content.Context::class.java)
-            method.invoke(null, this)
+            MapBridgeInstaller.install(this)
             AppLogger.d("MapBridge installed successfully")
         }.onFailure { e ->
             AppLogger.e(e, "Failed to install MapBridge")
@@ -78,7 +77,6 @@ class MapSupervisionApplication : Application(), ImageLoaderFactory, Configurati
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             runCatching {
                 coil.Coil.imageLoader(this).memoryCache?.clear()
-                System.gc()
             }
         }
     }

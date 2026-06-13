@@ -13,12 +13,127 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 import org.xmlpull.v1.XmlPullParserFactory
+
 enum class KmlGeometryKind { POINT, LINE }
 
 data class KmlGeometryBlock(
     val kind: KmlGeometryKind,
     val points: List<Pair<Double, Double>>
 )
+
+data class CollectedLineSegment(
+    val routeDisplayName: String,
+    val contractor: String,
+    val mapNumber: String,
+    val materialSummary: String,
+    val description: String,
+    val points: List<Pair<Double, Double>>,
+    val extendedData: Map<String, String>,
+    val customFields: Map<String, String>
+)
+
+fun mergeAndProcessLines(
+    lines: List<CollectedLineSegment>,
+    projectId: String,
+    mapping: NonExcelImportMapping?,
+    nodes: MutableList<GisNode>,
+    routes: MutableList<GisRoute>,
+    base: String
+): Double {
+    var totalRouteLengthMeters = 0.0
+    val segmentRegex = Regex("^(.*)_S(\\d+)$", RegexOption.IGNORE_CASE)
+
+    // Group by base route code
+    val grouped = lines.groupBy { line ->
+        val match = segmentRegex.find(line.routeDisplayName)
+        if (match != null) match.groupValues[1].trim() else line.routeDisplayName.trim()
+    }
+
+    grouped.forEach { (baseRouteCode, segments) ->
+        // Sort by segment number
+        val sortedSegments = segments.sortedBy { line ->
+            val match = segmentRegex.find(line.routeDisplayName)
+            if (match != null) match.groupValues[2].toIntOrNull() ?: 1 else 1
+        }
+
+        val firstLine = sortedSegments.first()
+        val lastLine = sortedSegments.last()
+
+        val subGroups = mutableListOf<MutableList<CollectedLineSegment>>()
+        for (seg in sortedSegments) {
+            if (subGroups.isEmpty()) {
+                subGroups.add(mutableListOf(seg))
+            } else {
+                val lastGroup = subGroups.last()
+                val lastSeg = lastGroup.last()
+                if (haversineMeters(lastSeg.points.last(), seg.points.first()) < 1.0) {
+                    lastGroup.add(seg)
+                } else {
+                    subGroups.add(mutableListOf(seg))
+                }
+            }
+        }
+
+        subGroups.forEachIndexed { subGroupIndex, subGroup ->
+            val firstLine = subGroup.first()
+            val mergedPoints = mutableListOf<Pair<Double, Double>>()
+            for (seg in subGroup) {
+                val pts = seg.points
+                if (mergedPoints.isEmpty()) {
+                    mergedPoints.addAll(pts)
+                } else {
+                    val last = mergedPoints.last()
+                    val first = pts.first()
+                    if (haversineMeters(last, first) < 1.0) {
+                        mergedPoints.addAll(pts.drop(1))
+                    } else {
+                        mergedPoints.addAll(pts)
+                    }
+                }
+            }
+
+            if (mergedPoints.size > 1) {
+                var routeLength = 0.0
+                for (pointIndex in 1 until mergedPoints.size) {
+                    val dist = haversineMeters(mergedPoints[pointIndex], mergedPoints[pointIndex - 1])
+                    routeLength += dist
+                    totalRouteLengthMeters += dist
+                }
+
+                val rawRouteLength = if (mapping != null && mapping.routeLengthField?.isNotBlank() == true) {
+                    val field = mapping.routeLengthField
+                    val cleanField = field.removePrefix("properties.")
+                    firstLine.extendedData[field]?.trim()?.ifBlank { null }
+                        ?: firstLine.extendedData[cleanField]?.trim()?.ifBlank { null }
+                } else null
+
+                val designLength = if (!rawRouteLength.isNullOrBlank()) {
+                    rawRouteLength
+                } else {
+                    "%.2f".format(Locale.US, routeLength) + " m"
+                }
+
+                val routeCode = if (subGroups.size == 1) {
+                    baseRouteCode.uppercase()
+                } else {
+                    "${baseRouteCode}_P${subGroupIndex + 1}".uppercase()
+                }
+
+                routes += GisRoute(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    code = routeCode,
+                    contractor = firstLine.contractor,
+                    startNodeCode = "",
+                    endNodeCode = "",
+                    points = mergedPoints,
+                    designLength = designLength
+                )
+            }
+        }
+    }
+    return totalRouteLengthMeters
+}
 
 internal fun parseKmlContent(
     stream: InputStream,
@@ -31,8 +146,7 @@ internal fun parseKmlContent(
     val coordinateNodes = findElementsByLocalTagName(doc.documentElement, "coordinates")
     val nodes = ArrayList<GisNode>(placemarkNodes.size * 2)
     val routes = ArrayList<GisRoute>(placemarkNodes.size)
-    var totalRouteLengthMeters = 0.0
-    var geometryBlockCount = 0
+    val localLineSegments = ArrayList<CollectedLineSegment>()
     val base = sourceName.substringBeforeLast(".").take(12).uppercase(Locale.US)
 
     placemarkNodes.forEachIndexed { index, placemark ->
@@ -43,14 +157,11 @@ internal fun parseKmlContent(
         val extendedData = parseExtendedData(placemark)
         val geometryBlocks = collectPlacemarkGeometries(placemark)
         if (geometryBlocks.isEmpty()) return@forEachIndexed
-        geometryBlockCount += geometryBlocks.size
 
         val placemarkOrdinal = index + 1
         val routeDisplayName = name.ifBlank { "${base}_LINE_$placemarkOrdinal" }
         fun nodeCode(blockIndex: Int, pointIndex: Int): String =
-            "${routeDisplayName}#pm${placemarkOrdinal}_b${blockIndex + 1}_p${pointIndex + 1}"
-        fun routeCode(blockIndex: Int, segmentIndex: Int): String =
-            "${routeDisplayName}#pm${placemarkOrdinal}_b${blockIndex + 1}_s${segmentIndex + 1}"
+            "${routeDisplayName}#pm${placemarkOrdinal}_b${blockIndex + 1}_p${pointIndex + 1}".uppercase()
 
         // Find which keys are mapped to Excel fields
         val mappedKeys = mutableSetOf<String>()
@@ -97,8 +208,8 @@ internal fun parseKmlContent(
             name
         }
 
-        fun createNode(code: String, point: Pair<Double, Double>, isRouteVertex: Boolean = false) {
-            val extractedCode = (if (mapping != null && !isRouteVertex) {
+        fun createNode(code: String, point: Pair<Double, Double>) {
+            val extractedCode = (if (mapping != null) {
                 when (mapping.positionField) {
                     "Tên đối tượng (Placemark)" -> name.ifBlank { code }
                     "Tự sinh mã" -> code
@@ -157,38 +268,32 @@ internal fun parseKmlContent(
                     createNode(nodeCode(blockIndex, 0), block.points.first())
                 }
                 KmlGeometryKind.LINE -> {
-                    if (block.points.isEmpty()) return@forEachIndexed
-                    block.points.forEachIndexed { pointIndex, point ->
-                        createNode(nodeCode(blockIndex, pointIndex), point, isRouteVertex = true)
-                    }
-                    if (block.points.size > 1) {
-                        for (pointIndex in 1 until block.points.size) {
-                            totalRouteLengthMeters += haversineMeters(
-                                point = block.points[pointIndex],
-                                previous = block.points[pointIndex - 1]
-                            )
-                            val startCode = nodeCode(blockIndex, pointIndex - 1)
-                            val endCode = nodeCode(blockIndex, pointIndex)
-                            routes += GisRoute(
-                                id = UUID.randomUUID().toString(),
-                                projectId = projectId,
-                                code = routeCode(blockIndex, pointIndex - 1),
+                    if (block.points.isNotEmpty()) {
+                        localLineSegments.add(
+                            CollectedLineSegment(
+                                routeDisplayName = routeDisplayName,
                                 contractor = extractedContractor,
-                                startNodeCode = startCode,
-                                endNodeCode = endCode
+                                mapNumber = extractedMapNumber,
+                                materialSummary = "",
+                                description = description,
+                                points = block.points,
+                                extendedData = extendedData,
+                                customFields = customFields
                             )
-                        }
+                        )
                     }
                 }
             }
         }
     }
 
+    val totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, projectId, mapping, nodes, routes, base)
+
     val segmentCount = routes.size
     val summary = if (nodes.isEmpty() && routes.isEmpty()) {
         "KML parsed: ${placemarkNodes.size} placemarks, ${coordinateNodes.size} coordinate blocks; valid file but no supported geometry found"
     } else {
-        "KML parsed: ${placemarkNodes.size} placemarks, $geometryBlockCount geometry blocks, segments=$segmentCount, ${nodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
+        "KML parsed: ${placemarkNodes.size} placemarks, segments=$segmentCount, ${nodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
     }
     return ParsedImportResult(summary = summary, nodes = nodes, routes = routes, routeLengthMeters = totalRouteLengthMeters)
 }
@@ -227,7 +332,7 @@ internal fun parseKmzContent(
 
         for (entry in kmlEntries) {
             val entrySourceName = "${sourceName.substringBeforeLast('.')}/${entry.name}"
-            val parsed = zip.getInputStream(entry).use { parseKmlContent(it, entrySourceName, projectId, mapping) }
+            val parsed = zip.getInputStream(entry).use { parseKmlContentStreaming(it, entrySourceName, projectId, mapping) }
             allNodes += parsed.nodes
             allRoutes += parsed.routes
             totalRouteLengthMeters += parsed.routeLengthMeters
@@ -326,7 +431,6 @@ fun stripKmlHtml(text: String): String =
 fun parseKmlCoordinates(text: String): List<Pair<Double, Double>> {
     if (text.isBlank()) return emptyList()
     val result = ArrayList<Pair<Double, Double>>(8)
-    // Some exporters use semicolons between coordinate tuples instead of whitespace.
     val normalized = text.trim().replace(';', ' ')
     val tokens = normalized.split(Regex("\\s+"))
     for (token in tokens) {
@@ -342,10 +446,7 @@ fun parseKmlCoordinates(text: String): List<Pair<Double, Double>> {
 }
 
 fun parseKmlCoordinatePair(p1: Double, p2: Double): Pair<Double, Double>? {
-    // KML standard specifies: longitude (p1), latitude (p2).
-    // We return Pair(latitude, longitude) -> p2 to p1.
     if (p2 in -90.0..90.0 && p1 in -180.0..180.0) return p2 to p1
-    // Fallback if the coordinates order is reversed:
     if (p1 in -90.0..90.0 && p2 in -180.0..180.0) return p1 to p2
     return null
 }
@@ -381,8 +482,18 @@ internal fun parseKmlContentStreaming(
     projectId: String = "",
     mapping: NonExcelImportMapping? = null
 ): ParsedImportResult {
+    val useStreaming = try {
+        xmlPullParserFactory != null
+    } catch (e: Throwable) {
+        false
+    }
+    if (!useStreaming) {
+        return parseKmlContent(stream, sourceName, projectId, mapping)
+    }
+
     val nodes = ArrayList<GisNode>(128)
     val routes = ArrayList<GisRoute>(128)
+    val localLineSegments = ArrayList<CollectedLineSegment>()
     var totalRouteLengthMeters = 0.0
     var geometryBlockCount = 0
     var placemarkCount = 0
@@ -429,22 +540,19 @@ internal fun parseKmlContentStreaming(
             placemark.name
         } else {
             when (mapping?.mapNumberField) {
-                "MÃ£ tá»± sinh tá»« Ä‘á»‘i tÆ°á»£ng" -> placemark.name
+                "Mã tự sinh từ đối tượng" -> placemark.name
                 else -> placemark.extendedData[mapping?.mapNumberField].orEmpty()
             }
         }
 
         fun nodeCode(blockIndex: Int, pointIndex: Int): String =
-            "${routeDisplayName}#pm${placemarkCount}_b${blockIndex + 1}_p${pointIndex + 1}"
-
-        fun routeCode(blockIndex: Int, segmentIndex: Int): String =
-            "${routeDisplayName}#pm${placemarkCount}_b${blockIndex + 1}_s${segmentIndex + 1}"
+            "${routeDisplayName}#pm${placemarkCount}_b${blockIndex + 1}_p${pointIndex + 1}".uppercase()
 
         fun extractedCode(defaultCode: String): String =
             (if (mapping != null) {
                 when (mapping.positionField) {
-                    "TÃªn Ä‘á»‘i tÆ°á»£ng (Placemark)" -> placemark.name.ifBlank { defaultCode }
-                    "Tá»± sinh mÃ£" -> defaultCode
+                    "Tên đối tượng (Placemark)" -> placemark.name.ifBlank { defaultCode }
+                    "Tự sinh mã" -> defaultCode
                     else -> placemark.extendedData[mapping.positionField]?.ifBlank { placemark.name } ?: placemark.name.ifBlank { defaultCode }
                 }
             } else {
@@ -458,7 +566,7 @@ internal fun parseKmlContentStreaming(
                     val value = placemark.extendedData[itemKey]?.trim()
                     if (!value.isNullOrBlank()) {
                         if (!hasItems) {
-                            append("Váº­t tÆ°:\n")
+                            append("Vật tư:\n")
                             hasItems = true
                         }
                         append("  ${itemKey.trim()}: $value\n")
@@ -494,28 +602,18 @@ internal fun parseKmlContentStreaming(
                     )
                 }
                 KmlGeometryKind.LINE -> {
-                    if (block.points.isEmpty()) return@forEachIndexed
-                    block.points.forEachIndexed { pointIndex, point ->
-                        nodes += GisNode(
-                            id = UUID.randomUUID().toString(),
-                            projectId = projectId,
-                            code = nodeCode(blockIndex, pointIndex),
-                            contractor = extractedContractor,
-                            latitude = point.first,
-                            longitude = point.second,
-                            mapNumberLabel = extractedMapNumber,
-                            materialSummary = materialSummary
-                        )
-                    }
-                    for (pointIndex in 1 until block.points.size) {
-                        totalRouteLengthMeters += haversineMeters(block.points[pointIndex], block.points[pointIndex - 1])
-                        routes += GisRoute(
-                            id = UUID.randomUUID().toString(),
-                            projectId = projectId,
-                            code = routeCode(blockIndex, pointIndex - 1),
-                            contractor = extractedContractor,
-                            startNodeCode = nodeCode(blockIndex, pointIndex - 1),
-                            endNodeCode = nodeCode(blockIndex, pointIndex)
+                    if (block.points.isNotEmpty()) {
+                        localLineSegments.add(
+                            CollectedLineSegment(
+                                routeDisplayName = routeDisplayName,
+                                contractor = extractedContractor,
+                                mapNumber = extractedMapNumber,
+                                materialSummary = "",
+                                description = placemark.description,
+                                points = block.points,
+                                extendedData = placemark.extendedData,
+                                customFields = customFields
+                            )
                         )
                     }
                 }
@@ -575,6 +673,8 @@ internal fun parseKmlContentStreaming(
         }
         parser.next()
     }
+
+    totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, projectId, mapping, nodes, routes, base)
 
     val segmentCount = routes.size
     val summary = if (nodes.isEmpty() && routes.isEmpty()) {

@@ -18,4 +18,25 @@ class DbTypeConverters {
     @TypeConverter
     fun toPhotoLocationStatus(value: String?): PhotoLocationStatus =
         value?.let(PhotoLocationStatus::valueOf) ?: PhotoLocationStatus.MISSING
+
+    @TypeConverter
+    fun fromCoordinatesList(value: List<Pair<Double, Double>>?): String? {
+        if (value == null) return null
+        return value.joinToString(";") { "${it.first},${it.second}" }
+    }
+
+    @TypeConverter
+    fun toCoordinatesList(value: String?): List<Pair<Double, Double>> {
+        if (value.isNullOrBlank()) return emptyList()
+        return value.split(';').mapNotNull { segment ->
+            val parts = segment.split(',')
+            if (parts.size >= 2) {
+                val lat = parts[0].toDoubleOrNull()
+                val lon = parts[1].toDoubleOrNull()
+                if (lat != null && lon != null) {
+                    lat to lon
+                } else null
+            } else null
+        }
+    }
 }

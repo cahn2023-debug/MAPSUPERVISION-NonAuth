@@ -1,5 +1,6 @@
 package com.mapsupervision.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.mapsupervision.domain.model.ProjectStorageMode
@@ -11,8 +12,13 @@ data class ProjectEntity(
     val slug: String,
     val isArchived: Boolean,
     val createdAtEpochMs: Long,
+    @ColumnInfo(defaultValue = "3")
     val metadataVersion: Int = 3,
+    @ColumnInfo(defaultValue = "0")
     val updatedAtEpochMs: Long = createdAtEpochMs,
+    @ColumnInfo(defaultValue = "LEGACY_SHARED")
     val storageMode: ProjectStorageMode = ProjectStorageMode.LEGACY_SHARED,
-    val projectDbPath: String = ""
+    @ColumnInfo(defaultValue = "")
+    val projectDbPath: String = "",
+    val projectCode: String? = null
 )

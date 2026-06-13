@@ -1,5 +1,7 @@
 package com.mapsupervision.app.workspace
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mapsupervision.core.logging.AppLogger
@@ -48,6 +50,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class WorkspaceViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     internal val activeProjectRepository: ActiveProjectRepository,
     internal val importedFileRepository: ImportedFileRepository,
     internal val progressRepository: ProgressRepository,
@@ -89,6 +92,28 @@ class WorkspaceViewModel @Inject constructor(
     internal var cachedMaterialRowsRef: List<MaterialProgress> = emptyList()
     internal var cachedDailyLogsRef: List<DailyLog> = emptyList()
     private var lastAiOpsInput: AiOpsInput? = null
+
+    private val colorPrefs by lazy {
+        context.getSharedPreferences("contractor_colors", Context.MODE_PRIVATE)
+    }
+
+    internal fun saveContractorColor(projectId: String, contractor: String, hexColor: String) {
+        colorPrefs.edit().putString("${projectId}_$contractor", hexColor).apply()
+    }
+
+    internal fun loadContractorColors(projectId: String): Map<String, String> {
+        val all = colorPrefs.all as? Map<*, *> ?: return emptyMap()
+        val prefix = "${projectId}_"
+        return all.entries.mapNotNull { entry ->
+            val key = entry.key as? String ?: return@mapNotNull null
+            val value = entry.value as? String ?: return@mapNotNull null
+            if (key.startsWith(prefix)) {
+                key.substring(prefix.length) to value
+            } else {
+                null
+            }
+        }.toMap()
+    }
 
     init {
         observeWorkspace()
@@ -180,49 +205,75 @@ class WorkspaceViewModel @Inject constructor(
         }
     }
 
+    // Keep StateFlows for filtered nodes/routes to avoid filtering on every recomposition in the UI.
+    private val _filteredNodesForMap = MutableStateFlow<List<GisNode>>(emptyList())
+    val filteredNodesForMap: StateFlow<List<GisNode>> = _filteredNodesForMap.asStateFlow()
+
+    private val _filteredRoutesForMap = MutableStateFlow<List<GisRoute>>(emptyList())
+    val filteredRoutesForMap: StateFlow<List<GisRoute>> = _filteredRoutesForMap.asStateFlow()
+
+    internal fun updateFilteredMapData() {
+        val stateSnapshot = _state.value
+        val indexes = ensureIndexes(stateSnapshot)
+        viewModelScope.launch(Dispatchers.Default) {
+            val nodes = buildMapDesignNodes(stateSnapshot, indexes)
+            val routes = filterRoutes(stateSnapshot.designRoutes, stateSnapshot.mapUi, indexes, nodes)
+            _filteredNodesForMap.value = nodes
+            _filteredRoutesForMap.value = routes
+        }
+    }
+
     private fun applySnapshot(snapshot: WorkspaceSnapshot) {
-        val current = _state.value
-        val loadedMaterialProgress = snapshot.materialRows.associate { row ->
-            "${row.nodeCode}_${row.materialName}" to row.actualQty.toInt().toString()
+        viewModelScope.launch(Dispatchers.Default) {
+            val loadedMaterialProgress = snapshot.materialRows.associate { row ->
+                "${row.nodeCode}_${row.materialName}" to row.actualQty.toInt().toString()
+            }
+            val dashboard = buildDashboard(
+                snapshot.designNodes,
+                snapshot.designRoutes,
+                snapshot.constructionProgress,
+                snapshot.materialRows
+            )
+            val coordSummary = summarizeNodeCoordinates(snapshot.designNodes)
+            AppLogger.d("map.refresh nodes=${snapshot.designNodes.size} routes=${snapshot.designRoutes.size} project=${snapshot.projectId}")
+            AppLogger.d(
+                "map.refresh.coords project=${snapshot.projectId} nodesValid=${coordSummary.validCount} invalidNodes=${coordSummary.invalidCount} " +
+                    "latRange=${coordSummary.latRangeText} lonRange=${coordSummary.lonRangeText}"
+            )
+
+            val current = _state.value
+            val selectedNodeCode = current.mapUi.selectedNode?.code
+            val nextSelectedPhotos = if (selectedNodeCode != null && current.selectedNodePhotos.isNotEmpty()) {
+                snapshot.sitePhotos.filter { it.objectCode == selectedNodeCode }
+            } else {
+                current.selectedNodePhotos
+            }
+
+            val savedColors = loadContractorColors(snapshot.projectId)
+
+            val nextState = current.copy(
+                activeProjectId = snapshot.projectId,
+                importedFiles = snapshot.importedFiles,
+                designNodes = snapshot.designNodes,
+                designRoutes = snapshot.designRoutes,
+                constructionProgress = snapshot.constructionProgress,
+                dashboard = dashboard,
+                mapUi = keepMapSelection(current.mapUi, snapshot.designNodes, snapshot.designRoutes).copy(
+                    contractorColors = savedColors
+                ),
+                materialRows = snapshot.materialRows,
+                materialProgress = loadedMaterialProgress,
+                dailyLogs = snapshot.dailyLogs,
+                workCategories = snapshot.workCategories,
+                selectedNodePhotos = nextSelectedPhotos,
+                isRefreshing = false,
+                lastRefreshedAtEpochMs = System.currentTimeMillis()
+            )
+
+            _state.value = nextState
+            updateFilteredMapData()
+            requestAiOpsRefresh()
         }
-        val dashboard = buildDashboard(
-            snapshot.designNodes,
-            snapshot.designRoutes,
-            snapshot.constructionProgress,
-            snapshot.materialRows
-        )
-        val coordSummary = summarizeNodeCoordinates(snapshot.designNodes)
-        AppLogger.d("map.refresh nodes=${snapshot.designNodes.size} routes=${snapshot.designRoutes.size} project=${snapshot.projectId}")
-        AppLogger.d(
-            "map.refresh.coords project=${snapshot.projectId} nodesValid=${coordSummary.validCount} invalidNodes=${coordSummary.invalidCount} " +
-                "latRange=${coordSummary.latRangeText} lonRange=${coordSummary.lonRangeText}"
-        )
-
-        val selectedNodeCode = current.mapUi.selectedNode?.code
-        val nextSelectedPhotos = if (selectedNodeCode != null && current.selectedNodePhotos.isNotEmpty()) {
-            snapshot.sitePhotos.filter { it.objectCode == selectedNodeCode }
-        } else {
-            current.selectedNodePhotos
-        }
-
-        _state.value = current.copy(
-            activeProjectId = snapshot.projectId,
-            importedFiles = snapshot.importedFiles,
-            designNodes = snapshot.designNodes,
-            designRoutes = snapshot.designRoutes,
-            constructionProgress = snapshot.constructionProgress,
-            dashboard = dashboard,
-            mapUi = keepMapSelection(current.mapUi, snapshot.designNodes, snapshot.designRoutes),
-            materialRows = snapshot.materialRows,
-            materialProgress = loadedMaterialProgress,
-            dailyLogs = snapshot.dailyLogs,
-            workCategories = snapshot.workCategories,
-            selectedNodePhotos = nextSelectedPhotos,
-            isRefreshing = false,
-            lastRefreshedAtEpochMs = System.currentTimeMillis()
-        )
-
-        requestAiOpsRefresh()
     }
 
     private fun keepMapSelection(mapUi: MapUiState, nodes: List<GisNode>, routes: List<GisRoute>): MapUiState {
@@ -238,16 +289,18 @@ class WorkspaceViewModel @Inject constructor(
 
     private suspend fun runAiOpsRecommendations(state: WorkspaceState) {
         val dashboard = state.dashboard
-        val aiOps = runCatching {
-            aiOrchestrator.execute<com.mapsupervision.domain.ai.OpsRecommendationResult>(
-                OpsRecommendationPayload(
-                    totalNodes = dashboard.totalDesignNodes,
-                    delayedNodes = dashboard.delayedCount,
-                    completionPercent = dashboard.completionPercent,
-                    importWarnings = state.importUi.warnings.size
+        val aiOps = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            runCatching {
+                aiOrchestrator.execute<com.mapsupervision.domain.ai.OpsRecommendationResult>(
+                    OpsRecommendationPayload(
+                        totalNodes = dashboard.totalDesignNodes,
+                        delayedNodes = dashboard.delayedCount,
+                        completionPercent = dashboard.completionPercent,
+                        importWarnings = state.importUi.warnings.size
+                    )
                 )
-            )
-        }.getOrNull() ?: return
+            }.getOrNull()
+        } ?: return
 
         _state.value = _state.value.copy(
             mapUi = _state.value.mapUi.copy(
@@ -273,6 +326,7 @@ class WorkspaceViewModel @Inject constructor(
         lastAiOpsInput = nextInput
         aiOpsJob?.cancel()
         aiOpsJob = viewModelScope.launch(Dispatchers.Default) {
+            kotlinx.coroutines.delay(500)
             runAiOpsRecommendations(stateSnapshot)
             _state.value = _state.value.copy(isRefreshing = false)
         }
@@ -331,4 +385,23 @@ private fun summarizeNodeCoordinates(nodes: List<GisNode>): WorkspaceCoordinateS
         latRangeText = "%.5f..%.5f".format(validNodes.minOf { it.latitude }, validNodes.maxOf { it.latitude }),
         lonRangeText = "%.5f..%.5f".format(validNodes.minOf { it.longitude }, validNodes.maxOf { it.longitude })
     )
+}
+
+internal fun filterRoutes(
+    routes: List<GisRoute>,
+    mapUi: MapUiState,
+    indexes: WorkspaceIndexes,
+    liveNodes: List<GisNode>
+): List<GisRoute> {
+    val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeMapSearchText(mapUi.searchQuery)
+    val liveNodeCodesUpper = liveNodes.map { it.code.trim().uppercase() }.toSet()
+    return routes.filter { route ->
+        val byContractor = mapUi.filterContractor.isNullOrBlank() ||
+            route.contractor.equals(mapUi.filterContractor, ignoreCase = true)
+        val byQuery = mapUi.searchQuery.isBlank() ||
+            indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
+        val byLiveNodes = liveNodeCodesUpper.contains(route.startNodeCode.trim().uppercase()) ||
+            liveNodeCodesUpper.contains(route.endNodeCode.trim().uppercase())
+        byContractor && byQuery && byLiveNodes
+    }
 }

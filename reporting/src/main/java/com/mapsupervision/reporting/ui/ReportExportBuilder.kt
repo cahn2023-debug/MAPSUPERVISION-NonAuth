@@ -20,8 +20,24 @@ internal data class ReportExportContent(
 )
 
 internal fun buildReportExportContent(
+    snapshot: ReportingSnapshot,
+    filterContractor: String? = null,
+    activeDraft: ReportDraftResult
+): ReportExportContent = buildReportExportContent(
+    projectId = snapshot.projectId.orEmpty(),
+    filterContractor = filterContractor,
+    photos = snapshot.photos,
+    progress = snapshot.progress,
+    materialRowsRaw = snapshot.materialRowsRaw,
+    nodes = snapshot.nodes,
+    routes = snapshot.routes,
+    dailyLogs = snapshot.dailyLogs,
+    activeDraft = activeDraft
+)
+
+internal fun buildReportExportContent(
     projectId: String,
-    filterNodeCode: String?,
+    filterContractor: String? = null,
     photos: List<SitePhoto>,
     progress: List<NodeProgress>,
     materialRowsRaw: List<MaterialProgress>,
@@ -30,35 +46,18 @@ internal fun buildReportExportContent(
     dailyLogs: List<DailyLog>,
     activeDraft: ReportDraftResult
 ): ReportExportContent {
-    val filteredPhotos = if (filterNodeCode.isNullOrBlank()) photos else photos.filter { photo ->
-        photo.objectCode == filterNodeCode ||
-            photo.matchedNodeCode == filterNodeCode ||
-            photo.tagCodesCsv.split(',').map(String::trim).any { it == filterNodeCode }
-    }
-    val filteredProgress = if (filterNodeCode.isNullOrBlank()) progress else progress.filter { it.nodeCode == filterNodeCode }
-    val filteredMaterialRows = if (filterNodeCode.isNullOrBlank()) materialRowsRaw else materialRowsRaw.filter { it.nodeCode == filterNodeCode }
-    val filteredNodes = if (filterNodeCode.isNullOrBlank()) nodes else nodes.filter { it.code == filterNodeCode || it.id == filterNodeCode }
-    val filteredRoutes = if (filterNodeCode.isNullOrBlank()) routes else routes.filter { it.startNodeCode == filterNodeCode || it.endNodeCode == filterNodeCode }
-    val filteredLogs = if (filterNodeCode.isNullOrBlank()) dailyLogs else dailyLogs.filter { log ->
-        log.nodeCode == filterNodeCode || log.appliedNodeCodesCsv.split(',').map(String::trim).any { it == filterNodeCode }
-    }
-
-    val materialRows = buildMaterialReportRows(filteredNodes, filteredRoutes, filteredMaterialRows)
-    val dailyLogLines = buildDailyLogSummary(filteredLogs)
-    val delayed = filteredProgress.count { it.delayed }
-    val avg = if (filteredProgress.isEmpty()) 0f else filteredProgress.map { it.actual }.average().toFloat()
-    val targetId = if (filterNodeCode.isNullOrBlank()) projectId else "${projectId}_$filterNodeCode"
+    val materialRows = buildMaterialReportRows(nodes, routes, materialRowsRaw, filterContractor)
+    val dailyLogLines = buildDailyLogSummary(dailyLogs)
+    val delayed = progress.count { it.delayed }
+    val avg = if (progress.isEmpty()) 0f else progress.map { it.actual }.average().toFloat()
+    val targetId = projectId
 
     val lines = buildList {
-        if (!filterNodeCode.isNullOrBlank()) {
-            add("BÁO CÁO CHI TIẾT ĐIỂM GIÁM SÁT: $filterNodeCode")
-        }
-        add("Tổng số điểm giám sát: ${filteredProgress.size}")
-        if (filterNodeCode.isNullOrBlank()) {
-            add("Số điểm thi công chậm: $delayed")
-            add("Tiến độ thi công trung bình: ${"%.2f".format(avg)}%")
-        }
-        add("Tổng số ảnh thực địa chụp được: ${filteredPhotos.size}")
+        add("BÁO CÁO TỔNG HỢP DỰ ÁN")
+        add("Tổng số điểm giám sát: ${progress.size}")
+        add("Số điểm thi công chậm: $delayed")
+        add("Tiến độ thi công trung bình: ${"%.2f".format(avg)}%")
+        add("Tổng số ảnh thực địa chụp được: ${photos.size}")
         add("Tóm tắt AI: ${activeDraft.executiveSummary}")
         add("Đánh giá rủi ro AI: ${activeDraft.riskSection}")
         add("Hành động đề xuất AI: ${activeDraft.recommendedActions.joinToString("; ")}")
@@ -68,7 +67,7 @@ internal fun buildReportExportContent(
         targetId = targetId,
         lines = lines,
         materialRows = materialRows,
-        photos = filteredPhotos,
+        photos = photos,
         dailyLogLines = dailyLogLines
     )
 }
@@ -76,62 +75,88 @@ internal fun buildReportExportContent(
 internal fun buildMaterialReportRows(
     nodes: List<GisNode>,
     routes: List<GisRoute>,
-    rows: List<MaterialProgress>
+    rows: List<MaterialProgress>,
+    filterContractor: String? = null
 ): List<MaterialReportRow> {
-    val plannedMap = mutableMapOf<String, Float>()
-    val nodeCodesByMaterial = mutableMapOf<String, MutableSet<String>>()
-    val nodesById = nodes.associateBy { it.id }
-    val nodesByCode = nodes.associateBy { it.code }
-    nodes.forEach { node ->
-        parseMaterialSummary(node.materialSummary).forEach { (name, qty) ->
-            plannedMap[name] = (plannedMap[name] ?: 0f) + qty
-            val nodeCode = node.code.ifBlank { node.id }
-            if (nodeCode.isNotBlank()) {
-                nodeCodesByMaterial.getOrPut(name) { mutableSetOf() }.add(nodeCode)
-            }
-        }
+    val normalizedContractor = filterContractor?.trim()?.takeIf { it.isNotBlank() }
+    val filteredNodes = if (normalizedContractor == null) {
+        nodes
+    } else {
+        nodes.filter { it.contractor.trim().equals(normalizedContractor, ignoreCase = true) }
     }
+    val filteredRoutes = if (normalizedContractor == null) {
+        routes
+    } else {
+        routes.filter { it.contractor.trim().equals(normalizedContractor, ignoreCase = true) }
+    }
+    val nodesById = filteredNodes.associateBy { it.id }
+    val nodesByCode = filteredNodes.associateBy { it.code }
 
-    rows.forEach { row ->
-        val materialName = row.materialName.trim()
-        if (materialName.isNotBlank() && !materialName.equals("routeLength", ignoreCase = true)) {
-            val nodeCode = nodesById[row.nodeCode]?.code
+    data class MaterialAccumulator(
+        var plannedQty: Float = 0f,
+        var actualQty: Float = 0f,
+        val nodeCodes: MutableSet<String> = mutableSetOf()
+    )
+
+    val totalsByMaterial = mutableMapOf<String, MaterialAccumulator>()
+
+    filteredNodes.forEach { node ->
+        val nodeCode = node.code.ifBlank { node.id }.trim()
+        if (nodeCode.isBlank()) return@forEach
+
+        val parsedSummary = parseMaterialSummary(node.materialSummary)
+        val summaryTotals = parsedSummary.groupingBy { it.first.trim() }.fold(0f) { acc, value -> acc + value.second }
+        val summaryMaterialNames = summaryTotals.keys
+
+        val nodeRows = rows.filter { row ->
+            val rowMaterialName = row.materialName.trim()
+            if (rowMaterialName.isBlank() || rowMaterialName.equals("routeLength", ignoreCase = true)) {
+                return@filter false
+            }
+            val rowNodeCode = nodesById[row.nodeCode]?.code
                 ?: nodesByCode[row.nodeCode]?.code
-                ?: row.nodeCode
-            if (nodeCode.isNotBlank()) {
-                nodeCodesByMaterial.getOrPut(materialName) { mutableSetOf() }.add(nodeCode)
-            }
+                ?: row.nodeCode.trim()
+            rowNodeCode.isNotBlank() && rowNodeCode.equals(nodeCode, ignoreCase = true)
+        }
+
+        val rowTotalsByMaterial = nodeRows.groupBy { it.materialName.trim() }
+        val materialNames = (summaryMaterialNames + rowTotalsByMaterial.keys)
+            .filter { it.isNotBlank() && !it.equals("routeLength", ignoreCase = true) }
+            .distinct()
+
+        materialNames.forEach { materialName ->
+            val accumulator = totalsByMaterial.getOrPut(materialName) { MaterialAccumulator() }
+            val plannedQty = summaryTotals[materialName]
+                ?: rowTotalsByMaterial[materialName].orEmpty().sumOf { it.plannedQty.toDouble() }.toFloat()
+            val actualQty = rowTotalsByMaterial[materialName].orEmpty().sumOf { it.actualQty.toDouble() }.toFloat()
+            accumulator.plannedQty += plannedQty
+            accumulator.actualQty += actualQty
+            accumulator.nodeCodes.add(nodeCode)
         }
     }
 
-    val allMaterialNames = (plannedMap.keys + rows.map { it.materialName.trim() })
-        .filter { it.isNotBlank() && !it.equals("routeLength", ignoreCase = true) }
-        .distinct()
-        .sorted()
+    val allMaterialNames = totalsByMaterial.keys.sortedWith(String.CASE_INSENSITIVE_ORDER)
     if (allMaterialNames.isEmpty()) return emptyList()
 
     val materialRows = allMaterialNames.map { materialName ->
-        val planned = plannedMap[materialName] ?: 0f
-        val actual = rows.filter { it.materialName.trim() == materialName }
-            .sumOf { it.actualQty.toDouble() }.toFloat()
-        val nodeCodes = nodeCodesByMaterial[materialName].orEmpty()
+        val accumulator = totalsByMaterial[materialName] ?: MaterialAccumulator()
         MaterialReportRow(
             materialName = materialName,
-            nodeCount = nodeCodes.size,
-            routeCount = countRoutesForNodes(routes, nodeCodes),
-            totalPlannedQty = planned,
-            totalActualQty = actual,
-            completionPercent = if (planned <= 0f) 0f else (actual / planned) * 100f
+            nodeCount = accumulator.nodeCodes.size,
+            routeCount = countRoutesForNodes(filteredRoutes, accumulator.nodeCodes),
+            totalPlannedQty = accumulator.plannedQty,
+            totalActualQty = accumulator.actualQty,
+            completionPercent = if (accumulator.plannedQty <= 0f) 0f else (accumulator.actualQty / accumulator.plannedQty) * 100f
         )
     }
 
     val plannedTotal = materialRows.sumOf { it.totalPlannedQty.toDouble() }.toFloat()
     val actualTotal = materialRows.sumOf { it.totalActualQty.toDouble() }.toFloat()
-    val totalNodeCodes = nodeCodesByMaterial.values.flatten().toSet()
+    val totalNodeCodes = totalsByMaterial.values.flatMap { it.nodeCodes }.toSet()
     val totalRow = MaterialReportRow(
         materialName = "Tổng",
         nodeCount = totalNodeCodes.size,
-        routeCount = countRoutesForNodes(routes, totalNodeCodes),
+        routeCount = countRoutesForNodes(filteredRoutes, totalNodeCodes),
         totalPlannedQty = plannedTotal,
         totalActualQty = actualTotal,
         completionPercent = if (plannedTotal <= 0f) 0f else (actualTotal / plannedTotal) * 100f,

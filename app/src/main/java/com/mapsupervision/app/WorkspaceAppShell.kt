@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
@@ -75,6 +76,7 @@ import com.mapsupervision.app.workspace.combineImportedFiles
 import com.mapsupervision.app.workspace.deleteImportedFile
 import com.mapsupervision.app.workspace.deleteNote
 import com.mapsupervision.app.workspace.deleteTask
+import com.mapsupervision.app.workspace.ensureIndexes
 import com.mapsupervision.app.workspace.fetchWeatherAuto
 import com.mapsupervision.app.workspace.getDataHubUiState
 import com.mapsupervision.app.workspace.getFilteredDesignNodesForMap
@@ -90,6 +92,7 @@ import com.mapsupervision.app.workspace.loadNotesAndTasks
 import com.mapsupervision.app.workspace.loadPhotosForSelectedNode
 import com.mapsupervision.app.workspace.onContractorColorChanged
 import com.mapsupervision.app.workspace.onFilterContractorChanged
+import com.mapsupervision.app.workspace.onFilterMaterialTypeChanged
 import com.mapsupervision.app.workspace.onMapBaseMapChanged
 import com.mapsupervision.app.workspace.onMapMyLocation
 import com.mapsupervision.app.workspace.onMapToggleMeasure
@@ -154,14 +157,23 @@ fun WorkspaceAppShell(
     val projectViewModel: ProjectViewModel = hiltViewModel()
     val reportingViewModel: ReportingViewModel = hiltViewModel()
 
-    val workspaceState by workspaceViewModel.state.collectAsState()
-    val workspaceUiState by workspaceViewModel.uiState.collectAsState()
-    val chatState by chatViewModel.uiState.collectAsState()
-    val projectState by projectViewModel.uiState.collectAsState()
-    val reportingPhotos by reportingViewModel.photos.collectAsState()
-    val lastPdfPath by reportingViewModel.lastReportPath.collectAsState()
-    val lastWordPath by reportingViewModel.lastWordReportPath.collectAsState()
-    val reportExporting by reportingViewModel.isExporting.collectAsState()
+    val workspaceState by workspaceViewModel.state.collectAsStateWithLifecycle()
+    val workspaceUiState by workspaceViewModel.uiState.collectAsStateWithLifecycle()
+    val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+    val projectState by projectViewModel.uiState.collectAsStateWithLifecycle()
+    val reportingSnapshot by reportingViewModel.reportSnapshot.collectAsStateWithLifecycle()
+    val lastPdfPath by reportingViewModel.lastReportPath.collectAsStateWithLifecycle()
+    val lastWordPath by reportingViewModel.lastWordReportPath.collectAsStateWithLifecycle()
+    val reportExporting by reportingViewModel.isExporting.collectAsStateWithLifecycle()
+
+    LaunchedEffect(workspaceUiState.showReportPreview, projectState.activeProjectId) {
+        val pid = projectState.activeProjectId
+        if (workspaceUiState.showReportPreview && !pid.isNullOrBlank()) {
+            reportingViewModel.requestReportDraft(pid)
+        } else {
+            reportingViewModel.cancelReportDraft()
+        }
+    }
 
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -211,13 +223,17 @@ fun WorkspaceAppShell(
         )
     }
 
-    LaunchedEffect(workspaceUiState.selectedTab) {
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDestination = backStackEntry?.destination
+
+    LaunchedEffect(workspaceUiState.selectedTab, currentDestination?.route) {
+        val currentRoute = currentDestination?.route ?: return@LaunchedEffect
         val targetRoute = shellDestinations.first { it.tab == workspaceUiState.selectedTab }.route
-        if (navController.currentDestination?.route != targetRoute) {
+        if (currentRoute != targetRoute) {
             navController.navigate(targetRoute) {
                 launchSingleTop = true
                 restoreState = true
-                popUpTo(navController.graph.startDestinationId) {
+                popUpTo("map") {
                     saveState = true
                 }
             }
@@ -261,21 +277,8 @@ fun WorkspaceAppShell(
         }
     }
 
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = backStackEntry?.destination
-
-    val previewPhotos = remember(workspaceUiState.previewNodeCode, reportingPhotos) {
-        val nodeCode = workspaceUiState.previewNodeCode
-        if (nodeCode == null) emptyList<com.mapsupervision.domain.model.SitePhoto>()
-        else reportingPhotos.filter { photo -> photo.objectCode == nodeCode }
-    }
-    val previewMaterialRows = remember(
-        workspaceUiState.previewNodeCode,
-        workspaceState.mapUi.selectedNode,
-        workspaceState.materialProgress
-    ) {
-        workspaceViewModel.getPreviewMaterialRows(workspaceUiState.previewNodeCode)
-    }
+    val previewPhotos = reportingSnapshot.photos
+    val previewMaterialRows = reportingSnapshot.materialRows
 
     val navChrome: @Composable () -> Unit = {
         if (workspaceUiState.layoutMode == WorkspaceLayoutMode.EXPANDED) {
@@ -310,8 +313,8 @@ fun WorkspaceAppShell(
             modifier = Modifier.fillMaxSize()
         ) {
             composable("map") {
-                val mapDesignNodes = workspaceViewModel.getFilteredDesignNodesForMap()
-                val mapDesignRoutes = workspaceViewModel.getFilteredDesignRoutes()
+                val mapDesignNodes by workspaceViewModel.filteredNodesForMap.collectAsStateWithLifecycle()
+                val mapDesignRoutes by workspaceViewModel.filteredRoutesForMap.collectAsStateWithLifecycle()
                 MapHubScreen(
                     designNodes = mapDesignNodes,
                     designRoutes = mapDesignRoutes,
@@ -319,6 +322,7 @@ fun WorkspaceAppShell(
                     routeProperties = workspaceState.mapUi.selectedRoute?.let { workspaceViewModel.getRouteProperties(it) }.orEmpty(),
                     materialProgress = workspaceState.materialProgress,
                     contractorOptions = workspaceViewModel.getDataHubUiState().contractorOptions.filter { it != "Tất cả" },
+                    materialTypeOptions = workspaceViewModel.ensureIndexes().materialTypeOptions,
                     selectedNodeMaterialLines = workspaceViewModel.getSelectedNodeMaterialLines(),
                     showNumberOnMap = workspaceState.excelParserUi.showNumberOnMap,
                     colorByContractorOnMap = workspaceState.excelParserUi.colorByContractorOnMap,
@@ -337,6 +341,7 @@ fun WorkspaceAppShell(
                     onToggleMeasure = workspaceViewModel::onMapToggleMeasure,
                     onLabelFieldChanged = workspaceViewModel::updateMapLabelField,
                     onFilterContractorChanged = workspaceViewModel::onFilterContractorChanged,
+                    onFilterMaterialTypeChanged = workspaceViewModel::onFilterMaterialTypeChanged,
                     onContractorColorChanged = workspaceViewModel::onContractorColorChanged,
                     onSearchQueryChanged = workspaceViewModel::onSearchQueryChanged,
                     onViewPhotos = workspaceViewModel::loadPhotosForSelectedNode,
@@ -381,17 +386,17 @@ fun WorkspaceAppShell(
                     dashboardState = workspaceState.dashboard,
                     progressUiState = workspaceViewModel.getProgressUiState(),
                     workCategories = workspaceState.workCategories,
-                    photos = reportingPhotos,
+                    photos = reportingSnapshot.photos,
                     activeProjectName = projectState.projects.firstOrNull { it.id == projectState.activeProjectId }?.name,
                     onAddConstruction = workspaceViewModel::addConstructionProgress,
-                    onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, dateDay, volume, unit, categoryName ->
-                        workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, dateDay, volume, unit, categoryName)
+                    onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId ->
+                        workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId)
                     },
                     onAddDailyLogBatch = { workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName ->
                         workspaceViewModel.addDailyLogBatch(workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName)
                     },
                     onAddWorkCategory = workspaceViewModel::addWorkCategory,
-                    onFetchWeatherAuto = workspaceViewModel::fetchWeatherAuto
+                    onFetchWeatherAuto = { nodeCode, routeCode, onResult -> workspaceViewModel.fetchWeatherAuto(nodeCode, routeCode, onResult) }
                 )
             }
             composable("data") {
@@ -416,12 +421,12 @@ fun WorkspaceAppShell(
                     onAddConstruction = workspaceViewModel::addConstructionProgress,
                     onUpdateMaterialProgress = workspaceViewModel::updateMaterialProgress,
                     onOpenNodeOnMap = { node ->
-                        workspaceViewModel.selectMapNode(node)
                         workspaceViewModel.dispatch(WorkspaceAction.SelectTab(WorkspaceTab.MAP))
+                        workspaceViewModel.selectMapNode(node)
                     },
                     onOpenRouteOnMap = { route ->
-                        workspaceViewModel.selectMapRoute(route)
                         workspaceViewModel.dispatch(WorkspaceAction.SelectTab(WorkspaceTab.MAP))
+                        workspaceViewModel.selectMapRoute(route)
                     },
                     onDeleteImportedFile = workspaceViewModel::deleteImportedFile,
                     photoFilterNodeCode = workspaceState.photoFilterNodeCode,
@@ -442,10 +447,8 @@ fun WorkspaceAppShell(
             composable("reports") {
                 ReportingScreen(
                     activeProjectId = projectState.activeProjectId,
-                    photoFilterNodeCode = workspaceState.photoFilterNodeCode,
                     photoSaveCount = workspaceState.photoSaveCount,
-                    materialProgress = workspaceState.materialProgress,
-                    onClearPhotoFilter = workspaceViewModel::clearPhotoNodeFilter
+                    materialProgress = workspaceState.materialProgress
                 )
             }
         }
@@ -519,6 +522,7 @@ fun WorkspaceAppShell(
               onInputChange = chatViewModel::updateInput,
               onConfirmPendingAction = { chatViewModel.confirmPendingAction(workspaceViewModel) },
               onDismissPendingAction = chatViewModel::dismissPendingAction,
+              onUpdatePendingDailyLogDraft = chatViewModel::updatePendingDailyLogDraft,
               onSend = {
                   val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
                   val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
@@ -549,23 +553,20 @@ fun WorkspaceAppShell(
         showDialog = workspaceUiState.showReportPreview,
         onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview) },
         projectId = projectState.activeProjectId ?: "",
-        filterNodeCode = workspaceUiState.previewNodeCode,
         selectedExportFormat = "PDF",
         isExporting = reportExporting,
         onUpdatePhotoOffset = reportingViewModel::updatePhotoOffset,
-        projectNodes = reportingViewModel.projectNodes.collectAsState().value,
-        projectRoutes = reportingViewModel.projectRoutes.collectAsState().value,
         onConfirmExport = { format ->
             if (format == "PDF") {
-                reportingViewModel.exportPdf(workspaceUiState.previewNodeCode)
+                reportingViewModel.exportPdf()
             } else {
-                reportingViewModel.exportWord(workspaceUiState.previewNodeCode)
+                reportingViewModel.exportWord()
             }
             workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview)
         },
         photos = previewPhotos,
         materialRows = previewMaterialRows,
-        aiDraft = null
+        aiDraft = reportingSnapshot.aiDraft
     )
 }
 

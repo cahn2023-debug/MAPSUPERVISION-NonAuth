@@ -1,6 +1,7 @@
 package com.mapsupervision.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
@@ -8,10 +9,20 @@ import com.mapsupervision.domain.model.PhotoLocationStatus
 
 @Entity(
     tableName = "site_photos",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProjectEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["projectId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
     indices = [
         Index(value = ["projectId", "capturedAtEpochMs"]),
         Index(value = ["projectId", "objectCode", "capturedAtEpochMs"]),
-        Index("objectCode")
+        Index("objectCode"),
+        Index(value = ["projectId", "matchedNodeCode"]),
+        Index(value = ["projectId", "matchedRouteCode"])
     ]
 )
 data class SitePhotoEntity(

@@ -50,7 +50,7 @@ Chiến lược triển khai:
 
 Tải Model: Model .task của Gemma 2B nặng khoảng 1.5GB - 2GB. Bạn sử dụng module storage + WorkManager để tải model này ngầm khi người dùng kết nối Wi-Fi, lưu vào ProjectStorageManager.
 
-Khởi tạo: MediaPipeRepositoryImpl sẽ load model vào bộ nhớ. Cần check RAM thiết bị trước khi chạy (chỉ kích hoạt nếu thiết bị có > 4GB RAM trống).
+Khởi tạo: LocalLiteRtRepositoryImpl sẽ chọn model và load vào bộ nhớ. Cần check RAM thiết bị trước khi chạy (chỉ kích hoạt nếu thiết bị có > 4GB RAM trống).
 
 Giai đoạn 5: Tối ưu hiệu năng và Pin (Quan trọng cho Field App)
 Bản full chạy nhiều AI sẽ rất hao tài nguyên, vì vậy hệ thống cần cơ chế bảo vệ:

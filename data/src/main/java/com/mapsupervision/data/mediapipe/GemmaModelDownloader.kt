@@ -134,7 +134,7 @@ class GemmaModelDownloader @Inject constructor() {
                 if (!partialFile.renameTo(targetFile)) {
                     throw GemmaDownloadFailure(
                         code = "MOVE_FAILED",
-                        userMessage = "Khong the dat file model vao vi tri luu tru."
+                        userMessage = "Không thể đặt file model vào vị trí lưu trữ."
                     )
                 }
                 return@withContext
@@ -158,7 +158,7 @@ class GemmaModelDownloader @Inject constructor() {
             } catch (error: IOException) {
                 throw GemmaDownloadFailure(
                     code = "NETWORK_ERROR",
-                    userMessage = error.message ?: "Khong the ket noi toi nguon model.",
+                    userMessage = error.message ?: "Không thể kết nối tới nguồn model.",
                     cause = error
                 )
             }

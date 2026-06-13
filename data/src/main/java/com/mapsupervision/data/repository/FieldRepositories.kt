@@ -171,7 +171,10 @@ class MaterialProgressRepositoryImpl @Inject constructor(
         // Preserve existing plannedQty if the incoming value is 0 (parse failed) but DB already has a valid value
         val safePlannedQty = if (progress.plannedQty <= 0f && existing != null && existing.plannedQty > 0f)
             existing.plannedQty else progress.plannedQty
-        dao.upsert(progress.copy(id = existing?.id ?: progress.id, plannedQty = safePlannedQty).toEntity())
+        // Preserve existing unit if the incoming value is empty but DB has a valid value
+        val safeUnit = if (progress.unit.isBlank() && existing != null && existing.unit.isNotBlank())
+            existing.unit else progress.unit
+        dao.upsert(progress.copy(id = existing?.id ?: progress.id, plannedQty = safePlannedQty, unit = safeUnit).toEntity())
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to upsert material progress", it)) }
@@ -195,7 +198,8 @@ class MaterialProgressRepositoryImpl @Inject constructor(
         materialName = materialName,
         plannedQty = plannedQty,
         actualQty = actualQty,
-        updatedAtEpochMs = updatedAtEpochMs
+        updatedAtEpochMs = updatedAtEpochMs,
+        unit = unit
     )
 
     private fun MaterialProgressEntity.toDomain() = MaterialProgress(
@@ -205,7 +209,8 @@ class MaterialProgressRepositoryImpl @Inject constructor(
         materialName = materialName,
         plannedQty = plannedQty,
         actualQty = actualQty,
-        updatedAtEpochMs = updatedAtEpochMs
+        updatedAtEpochMs = updatedAtEpochMs,
+        unit = unit
     )
 
     private suspend fun dao(projectId: String): MaterialProgressDao =

@@ -35,13 +35,21 @@ class GemmaChatController @Inject constructor(
         if (initializedModelId == model.downloadFileName) {
             return@withContext InitializationResult(ready = true, message = "Gemma san sang.")
         }
-        val initResult = chatService.initializeModel(model)
-        initializedModelId = model.downloadFileName
-        return@withContext InitializationResult(
-            ready = true,
-            message = "Gemma san sang.",
-            warning = initResult.warnings.joinToString(" | ")
-        )
+        val initResult = runCatching { chatService.initializeModel(model) }
+        if (initResult.isSuccess) {
+            initializedModelId = model.downloadFileName
+            return@withContext InitializationResult(
+                ready = true,
+                message = "Gemma san sang.",
+                warning = initResult.getOrThrow().warnings.joinToString(" | ")
+            )
+        } else {
+            initializedModelId = null
+            return@withContext InitializationResult(
+                ready = false,
+                message = "Model init failed: ${initResult.exceptionOrNull()?.message.orEmpty()}"
+            )
+        }
     }
 
     suspend fun sendPrompt(

@@ -258,6 +258,7 @@ class ProjectViewModel @Inject constructor(
                             put("plannedQty", mp.plannedQty)
                             put("actualQty", mp.actualQty)
                             put("updatedAtEpochMs", mp.updatedAtEpochMs)
+                            put("unit", mp.unit)
                         })
                     }
                 })
@@ -390,34 +391,41 @@ class ProjectViewModel @Inject constructor(
                 }
 
                 val tempDir = File(context.cacheDir, "temp_import_dir_${UUID.randomUUID()}").apply { mkdirs() }
-                java.util.zip.ZipInputStream(tempZip.inputStream()).use { zis ->
-                    var entry = zis.nextEntry
-                    val buffer = ByteArray(4096)
-                    while (entry != null) {
-                        val file = File(tempDir, entry.name)
-                        if (!file.canonicalPath.startsWith(tempDir.canonicalPath + File.separator)) {
-                            throw SecurityException("Zip entry lies outside temp dir")
-                        }
-                        if (entry.isDirectory) {
-                            file.mkdirs()
-                        } else {
-                            file.parentFile?.mkdirs()
-                            FileOutputStream(file).use { fos ->
-                                var len = zis.read(buffer)
-                                while (len > 0) {
-                                    fos.write(buffer, 0, len)
-                                    len = zis.read(buffer)
+                try {
+                    java.util.zip.ZipInputStream(tempZip.inputStream()).use { zis ->
+                        var entry = zis.nextEntry
+                        val buffer = ByteArray(4096)
+                        while (entry != null) {
+                            val file = File(tempDir, entry.name)
+                            if (!file.canonicalPath.startsWith(tempDir.canonicalPath + File.separator)) {
+                                throw SecurityException("Zip entry lies outside temp dir")
+                            }
+                            if (entry.isDirectory) {
+                                file.mkdirs()
+                            } else {
+                                file.parentFile?.mkdirs()
+                                FileOutputStream(file).use { fos ->
+                                    var len = zis.read(buffer)
+                                    while (len > 0) {
+                                        fos.write(buffer, 0, len)
+                                        len = zis.read(buffer)
+                                    }
                                 }
                             }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
                         }
-                        zis.closeEntry()
-                        entry = zis.nextEntry
                     }
+                } catch (e: Exception) {
+                    if (e is SecurityException) throw e
+                    throw IllegalArgumentException("Tệp zip bị hỏng hoặc không đọc được")
                 }
 
                 val metadataFile = File(tempDir, "project_metadata.json")
                 if (!metadataFile.exists()) {
                     _uiState.value = _uiState.value.copy(importMessage = "Lỗi: Không tìm thấy project_metadata.json trong tệp zip")
+                    tempZip.delete()
+                    tempDir.deleteRecursively()
                     return@launch
                 }
 
@@ -436,6 +444,8 @@ class ProjectViewModel @Inject constructor(
                         duplicateZipUri = zipUri,
                         importMessage = ""
                     )
+                    tempZip.delete()
+                    tempDir.deleteRecursively()
                     return@launch
                 }
 
@@ -447,7 +457,7 @@ class ProjectViewModel @Inject constructor(
                     targetProjectId = existingProject.id
                     targetSlug = existingProject.slug
                     targetName = existingProject.name
-                    projectRepository.clearProject(targetProjectId)
+                    // Do not call projectRepository.clearProject(targetProjectId) here to allow merging data.
                 } else if (createCopy) {
                     targetProjectId = UUID.randomUUID().toString()
                     val newSuffix = " - Bản sao"
@@ -467,7 +477,7 @@ class ProjectViewModel @Inject constructor(
                     targetName = originalName
                 }
 
-                projectPackageService.importProjectZip(tempZip.inputStream(), targetSlug)
+                projectPackageService.copyImportedFilesToPrivateStorage(tempDir, targetSlug)
 
                 val projObj = Project(
                     id = targetProjectId,
@@ -477,9 +487,8 @@ class ProjectViewModel @Inject constructor(
                     createdAtEpochMs = projJson.optLong("createdAtEpochMs", System.currentTimeMillis()),
                     metadataVersion = projJson.optInt("metadataVersion", json.optInt("metadataVersion", 3)),
                     updatedAtEpochMs = projJson.optLong("updatedAtEpochMs", json.optLong("updatedAtEpochMs", System.currentTimeMillis())),
-                    storageMode = projJson.optString("storageMode").takeIf { it.isNotBlank() }?.let(ProjectStorageMode::valueOf)
-                        ?: ProjectStorageMode.PROJECT_DB,
-                    projectDbPath = projJson.optString("projectDbPath")
+                    storageMode = ProjectStorageMode.PROJECT_DB,
+                    projectDbPath = ""
                 )
                 projectRepository.importProject(projObj)
 
@@ -574,7 +583,8 @@ class ProjectViewModel @Inject constructor(
                                 materialName = obj.getString("materialName"),
                                 plannedQty = obj.getDouble("plannedQty").toFloat(),
                                 actualQty = obj.getDouble("actualQty").toFloat(),
-                                updatedAtEpochMs = obj.optLong("updatedAtEpochMs", System.currentTimeMillis())
+                                updatedAtEpochMs = obj.optLong("updatedAtEpochMs", System.currentTimeMillis()),
+                                unit = obj.optString("unit", "")
                             )
                         )
                     }
@@ -606,13 +616,20 @@ class ProjectViewModel @Inject constructor(
                 if (impArr != null) {
                     for (i in 0 until impArr.length()) {
                         val obj = impArr.getJSONObject(i)
+                        val oldPath = obj.optString("storedPath").takeIf { it.isNotBlank() }
+                        val newStoredPath = if (oldPath != null) {
+                            val fileName = File(oldPath).name
+                            val parentName = File(oldPath).parentFile?.name ?: "processed"
+                            File(storageManager.privateProjectRoot(targetSlug), "imports/$parentName/$fileName").absolutePath
+                        } else ""
+
                         importedFileRepository.upsert(
                             ImportedFile(
                                 id = mapId(obj.getString("id")),
                                 projectId = targetProjectId,
                                 fileName = obj.getString("fileName"),
                                 fileType = obj.getString("fileType"),
-                                storedPath = obj.getString("storedPath"),
+                                storedPath = newStoredPath,
                                 summary = obj.getString("summary"),
                                 importedAtEpochMs = obj.optLong("importedAtEpochMs", System.currentTimeMillis())
                             )
@@ -624,6 +641,19 @@ class ProjectViewModel @Inject constructor(
                 if (photosArr != null) {
                     for (i in 0 until photosArr.length()) {
                         val obj = photosArr.getJSONObject(i)
+                        val oldFilePath = obj.optString("filePath").takeIf { it.isNotBlank() }
+                        val oldThumbPath = obj.optString("thumbnailPath").takeIf { it.isNotBlank() }
+
+                        val newFilePath = if (oldFilePath != null) {
+                            val fileName = File(oldFilePath).name
+                            File(storageManager.privateProjectRoot(targetSlug), "photos/Nodes/$fileName").absolutePath
+                        } else ""
+
+                        val newThumbPath = if (oldThumbPath != null) {
+                            val fileName = File(oldThumbPath).name
+                            File(storageManager.privateProjectRoot(targetSlug), "thumbs/$fileName").absolutePath
+                        } else ""
+
                         photoRepository.add(
                             SitePhoto(
                                 id = mapId(obj.getString("id")),
@@ -632,8 +662,8 @@ class ProjectViewModel @Inject constructor(
                                 tagCodesCsv = obj.optString("tagCodesCsv", ""),
                                 matchedNodeCode = obj.optString("matchedNodeCode").takeIf { it.isNotBlank() },
                                 matchedRouteCode = obj.optString("matchedRouteCode").takeIf { it.isNotBlank() },
-                                filePath = obj.getString("filePath"),
-                                thumbnailPath = obj.getString("thumbnailPath"),
+                                filePath = newFilePath,
+                                thumbnailPath = newThumbPath,
                                 latitude = obj.optNullableDouble("latitude"),
                                 longitude = obj.optNullableDouble("longitude"),
                                 locationAccuracyM = obj.optNullableFloat("locationAccuracyM"),
@@ -680,7 +710,11 @@ class ProjectViewModel @Inject constructor(
                 tempZip.delete()
                 tempDir.deleteRecursively()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(importMessage = "Lỗi khi nhập dự án: ${e.message}")
+                val errorMsg = when {
+                    e.message == "Tệp zip bị hỏng hoặc không đọc được" -> "Lỗi khi nhập dự án: Tệp zip bị hỏng hoặc không đọc được"
+                    else -> "Lỗi: Nhập dữ liệu thất bại (${e.message})"
+                }
+                _uiState.value = _uiState.value.copy(importMessage = errorMsg)
             }
             refresh()
         }

@@ -42,6 +42,8 @@ class AIManager @Inject constructor(
         return quickKeywords.any { keyword -> normalized.startsWith(keyword) }
     }
 
+    private val activeJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+
     /**
      * Dispatches command:
      * - Runs instantly for simple commands or if resource status is critical.
@@ -91,7 +93,11 @@ class AIManager @Inject constructor(
 
         workManager.enqueue(actualRequest)
 
-        coroutineScope.launch(Dispatchers.Main) {
+        // Cancel previous collector jobs to prevent leaks
+        activeJobs.values.forEach { it.cancel() }
+        activeJobs.clear()
+
+        val job = coroutineScope.launch(Dispatchers.Main) {
             workManager.getWorkInfoByIdLiveData(actualRequest.id).asFlow().collect { workInfo ->
                 if (workInfo != null) {
                     when (workInfo.state) {
@@ -118,5 +124,6 @@ class AIManager @Inject constructor(
                 }
             }
         }
+        activeJobs[actualRequest.id.toString()] = job
     }
 }

@@ -266,6 +266,10 @@ object WorkspaceImportHelper {
             val end = codeAlias[route.endNodeCode] ?: route.endNodeCode
             val normStart = codeKeyOf(start)
             val normEnd = codeKeyOf(end)
+            if (normStart.isBlank() || normEnd.isBlank()) {
+                routesToInsert.add(route.copy(startNodeCode = start, endNodeCode = end))
+                continue
+            }
             if (normStart == normEnd) {
                 skippedSelfRoutes++
                 continue

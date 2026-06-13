@@ -52,9 +52,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.mapsupervision.domain.ai.GemmaModelFamily
 import com.mapsupervision.domain.ai.GemmaModelInfo
 import com.mapsupervision.domain.ai.GemmaModelStatus
+import com.mapsupervision.domain.ai.ChatActionType
+import com.mapsupervision.domain.ai.ChatPendingAction
+import com.mapsupervision.domain.ai.DailyLogDateResolver
+import com.mapsupervision.domain.ai.DailyLogDraft
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -77,6 +83,7 @@ fun GemmaChatSheet(
     onInputChange: (String) -> Unit,
     onConfirmPendingAction: () -> Unit,
     onDismissPendingAction: () -> Unit,
+    onUpdatePendingDailyLogDraft: ((DailyLogDraft) -> DailyLogDraft) -> Unit,
     onSend: () -> Unit
 ) {
     val statusTone = when (state.modelStatus) {
@@ -118,10 +125,10 @@ fun GemmaChatSheet(
 
             state.pendingAction?.let { action ->
                 PendingActionCard(
-                    title = action.title,
-                    draftJson = action.draftJson,
+                    action = action,
                     onConfirm = onConfirmPendingAction,
-                    onDismiss = onDismissPendingAction
+                    onDismiss = onDismissPendingAction,
+                    onUpdateDailyLogDraft = onUpdatePendingDailyLogDraft
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -540,10 +547,10 @@ private fun formatJson(json: String): String {
 
 @Composable
 private fun PendingActionCard(
-    title: String,
-    draftJson: String,
+    action: ChatPendingAction,
     onConfirm: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onUpdateDailyLogDraft: ((DailyLogDraft) -> DailyLogDraft) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -557,20 +564,147 @@ private fun PendingActionCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = title,
+                text = action.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                text = formatJson(draftJson),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            val dailyLog = action.dailyLog
+            if (action.type == ChatActionType.ADD_DAILY_LOG && dailyLog != null) {
+                DailyLogDraftEditor(
+                    draft = dailyLog,
+                    onUpdateDraft = onUpdateDailyLogDraft
+                )
+            } else {
+                Text(
+                    text = formatJson(action.draftJson),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = onConfirm) { Text("Xác nhận") }
                 OutlinedButton(onClick = onDismiss) { Text("Hủy") }
             }
         }
+    }
+}
+
+@Composable
+private fun DailyLogDraftEditor(
+    draft: DailyLogDraft,
+    onUpdateDraft: ((DailyLogDraft) -> DailyLogDraft) -> Unit
+) {
+    val dateText = if (draft.dateEpochDay > 0L) DailyLogDateResolver.formatEpochDay(draft.dateEpochDay) else ""
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(
+            value = dateText,
+            onValueChange = { value ->
+                val parsed = DailyLogDateResolver.parseDateText(value) ?: draft.dateEpochDay
+                onUpdateDraft { current -> current.copy(dateEpochDay = parsed) }
+            },
+            label = { Text("Ngày ghi nhật ký") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = draft.weather,
+                onValueChange = { value -> onUpdateDraft { current -> current.copy(weather = value) } },
+                label = { Text("Thời tiết") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = if (draft.temperature > 0.0) draft.temperature.toString() else "",
+                onValueChange = { value ->
+                    onUpdateDraft { current ->
+                        current.copy(temperature = value.toDoubleOrNull() ?: current.temperature)
+                    }
+                },
+                label = { Text("Nhiệt độ") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+        }
+        OutlinedTextField(
+            value = draft.nodeCode.orEmpty(),
+            onValueChange = { value -> onUpdateDraft { current -> current.copy(nodeCode = value.trim().ifBlank { null }) } },
+            label = { Text("Node / vị trí") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = draft.routeCode.orEmpty(),
+            onValueChange = { value -> onUpdateDraft { current -> current.copy(routeCode = value.trim().ifBlank { null }) } },
+            label = { Text("Route / tuyến") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = draft.categoryName,
+            onValueChange = { value -> onUpdateDraft { current -> current.copy(categoryName = value) } },
+            label = { Text("Hạng mục") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = draft.workItem,
+            onValueChange = { value -> onUpdateDraft { current -> current.copy(workItem = value) } },
+            label = { Text("Nội dung nhật ký") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 4
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = if (draft.volume > 0.0) draft.volume.toString() else "",
+                onValueChange = { value ->
+                    onUpdateDraft { current -> current.copy(volume = value.toDoubleOrNull() ?: current.volume) }
+                },
+                label = { Text("Khối lượng") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = draft.unit,
+                onValueChange = { value -> onUpdateDraft { current -> current.copy(unit = value) } },
+                label = { Text("Đơn vị") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = draft.manpower.toString(),
+                onValueChange = { value ->
+                    onUpdateDraft { current -> current.copy(manpower = value.toIntOrNull() ?: current.manpower) }
+                },
+                label = { Text("Nhân công") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.weight(1f))
+        }
+        OutlinedTextField(
+            value = draft.note,
+            onValueChange = { value -> onUpdateDraft { current -> current.copy(note = value) } },
+            label = { Text("Ghi chú") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 4
+        )
     }
 }
 

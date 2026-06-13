@@ -1,11 +1,20 @@
 package com.mapsupervision.data.db.entity
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
 import androidx.room.Index
 
 @Entity(
     tableName = "work_categories",
+    foreignKeys = [
+        ForeignKey(
+            entity = ProjectEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["projectId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
     indices = [
         Index("projectId"),
         Index(value = ["projectId", "createdAtEpochMs"])

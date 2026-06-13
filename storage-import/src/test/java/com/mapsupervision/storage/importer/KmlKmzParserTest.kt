@@ -50,10 +50,8 @@ class KmlKmzParserTest {
 
         val result = parseKmlContent(kml.byteInputStream(), "line.kml", "test-project")
 
-        assertEquals(2, result.nodes.size)
+        assertEquals(0, result.nodes.size)
         assertEquals(1, result.routes.size)
-        assertEquals("LineA", result.nodes[0].mapNumberLabel)
-        assertTrue(result.nodes[0].materialSummary.contains("Route description"))
     }
 
     @Test
@@ -71,15 +69,18 @@ class KmlKmzParserTest {
 
         val result = parseKmlContent(kml.byteInputStream(), "polyline.kml", "test-project")
 
-        // Segmented routes: all 3 nodes and 2 route segments are created
-        assertEquals(3, result.nodes.size)
-        assertEquals(2, result.routes.size)
-        val first = result.nodes.first()
-        val last = result.nodes.last()
-        assertEquals(10.1, first.latitude, 0.000001)
-        assertEquals(106.1, first.longitude, 0.000001)
-        assertEquals(10.3, last.latitude, 0.000001)
-        assertEquals(106.3, last.longitude, 0.000001)
+        // Segmented routes: start and end nodes are NOT created, only route containing points is created
+        assertEquals(0, result.nodes.size)
+        assertEquals(1, result.routes.size)
+
+        val route = result.routes.first()
+        assertEquals(3, route.points.size)
+        assertEquals(10.1, route.points[0].first, 0.000001)
+        assertEquals(106.1, route.points[0].second, 0.000001)
+        assertEquals(10.2, route.points[1].first, 0.000001)
+        assertEquals(106.2, route.points[1].second, 0.000001)
+        assertEquals(10.3, route.points[2].first, 0.000001)
+        assertEquals(106.3, route.points[2].second, 0.000001)
     }
 
     @Test
@@ -168,9 +169,9 @@ class KmlKmzParserTest {
 
         val result = parseKmlContent(kml.byteInputStream(), "semi.kml", "test-project")
 
-        // Segmented routes: all 3 nodes and 2 route segments are created
-        assertEquals(3, result.nodes.size)
-        assertEquals(2, result.routes.size)
+        // Segmented routes: start and end nodes are NOT created, only 1 route segment is created containing points
+        assertEquals(0, result.nodes.size)
+        assertEquals(1, result.routes.size)
     }
 
     @Test
@@ -189,7 +190,7 @@ class KmlKmzParserTest {
 
         val result = parseKmlContent(kml.byteInputStream(), "multi.kml", "test-project")
 
-        assertEquals(3, result.nodes.size)
+        assertEquals(1, result.nodes.size)
         assertEquals(1, result.routes.size)
     }
 
@@ -244,12 +245,11 @@ class KmlKmzParserTest {
         """.trimIndent()
 
         val result = parseKmlContent(kml.byteInputStream(), "route-ref.kml", "test-project")
-        val nodeCodes = result.nodes.map { it.code }.toSet()
 
         assertEquals(1, result.routes.size)
         val route = result.routes.first()
-        assertTrue(nodeCodes.contains(route.startNodeCode))
-        assertTrue(nodeCodes.contains(route.endNodeCode))
+        assertEquals("", route.startNodeCode)
+        assertEquals("", route.endNodeCode)
     }
 
     @Test
@@ -342,5 +342,97 @@ class KmlKmzParserTest {
         assertTrue("Expected routes from real KMZ sample: ${result.summary}", result.routes.isNotEmpty())
         // Hanoi area coordinates
         assertTrue(result.nodes.any { it.latitude in 20.0..22.0 && it.longitude in 105.0..106.5 })
+    }
+
+    @Test
+    fun parse_segmented_kml_merges_routes() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>LINE_A_S1</name>
+                  <LineString><coordinates>106.0,10.0,0 106.1,10.1,0</coordinates></LineString>
+                </Placemark>
+                <Placemark>
+                  <name>LINE_A_S2</name>
+                  <LineString><coordinates>106.1,10.1,0 106.2,10.2,0</coordinates></LineString>
+                </Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "test_segments.kml", "test-project")
+
+        // Check that routes are merged into a single one named LINE_A
+        assertEquals(1, result.routes.size)
+        val route = result.routes.first()
+        assertEquals("LINE_A", route.code)
+        assertEquals("", route.startNodeCode)
+        assertEquals("", route.endNodeCode)
+
+        // No nodes are created
+        assertEquals(0, result.nodes.size)
+    }
+
+    @Test
+    fun parse_kml_maps_routeLength_directly_to_route_and_not_to_node_summaries() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>Route_1</name>
+                  <ExtendedData>
+                    <Data name="routeLength">
+                      <value>250 m</value>
+                    </Data>
+                  </ExtendedData>
+                  <LineString>
+                    <coordinates>106.1,10.1,0 106.2,10.2,0</coordinates>
+                  </LineString>
+                </Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val mapping = NonExcelImportMapping(
+            positionField = "Tên đối tượng (Placemark)",
+            routeLengthField = "routeLength"
+        )
+
+        val result = parseKmlContent(kml.byteInputStream(), "test_length.kml", "test-project", mapping)
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.first()
+        assertEquals("250 m", route.designLength)
+
+        assertEquals(0, result.nodes.size)
+    }
+
+    @Test
+    fun parse_kml_calculates_fallback_length_when_no_mapping_provided() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>Route_1</name>
+                  <LineString>
+                    <coordinates>106.1,10.1,0 106.2,10.2,0</coordinates>
+                  </LineString>
+                </Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "test_calc.kml", "test-project", null)
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.first()
+        // Calculated length is haversine distance (~15.6km)
+        assertTrue(route.designLength != null)
+        assertTrue(route.designLength!!.endsWith(" m"))
+        val lengthVal = route.designLength!!.substringBefore(" ").toDoubleOrNull()
+        assertTrue(lengthVal != null && lengthVal > 15000.0)
+
+        assertEquals(0, result.nodes.size)
     }
 }

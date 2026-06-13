@@ -103,6 +103,9 @@ private fun List<GisRoute>.stableRouteSignature(): Long {
             .mix(route.startNodeCode)
             .mix(route.endNodeCode)
             .mix(route.importedFileId)
+        for (point in route.points) {
+            signature = signature.mix(point.first).mix(point.second)
+        }
     }
     return signature
 }
@@ -134,6 +137,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private val renderScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var map: MapLibreMap? = null
+    private var mapViewRef: MapView? = null
     private var appContext: Context? = null
     private var nodesSnapshot: List<GisNode> = emptyList()
     private var routesSnapshot: List<GisRoute> = emptyList()
@@ -200,8 +204,20 @@ private class MapLibreGisMapBridge : GisMapBridge {
             MapView(context).also { mv ->
                 mv.onCreate(null)
                 resetRuntimeState(keepSnapshots = true)
+                mv.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+                    val width = right - left
+                    val height = bottom - top
+                    if (width > 0 && height > 0) {
+                        map?.let { loadedMap ->
+                            if (loadedMap.style != null) {
+                                focusSelectionIfNeeded()
+                            }
+                        }
+                    }
+                }
             }
         }
+        mapViewRef = mapView
 
         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
         DisposableEffect(lifecycleOwner, mapView) {
@@ -238,6 +254,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 mapView.onDestroy()
                 map = null
+                mapViewRef = null
                 resetRuntimeState(keepSnapshots = true)
             }
         }
@@ -261,10 +278,13 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 val _routes = routes
                 val _showLabels = showNumberLabels
                 val _colorBy = colorByContractor
+                val _contractorColors = contractorColors
                 val _label = labelField
                 val _showN = showNodes
                 val _showR = showRoutes
                 val _measure = measureEnabled
+                val _selNode = selectedNode
+                val _selRoute = selectedRoute
 
                 val currentMap = map
                 if (currentMap != null && currentMap.style != null) {
@@ -512,22 +532,32 @@ private class MapLibreGisMapBridge : GisMapBridge {
 
                 var skippedRoutes = 0
                 val routeFeatures = localRoutes.mapNotNull { r ->
-                    val start = nodeByCode[r.startNodeCode.trim().uppercase()]
-                    val end = nodeByCode[r.endNodeCode.trim().uppercase()]
-                    if (start != null && end != null) {
+                    if (r.points.isNotEmpty()) {
                         Feature.fromGeometry(
                             LineString.fromLngLats(
-                                listOf(
-                                    Point.fromLngLat(start.longitude, start.latitude),
-                                    Point.fromLngLat(end.longitude, end.latitude)
-                                )
+                                r.points.map { Point.fromLngLat(it.second, it.first) }
                             )
                         ).apply {
                             addStringProperty("code", r.code)
                         }
                     } else {
-                        skippedRoutes++
-                        null
+                        val start = nodeByCode[r.startNodeCode.trim().uppercase()]
+                        val end = nodeByCode[r.endNodeCode.trim().uppercase()]
+                        if (start != null && end != null) {
+                            Feature.fromGeometry(
+                                LineString.fromLngLats(
+                                    listOf(
+                                        Point.fromLngLat(start.longitude, start.latitude),
+                                        Point.fromLngLat(end.longitude, end.latitude)
+                                    )
+                                )
+                            ).apply {
+                                addStringProperty("code", r.code)
+                            }
+                        } else {
+                            skippedRoutes++
+                            null
+                        }
                     }
                 }
 
@@ -685,12 +715,17 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val mapRef = map ?: return false
         if (mapRef.style == null) return false
 
+        val mv = mapViewRef ?: return false
+        if (mv.width <= 0 || mv.height <= 0) {
+            return false
+        }
+
         selectedNodeSnapshot?.let { node ->
             val point = renderCoordinateForNode(node) ?: return@let
             val key = "node:${node.id}:${point.latitude}:${point.longitude}"
             if (lastFocusedSelectionKey != key) {
                 mapRef.animateCamera(
-                    CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), 20.0)
+                    CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), 18.0)
                 )
                 lastFocusedSelectionKey = key
                 didFitBoundsOnce = true
@@ -710,7 +745,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 val key = "route:${route.id}:${route.code}:${startNode.id}:${endNode.id}"
                 if (lastFocusedSelectionKey != key) {
                     mapRef.animateCamera(
-                        CameraUpdateFactory.newLatLngZoom(LatLng(midLat, midLng), 20.0)
+                        CameraUpdateFactory.newLatLngZoom(LatLng(midLat, midLng), 18.0)
                     )
                     lastFocusedSelectionKey = key
                     didFitBoundsOnce = true

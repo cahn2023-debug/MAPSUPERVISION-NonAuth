@@ -19,6 +19,7 @@ data class MaterialProgress(
     val materialName: String,
     val plannedQty: Float,
     val actualQty: Float,
-    val updatedAtEpochMs: Long
+    val updatedAtEpochMs: Long,
+    val unit: String = ""
 )
 

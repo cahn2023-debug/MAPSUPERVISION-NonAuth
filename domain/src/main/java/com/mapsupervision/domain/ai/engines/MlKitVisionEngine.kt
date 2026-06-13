@@ -24,8 +24,6 @@ class MlKitVisionEngine(
     // These will be added later: OCR_TEXT_EXTRACTION, BARCODE_SCAN
     
     override fun canHandle(capability: AiCapability): Boolean {
-        // For now, ML Kit doesn't handle existing capabilities
-        // It will handle new capabilities added in Phase 2
         return false
     }
     
@@ -41,17 +39,13 @@ class MlKitVisionEngine(
         if (!isInitialized) {
             throw IllegalStateException("ML Kit not initialized")
         }
-        
-        // TODO: Implement actual ML Kit inference
-        // For now, this is a placeholder that will be implemented in Phase 2
-        throw NotImplementedError("ML Kit Vision engine not yet implemented - Phase 2")
+
+        throw IllegalStateException("ML Kit Vision engine is not wired to an AiPayload in this build")
     }
     
     override fun getResourceUsageScore(): Int = 30 // Low resource usage
     
     private fun checkGooglePlayServices(): Boolean {
-        // TODO: Check if Google Play Services is available
-        // This will be implemented in Phase 2
         return true
     }
     

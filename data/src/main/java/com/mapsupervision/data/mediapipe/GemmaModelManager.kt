@@ -32,7 +32,7 @@ class GemmaModelManager @Inject constructor(
                 "1. Cập nhật tiến độ thi công:\n" +
                 "[ACTION: UPDATE_CONSTRUCTION_PROGRESS nodeCode=\"mã_nút\" planned=số_kế_hoạch actual=số_thực_tế]\n" +
                 "2. Thêm nhật ký thi công hàng ngày:\n" +
-                "[ACTION: ADD_DAILY_LOG workItem=\"tên_công_việc\" manpower=số_người note=\"nội_dung_nhật_ký\" weather=\"thời_tiết\" temperature=nhiệt_độ nodeCode=\"mã_nút\" volume=khối_lượng unit=\"đơn_vị\" categoryName=\"hạng_mục\"]\n" +
+                "[ACTION: ADD_DAILY_LOG workItem=\"work item\" manpower=number note=\"journal content\" weather=\"weather\" temperature=number nodeCode=\"node code\" routeCode=\"route code\" date=\"dd/MM/yyyy\" volume=number unit=\"unit\" categoryName=\"category\"]\n" +
                 "3. Cập nhật thông tin ảnh hiện trường:\n" +
                 "[ACTION: UPDATE_SITE_PHOTO photoId=\"mã_ảnh\" tagCodesCsv=\"mã_nhãn\" matchedNodeCode=\"mã_nút\" latitude=vĩ_độ longitude=kinh_độ]\n" +
                 "4. Lưu bản thảo báo cáo giám sát:\n" +

@@ -77,9 +77,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 
 @Suppress("DEPRECATION")
 @Composable
@@ -94,6 +94,7 @@ fun CameraOverlay(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -130,13 +131,14 @@ fun CameraOverlay(
     var liveAddress by remember { mutableStateOf("") }
     LaunchedEffect(stampEnabled) {
         if (stampEnabled) {
-            withContext(Dispatchers.IO) {
+            val snapshot = withContext(Dispatchers.IO) {
                 val loc = locationProvider.lastKnownLocation()
-                liveLocation = loc
                 val lat = loc.latitude
                 val lng = loc.longitude
-                liveAddress = if (lat != null && lng != null) reverseGeocode(context, lat, lng) else ""
+                loc to if (lat != null && lng != null) reverseGeocode(context, lat, lng) else ""
             }
+            liveLocation = snapshot.first
+            liveAddress = snapshot.second
         }
     }
 
@@ -174,7 +176,7 @@ fun CameraOverlay(
             onPhotoCaptured()
             onDismiss()
 
-            MainScope().launch {
+            coroutineScope.launch {
                 uris.forEach { uri ->
                     runCatching {
                         val file = withContext(Dispatchers.IO) {
@@ -543,7 +545,7 @@ fun CameraOverlay(
                                             onDismiss()
                                             
                                             // Process watermark and save to database in background coroutine
-                                            MainScope().launch {
+                                            coroutineScope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     if (capturedStamp) {
                                                         val loc = locationProvider.lastKnownLocation()

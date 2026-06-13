@@ -10,16 +10,17 @@ import kotlinx.coroutines.flow.update
 
 data class ProgressHubScreenUiState(
     val isProgressSubTab: Boolean = true,
-    val groupMode: String = "NhÃ  tháº§u",
+    val groupMode: String = "Nhà thầu",
     val filterMode: String = "All",
     val selectedNodeCodeForProgress: String? = null,
     val currentMonth: Int,
     val currentYear: Int,
     val selectedDateMillis: Long,
-    val weatherSelected: String = "Náº¯ng",
+    val weatherSelected: String = "Nắng",
     val customWeather: String = "",
     val temperatureInput: String = "30",
     val selectedNodeCodeForLog: String? = null,
+    val selectedRouteCodeForLog: String? = null,
     val manpowerInput: String = "5",
     val workItemInput: String = "",
     val noteInput: String = "",
@@ -27,6 +28,7 @@ data class ProgressHubScreenUiState(
     val actualProgressChecked: Boolean = false,
     val logFormError: String = "",
     val nodeDropdownExpanded: Boolean = false,
+    val routeDropdownExpanded: Boolean = false,
     val volumeInput: String = "",
     val unitInput: String = "",
     val selectedCategoryName: String = "",
@@ -37,7 +39,8 @@ data class ProgressHubScreenUiState(
     val progressSheetPlannedInput: String = "",
     val progressSheetActualInput: String = "",
     val progressSheetValidationError: String = "",
-    val progressSheetNote: String = ""
+    val progressSheetNote: String = "",
+    val editingDailyLogId: String? = null
 )
 
 @HiltViewModel
@@ -124,6 +127,10 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         it.copy(selectedNodeCodeForLog = nodeCode)
     }
 
+    fun updateSelectedRouteCodeForLog(routeCode: String?) = updateState {
+        it.copy(selectedRouteCodeForLog = routeCode)
+    }
+
     fun updateManpowerInput(manpowerInput: String) = updateState {
         it.copy(manpowerInput = manpowerInput)
     }
@@ -152,12 +159,25 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         it.copy(nodeDropdownExpanded = expanded)
     }
 
+    fun setRouteDropdownExpanded(expanded: Boolean) = updateState {
+        it.copy(routeDropdownExpanded = expanded)
+    }
+
     fun updateVolumeInput(volumeInput: String) = updateState {
         it.copy(volumeInput = volumeInput)
     }
 
     fun updateUnitInput(unitInput: String) = updateState {
         it.copy(unitInput = unitInput)
+    }
+
+    fun selectWorkTemplate(name: String, unit: String) = updateState {
+        it.copy(
+            selectedCategoryName = name,
+            unitInput = unit,
+            categoryDropdownExpanded = false,
+            logFormError = ""
+        )
     }
 
     fun updateSelectedCategoryName(selectedCategoryName: String) = updateState {
@@ -196,6 +216,34 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         it.copy(progressSheetNote = note)
     }
 
+    fun startEditingDailyLog(log: com.mapsupervision.domain.model.DailyLog) {
+        val selectedWeather = when (log.weather) {
+            "Nắng", "Mưa", "Nhiều mây", "Giông bão" -> log.weather
+            else -> "Nắng"
+        }
+        updateState {
+            it.copy(
+                editingDailyLogId = log.id,
+                selectedDateMillis = log.dateEpochDay * 24L * 60L * 60L * 1000L,
+                selectedNodeCodeForLog = log.nodeCode,
+                selectedRouteCodeForLog = log.routeCode,
+                weatherSelected = selectedWeather,
+                customWeather = if (selectedWeather == log.weather) "" else log.weather,
+                temperatureInput = if (log.temperature > 0.0) log.temperature.toString() else it.temperatureInput,
+                manpowerInput = log.manpower.toString(),
+                workItemInput = log.workItem,
+                noteInput = log.note,
+                volumeInput = if (log.volume > 0.0) log.volume.toString() else "",
+                unitInput = log.unit,
+                selectedCategoryName = log.categoryName,
+                logFormError = "",
+                routeDropdownExpanded = false,
+                nodeDropdownExpanded = false,
+                categoryDropdownExpanded = false
+            )
+        }
+    }
+
     fun resetLogForm() {
         updateState {
             it.copy(
@@ -207,6 +255,11 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
                 unitInput = "",
                 selectedCategoryName = "",
                 selectedNodeCodeForLog = null,
+                selectedRouteCodeForLog = null,
+                routeDropdownExpanded = false,
+                nodeDropdownExpanded = false,
+                categoryDropdownExpanded = false,
+                editingDailyLogId = null,
                 logFormError = ""
             )
         }

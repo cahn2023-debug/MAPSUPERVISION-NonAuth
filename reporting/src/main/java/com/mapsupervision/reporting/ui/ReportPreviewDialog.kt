@@ -1,6 +1,8 @@
 package com.mapsupervision.reporting.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,21 +11,25 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,11 +41,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,25 +53,19 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.rememberAsyncImagePainter
 import com.mapsupervision.domain.ai.ReportDraftResult
-import com.mapsupervision.domain.model.GisNode
-import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReportPreviewDialog(
     showDialog: Boolean,
     onDismiss: () -> Unit,
     projectId: String,
-    filterNodeCode: String? = null,
     selectedExportFormat: String,
     isExporting: Boolean,
     onUpdatePhotoOffset: (SitePhoto, Int) -> Unit,
-    projectNodes: List<GisNode>,
-    projectRoutes: List<GisRoute>,
     onConfirmExport: (String) -> Unit,
     photos: List<SitePhoto>,
     materialRows: List<MaterialReportRow>,
@@ -76,34 +76,8 @@ fun ReportPreviewDialog(
     var format by remember(selectedExportFormat) {
         mutableStateOf(if (selectedExportFormat.isBlank()) "PDF" else selectedExportFormat)
     }
-    var selectedPhotoFilters by remember(projectId, filterNodeCode) {
-        mutableStateOf(if (filterNodeCode.isNullOrBlank()) emptySet<String>() else setOf("NODE:$filterNodeCode"))
-    }
-    val availableFilters = remember(projectNodes, projectRoutes) {
-        buildList {
-            projectNodes.forEach { if (it.code.isNotBlank()) add("NODE:${it.code}") }
-            projectRoutes.forEach { if (it.code.isNotBlank()) add("ROUTE:${it.code}") }
-        }
-    }
-    val filteredPhotos = remember(photos, selectedPhotoFilters) {
-        if (selectedPhotoFilters.isEmpty()) photos else photos.filter { photo ->
-            selectedPhotoFilters.any { key ->
-                val value = key.substringAfter(":")
-                when {
-                    key.startsWith("NODE:") -> {
-                        photo.objectCode == value ||
-                            photo.matchedNodeCode == value ||
-                            photo.tagCodesCsv.split(',').map(String::trim).any { it == value }
-                    }
-                    key.startsWith("ROUTE:") -> {
-                        photo.matchedRouteCode == value ||
-                            photo.tagCodesCsv.split(',').map(String::trim).any { it == value }
-                    }
-                    else -> false
-                }
-            }
-        }
-    }
+    var showPhotos by remember { mutableStateOf(false) }
+    val chunks = remember(photos) { photos.chunked(3) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -112,7 +86,7 @@ fun ReportPreviewDialog(
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.85f)
+                .fillMaxSize(0.92f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.background)
                 .padding(16.dp)
@@ -124,7 +98,7 @@ fun ReportPreviewDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (filterNodeCode != null) "Xem trước Báo cáo điểm: $filterNodeCode" else "Xem trước Báo cáo dự án",
+                        text = "Xem trước Báo cáo dự án",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
@@ -180,35 +154,11 @@ fun ReportPreviewDialog(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("LỌC ẢNH THEO NODE/TUYẾN", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        if (availableFilters.isEmpty()) {
-                            Text("Không có node/tuyến để lọc.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                        } else {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(
-                                    selected = selectedPhotoFilters.isEmpty(),
-                                    onClick = { selectedPhotoFilters = emptySet() },
-                                    label = { Text("Tất cả") }
-                                )
-                                availableFilters.forEach { key ->
-                                    val label = key.substringAfter(":")
-                                    val selected = selectedPhotoFilters.contains(key)
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = {
-                                            selectedPhotoFilters = if (selected) selectedPhotoFilters - key else selectedPhotoFilters + key
-                                        },
-                                        label = { Text(label) }
-                                    )
-                                }
-                            }
-                            Text(
-                                "Đang hiển thị ${filteredPhotos.size}/${photos.size} ảnh",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("THÔNG TIN BÁO CÁO", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Text("Dự án: $projectId", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Tổng số ảnh thực địa: ${photos.size} ảnh", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Thời gian lập báo cáo: " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date()), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
@@ -218,23 +168,6 @@ fun ReportPreviewDialog(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    item {
-                        ElevatedCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("THÔNG TIN BÁO CÁO", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                Text("Dự án: $projectId", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                if (filterNodeCode != null) {
-                                    Text("Điểm giám sát: $filterNodeCode", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Text("Tổng số ảnh thực địa chọn vào báo cáo: ${photos.size} ảnh", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Thời gian lập báo cáo: " + SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date()), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-
                     aiDraft?.let { draft ->
                         item {
                             ElevatedCard(
@@ -270,13 +203,22 @@ fun ReportPreviewDialog(
                                 if (materialRows.isEmpty()) {
                                     Text("Không có dữ liệu vật tư.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
-                                    materialRows.forEach { row ->
-                                        val textStyle = if (row.isTotal) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium
-                                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                            Text(row.materialName, modifier = Modifier.weight(0.5f), style = textStyle)
-                                            Text(row.totalPlannedQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
-                                            Text(row.totalActualQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
-                                            Text("${row.completionPercent.toInt()}%", modifier = Modifier.weight(0.1f), style = textStyle)
+                                    LazyColumn(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 280.dp)
+                                    ) {
+                                        itemsIndexed(
+                                            items = materialRows,
+                                            key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+                                        ) { _, row ->
+                                            val textStyle = if (row.isTotal) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium
+                                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                                Text(row.materialName, modifier = Modifier.weight(0.5f), style = textStyle)
+                                                Text(row.totalPlannedQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
+                                                Text(row.totalActualQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
+                                                Text("${row.completionPercent.toInt()}%", modifier = Modifier.weight(0.1f), style = textStyle)
+                                            }
                                         }
                                     }
                                 }
@@ -284,87 +226,30 @@ fun ReportPreviewDialog(
                         }
                     }
 
-                    if (filteredPhotos.isNotEmpty()) {
+                    if (chunks.isNotEmpty()) {
                         item {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("NHẬT KÝ HÌNH ẢNH ĐÃ CHỌN (${filteredPhotos.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onBackground)
-                                val chunks = filteredPhotos.chunked(3)
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    chunks.forEach { rowPhotos ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            rowPhotos.forEach { photo ->
-                                                val thumbFile = java.io.File(photo.thumbnailPath.ifBlank { photo.filePath })
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .aspectRatio(1f)
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                ) {
-                                                    if (thumbFile.exists()) {
-                                                        androidx.compose.foundation.Image(
-                                                            painter = rememberAsyncImagePainter(thumbFile),
-                                                            contentDescription = photo.objectCode,
-                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                                            modifier = Modifier.fillMaxSize()
-                                                        )
-                                                    } else {
-                                                        Icon(
-                                                            Icons.Outlined.Close,
-                                                            contentDescription = null,
-                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            modifier = Modifier.align(Alignment.Center).size(24.dp)
-                                                        )
-                                                    }
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .align(Alignment.BottomStart)
-                                                            .background(Color(0xAA000000))
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text(photo.objectCode, color = Color.White, fontSize = 8.sp)
-                                                    }
-                                                    Column(
-                                                        modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .padding(4.dp),
-                                                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                                                        horizontalAlignment = Alignment.End
-                                                    ) {
-                                                        val matched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
-                                                        Text(
-                                                            if (matched) "Khớp" else "Lệch",
-                                                            color = Color.White,
-                                                            fontSize = 8.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier
-                                                                .background(
-                                                                    if (matched) Color(0xCC16A34A) else Color(0xCCDC2626),
-                                                                    RoundedCornerShape(999.dp)
-                                                                )
-                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        )
-                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                            OutlinedButton(
-                                                                onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) - 5).toInt()) },
-                                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                                                modifier = Modifier.height(26.dp)
-                                                            ) { Text("-5m", fontSize = 8.sp) }
-                                                            OutlinedButton(
-                                                                onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) + 5).toInt()) },
-                                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                                                modifier = Modifier.height(26.dp)
-                                                            ) { Text("+5m", fontSize = 8.sp) }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            repeat(3 - rowPhotos.size) { Spacer(modifier = Modifier.weight(1f)) }
-                                        }
-                                    }
+                            Text(
+                                text = "NHẬT KÝ HÌNH ẢNH ĐÃ CHÈN (${photos.size})",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+
+                        itemsIndexed(chunks) { _, rowPhotos ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                rowPhotos.forEach { photo ->
+                                    PhotoItem(
+                                        photo = photo,
+                                        onUpdatePhotoOffset = onUpdatePhotoOffset,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                repeat(3 - rowPhotos.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -380,8 +265,7 @@ fun ReportPreviewDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        shape = MaterialTheme.shapes.medium,
-                        enabled = !isExporting
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Text("Hủy")
                     }
@@ -398,6 +282,83 @@ fun ReportPreviewDialog(
                         Text(if (isExporting) "Đang xuất..." else "Xác nhận xuất ${if (format == "PDF") "PDF" else "Word"}", fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoItem(
+    photo: SitePhoto,
+    onUpdatePhotoOffset: (SitePhoto, Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val thumbFile = remember(photo) { java.io.File(photo.thumbnailPath.ifBlank { photo.filePath }) }
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        val painter = rememberAsyncImagePainter(thumbFile)
+        androidx.compose.foundation.Image(
+            painter = painter,
+            contentDescription = photo.objectCode,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        val painterState = painter.state
+        if (painterState is coil.compose.AsyncImagePainter.State.Error ||
+            painterState is coil.compose.AsyncImagePainter.State.Empty
+        ) {
+            Icon(
+                Icons.Outlined.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center).size(24.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .background(Color(0xAA000000))
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+        ) {
+            Text(photo.objectCode, color = Color.White, fontSize = 8.sp)
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            val matched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+            Text(
+                if (matched) "Khớp" else "Lệch",
+                color = Color.White,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(
+                        if (matched) Color(0xCC16A34A) else Color(0xCCDC2626),
+                        RoundedCornerShape(999.dp)
+                    )
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(
+                    onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) - 5).toInt()) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(26.dp)
+                ) { Text("-5m", fontSize = 8.sp) }
+                OutlinedButton(
+                    onClick = { onUpdatePhotoOffset(photo, ((photo.matchingTimeOffsetMs / 60000) + 5).toInt()) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    modifier = Modifier.height(26.dp)
+                ) { Text("+5m", fontSize = 8.sp) }
             }
         }
     }

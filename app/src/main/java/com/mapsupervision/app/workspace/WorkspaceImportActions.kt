@@ -76,6 +76,7 @@ fun WorkspaceViewModel.retryFailedImports() {
         _state.value = _state.value.copy(
             importUi = _state.value.importUi.copy(message = "Không có file lỗi để thử lại")
         )
+
         return
     }
     importDesignFiles(uris)
@@ -83,6 +84,7 @@ fun WorkspaceViewModel.retryFailedImports() {
 
 fun WorkspaceViewModel.onOpenPicker() {}
 fun WorkspaceViewModel.onPickerEmpty() {}
+
 fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: String, progress: String) {
     // Update in-memory state immediately for responsive UI
     val key = "${nodeCode}_${materialName}"
@@ -101,6 +103,11 @@ fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: St
         (row.nodeCode == nodeCode || row.nodeCode == node?.id || row.nodeCode == node?.code) &&
             row.materialName.equals(materialName, ignoreCase = true)
     }
+    val resolvedUnit = if (existingIndex >= 0) {
+        updatedRows[existingIndex].unit
+    } else {
+        resolveWorkTemplateUnit(materialName, stateSnapshot.workCategories, stateSnapshot.materialRows)
+    }
     val updatedRow = MaterialProgress(
         id = if (existingIndex >= 0) updatedRows[existingIndex].id else UUID.randomUUID().toString(),
         projectId = stateSnapshot.activeProjectId.orEmpty(),
@@ -108,7 +115,8 @@ fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: St
         materialName = if (existingIndex >= 0) updatedRows[existingIndex].materialName else materialName,
         plannedQty = extractPlannedQty(node, materialName),
         actualQty = progress.toFloatOrNull() ?: 0f,
-        updatedAtEpochMs = System.currentTimeMillis()
+        updatedAtEpochMs = System.currentTimeMillis(),
+        unit = resolvedUnit
     )
     if (existingIndex >= 0) {
         updatedRows[existingIndex] = updatedRow
@@ -135,7 +143,8 @@ fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: St
                 materialName = materialName,
                 plannedQty = extractPlannedQty(node, materialName),
                 actualQty = actualQty,
-                updatedAtEpochMs = System.currentTimeMillis()
+                updatedAtEpochMs = System.currentTimeMillis(),
+                unit = updatedRow.unit
             )
         )
         markProjectChanged(projectId, "material_progress_updated")

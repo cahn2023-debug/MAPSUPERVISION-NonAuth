@@ -105,6 +105,15 @@ object ChatDictionaryResolver {
         val normMsg = normalize(message)
         if (normMsg.isBlank()) return Pair(selectedRouteCode, if (selectedRouteCode != null) 90 else 0)
 
+        for (ref in refs.routeRefs) {
+            val aliases = listOf(ref.code, ref.startNodeCode, ref.endNodeCode, ref.contractor)
+                .filter { it.isNotBlank() }
+                .map { normalize(it) }
+            if (aliases.any { it.isNotBlank() && normMsg.contains(it) }) {
+                return Pair(ref.code, 95)
+            }
+        }
+
         for (code in refs.routeCodes) {
             val normCode = normalize(code)
             if (normCode.isNotBlank() && normMsg.contains(normCode)) {

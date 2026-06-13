@@ -6,8 +6,6 @@ import com.mapsupervision.domain.ai.device.AndroidDeviceCapabilityDetector
 import com.mapsupervision.domain.ai.device.ResourceMonitor
 import com.mapsupervision.domain.ai.engines.CloudGeminiEngine
 import com.mapsupervision.domain.ai.engines.LocalLiteRtEngine
-import com.mapsupervision.domain.ai.engines.MediaPipeLlmEngine
-import com.mapsupervision.domain.ai.engines.MlKitVisionEngine
 import com.mapsupervision.domain.ai.engines.RuleBasedEngine
 import com.mapsupervision.domain.ai.engines.TfliteVisionEngine
 import com.mapsupervision.domain.repository.AiDecisionCacheStore
@@ -84,7 +82,7 @@ class AiOrchestrator internal constructor(
         engines.clear()
         engines.addAll(allEngines.filter { engine ->
             when (engine.engineType) {
-                AiEngine.LOCAL_LITERT -> config.enableMediaPipeLlm
+                AiEngine.LOCAL_LITERT -> config.enableLocalLiteRt
                 AiEngine.MEDIAPIPE_LLM -> config.enableMediaPipeLlm
                 AiEngine.TFLITE_VISION -> config.enableTfliteVision
                 AiEngine.MLKIT_VISION -> config.enableMlKitVision
@@ -230,7 +228,39 @@ class AiOrchestrator internal constructor(
             }
         }
     }
-    
+
+    suspend fun determineExecutionPolicy(payload: AiPayload, capabilities: DeviceCapabilities): AiExecutionPolicy {
+        val capability = payload.capability
+        if (featureFlags[capability] != true) {
+            return AiExecutionPolicy.RULE_BASED
+        }
+        if (resourceGate.shouldBypassAi(config.thermalThreshold, config.batteryThreshold) ||
+            capabilities.thermalStatus == ThermalStatus.CRITICAL ||
+            (capabilities.batteryLevel < config.batteryThreshold && !capabilities.isCharging)
+        ) {
+            return AiExecutionPolicy.RULE_BASED
+        }
+        val capableEngines = engines.filter { it.canHandle(capability) }
+        val availableEngines = capableEngines.filter { it.isAvailable() }
+        if (availableEngines.isEmpty()) {
+            return AiExecutionPolicy.RULE_BASED
+        }
+        val suitableEngines = availableEngines.filter { engine ->
+            isEngineSafe(engine.engineType, capabilities)
+        }
+        if (suitableEngines.isEmpty()) {
+            return AiExecutionPolicy.RULE_BASED
+        }
+        val selectedEngine = preferredEngineOrder(capability).firstNotNullOfOrNull { preferred ->
+            suitableEngines.firstOrNull { it.engineType == preferred }
+        } ?: suitableEngines.maxByOrNull { it.priority }
+        return when (selectedEngine?.engineType) {
+            AiEngine.LOCAL_LITERT -> AiExecutionPolicy.LOCAL_LITERT
+            AiEngine.MEDIAPIPE_LLM -> AiExecutionPolicy.MEDIAPIPE_LLM
+            else -> AiExecutionPolicy.RULE_BASED
+        }
+    }
+
     private suspend fun selectBestEngine(capability: AiCapability, capabilities: DeviceCapabilities): AiEngineInterface {
         val capableEngines = engines.filter { it.canHandle(capability) }
         
@@ -494,9 +524,7 @@ class AiOrchestrator internal constructor(
         ): List<AiEngineInterface> =
             listOf(
                 LocalLiteRtEngine(localLlmRepository),
-                MediaPipeLlmEngine(context),
                 TfliteVisionEngine(context, tfLiteRepository),
-                MlKitVisionEngine(context),
                 CloudGeminiEngine(aiRepository),
                 RuleBasedEngine()
             )

@@ -115,7 +115,7 @@ class ProjectRepositoryImpl @Inject constructor(
     }
 
     private fun resolveProjectDbPath(slug: String): String =
-        storageManager.projectRoot(slug).resolve("db/project.sqlite").absolutePath
+        storageManager.privateProjectRoot(slug).resolve("db/project.sqlite").absolutePath
 
     private fun slugify(name: String): String =
         name.lowercase().trim().replace(Regex("\\s+"), "-").replace(Regex("[^a-z0-9-]"), "")

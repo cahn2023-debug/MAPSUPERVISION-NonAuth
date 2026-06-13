@@ -107,6 +107,7 @@ data class RoutingStrategy(
  * Smart Router configuration
  */
 data class SmartRouterConfig(
+    val enableLocalLiteRt: Boolean = true,
     val enableMediaPipeLlm: Boolean = true,
     val enableTfliteVision: Boolean = true,
     val enableMlKitVision: Boolean = true,

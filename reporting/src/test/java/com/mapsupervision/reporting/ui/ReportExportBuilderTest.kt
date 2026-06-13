@@ -9,7 +9,6 @@ import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.PhotoLocationStatus
 import com.mapsupervision.domain.model.SitePhoto
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,7 +17,7 @@ class ReportExportBuilderTest {
     fun buildReportExportContent_withoutFilterKeepsWholeProjectData() {
         val content = buildReportExportContent(
             projectId = "project-1",
-            filterNodeCode = null,
+            filterContractor = null,
             photos = samplePhotos(),
             progress = sampleProgress(),
             materialRowsRaw = sampleMaterialRows(),
@@ -31,18 +30,21 @@ class ReportExportBuilderTest {
         assertEquals("project-1", content.targetId)
         assertEquals(2, content.photos.size)
         assertEquals(2, content.dailyLogLines.size)
-        assertTrue(content.lines.contains("Tổng số điểm giám sát: 2"))
-        assertTrue(content.lines.contains("Số điểm thi công chậm: 1"))
-        assertTrue(content.lines.contains("Tổng số ảnh thực địa chụp được: 2"))
+        assertEquals(8, content.lines.size)
+        assertTrue(content.lines.any { it.contains("Summary") })
+        assertTrue(content.lines.any { it.contains("Risk") })
         assertEquals(listOf("Cable", "Pipe", "Tổng"), content.materialRows.map { it.materialName })
         assertTrue(content.materialRows.last().isTotal)
+        assertEquals(30f, content.materialRows[0].totalPlannedQty, 0.001f)
+        assertEquals(20f, content.materialRows[0].totalActualQty, 0.001f)
+        assertEquals(66.666664f, content.materialRows[0].completionPercent, 0.001f)
     }
 
     @Test
-    fun buildReportExportContent_withFilterShrinksToSingleNode() {
+    fun buildReportExportContent_withFilterContractorAKeepsOnlyAData() {
         val content = buildReportExportContent(
             projectId = "project-1",
-            filterNodeCode = "NODE-A",
+            filterContractor = "Contractor A",
             photos = samplePhotos(),
             progress = sampleProgress(),
             materialRowsRaw = sampleMaterialRows(),
@@ -52,15 +54,84 @@ class ReportExportBuilderTest {
             activeDraft = sampleDraft()
         )
 
-        assertEquals("project-1_NODE-A", content.targetId)
-        assertEquals(1, content.photos.size)
-        assertEquals("NODE-A", content.photos.single().objectCode)
-        assertEquals(1, content.dailyLogLines.size)
-        assertTrue(content.dailyLogLines.single().contains("Work A"))
-        assertTrue(content.lines.first().contains("NODE-A"))
-        assertTrue(content.lines.contains("Tổng số điểm giám sát: 1"))
-        assertFalse(content.lines.any { it.contains("Số điểm thi công chậm") })
+        assertEquals("project-1", content.targetId)
+        assertEquals(2, content.photos.size)
+        assertEquals(2, content.dailyLogLines.size)
+        assertEquals(8, content.lines.size)
+        assertTrue(content.lines.any { it.contains("Summary") })
+        assertTrue(content.lines.any { it.contains("Risk") })
         assertEquals(listOf("Cable", "Tổng"), content.materialRows.map { it.materialName })
+        assertEquals(10f, content.materialRows[0].totalPlannedQty, 0.001f)
+        assertEquals(6f, content.materialRows[0].totalActualQty, 0.001f)
+        assertEquals(60f, content.materialRows[0].completionPercent, 0.001f)
+        assertEquals(10f, content.materialRows.last().totalPlannedQty, 0.001f)
+        assertEquals(6f, content.materialRows.last().totalActualQty, 0.001f)
+        assertEquals(60f, content.materialRows.last().completionPercent, 0.001f)
+    }
+
+    @Test
+    fun buildReportExportContent_fromSnapshotUsesSnapshotData() {
+        val snapshot = ReportingSnapshot(
+            projectId = "project-1",
+            projectName = "Project One",
+            nodes = sampleNodes(),
+            routes = sampleRoutes(),
+            photos = samplePhotos(),
+            progress = sampleProgress(),
+            materialRowsRaw = sampleMaterialRows(),
+            materialRows = buildMaterialReportRows(sampleNodes(), sampleRoutes(), sampleMaterialRows()),
+            dailyLogs = sampleDailyLogs()
+        )
+
+        val content = buildReportExportContent(
+            snapshot = snapshot,
+            filterContractor = "Contractor A",
+            activeDraft = sampleDraft()
+        )
+
+        assertEquals("project-1", content.targetId)
+        assertEquals(2, content.photos.size)
+        assertEquals(2, content.dailyLogLines.size)
+        assertEquals(8, content.lines.size)
+        assertTrue(content.lines.first().startsWith("B"))
+        assertEquals(listOf("Cable", "Tổng"), content.materialRows.map { it.materialName })
+    }
+
+
+    @Test
+    fun buildMaterialReportRows_usesPlannedQtyFallbackWhenSummaryMissing() {
+        val nodes = listOf(
+            GisNode(
+                id = "node-c-id",
+                projectId = "project-1",
+                code = "NODE-C",
+                contractor = "Contractor C",
+                latitude = 0.0,
+                longitude = 0.0,
+                materialSummary = ""
+            )
+        )
+        val rows = listOf(
+            MaterialProgress(
+                id = "material-c",
+                projectId = "project-1",
+                nodeCode = "NODE-C",
+                materialName = "Clamp",
+                plannedQty = 7f,
+                actualQty = 3f,
+                updatedAtEpochMs = 1_000L,
+                unit = ""
+            )
+        )
+
+        val materialRows = buildMaterialReportRows(nodes, emptyList(), rows, filterContractor = "Contractor C")
+
+        assertEquals(listOf("Clamp", "Tổng"), materialRows.map { it.materialName })
+        assertEquals(7f, materialRows[0].totalPlannedQty, 0.001f)
+        assertEquals(3f, materialRows[0].totalActualQty, 0.001f)
+        assertEquals(42.857143f, materialRows[0].completionPercent, 0.001f)
+        assertEquals(7f, materialRows.last().totalPlannedQty, 0.001f)
+        assertEquals(3f, materialRows.last().totalActualQty, 0.001f)
     }
 
     private fun sampleDraft() = ReportDraftResult(
@@ -131,7 +202,8 @@ class ReportExportBuilderTest {
             materialName = "Cable",
             plannedQty = 10f,
             actualQty = 6f,
-            updatedAtEpochMs = 1_000L
+            updatedAtEpochMs = 1_000L,
+            unit = ""
         ),
         MaterialProgress(
             id = "material-b",
@@ -140,7 +212,8 @@ class ReportExportBuilderTest {
             materialName = "Cable",
             plannedQty = 20f,
             actualQty = 14f,
-            updatedAtEpochMs = 2_000L
+            updatedAtEpochMs = 2_000L,
+            unit = ""
         ),
         MaterialProgress(
             id = "material-c",
@@ -149,7 +222,8 @@ class ReportExportBuilderTest {
             materialName = "Pipe",
             plannedQty = 5f,
             actualQty = 2f,
-            updatedAtEpochMs = 3_000L
+            updatedAtEpochMs = 3_000L,
+            unit = ""
         )
     )
 
@@ -210,3 +284,6 @@ class ReportExportBuilderTest {
         )
     )
 }
+
+
+

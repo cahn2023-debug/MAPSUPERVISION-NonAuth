@@ -3,8 +3,12 @@ package com.mapsupervision.reporting.docx
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Environment
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.reporting.ui.MaterialReportRow
+import java.io.ByteArrayOutputStream
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -24,7 +28,8 @@ class DocxReportGenerator @Inject constructor() {
         projectId: String,
         summaryLines: List<String>,
         materialRows: List<MaterialReportRow>,
-        photos: List<SitePhoto>
+        photos: List<SitePhoto>,
+        dailyLogs: List<DailyLog>
     ): File {
         val outDir = publicReportsDir()
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -51,14 +56,19 @@ class DocxReportGenerator @Inject constructor() {
                 val imgFile = File(photo.filePath)
                 if (imgFile.exists()) {
                     zos.putNextEntry(ZipEntry("word/media/image_${index + 1}.jpg"))
-                    imgFile.inputStream().use { it.copyTo(zos) }
+                    val embeddedBytes = downsamplePhotoBytes(imgFile)
+                    if (embeddedBytes != null) {
+                        zos.write(embeddedBytes)
+                    } else {
+                        imgFile.inputStream().use { it.copyTo(zos) }
+                    }
                     zos.closeEntry()
                 }
             }
 
             // 5. Write word/document.xml
             zos.putNextEntry(ZipEntry("word/document.xml"))
-            zos.write(buildDocumentXml(projectId, summaryLines, materialRows, photos).toByteArray(Charsets.UTF_8))
+            zos.write(buildDocumentXml(projectId, summaryLines, materialRows, photos, dailyLogs).toByteArray(Charsets.UTF_8))
             zos.closeEntry()
         }
 
@@ -73,6 +83,36 @@ class DocxReportGenerator @Inject constructor() {
         val dir = File(downloads, "MapSupervision/Reports")
         dir.mkdirs()
         return dir
+    }
+
+    private fun downsamplePhotoBytes(file: File): ByteArray? {
+        val bounds = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val sampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, 1600, 1600)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        return ByteArrayOutputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            bitmap.recycle()
+            out.toByteArray()
+        }
+    }
+
+    private fun calculateInSampleSize(srcWidth: Int, srcHeight: Int, reqWidth: Int, reqHeight: Int): Int {
+        var inSampleSize = 1
+        var halfHeight = srcHeight / 2
+        var halfWidth = srcWidth / 2
+        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            inSampleSize *= 2
+        }
+        return inSampleSize.coerceAtLeast(1)
     }
 
     private fun buildContentTypesXml(photoCount: Int): String {
@@ -109,7 +149,8 @@ class DocxReportGenerator @Inject constructor() {
         projectId: String,
         summaryLines: List<String>,
         materialRows: List<MaterialReportRow>,
-        photos: List<SitePhoto>
+        photos: List<SitePhoto>,
+        dailyLogs: List<DailyLog>
     ): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -214,6 +255,46 @@ class DocxReportGenerator @Inject constructor() {
       </w:tr>""")
         }
         sb.append("\n    </w:tbl>\n    <w:p/>")
+
+        if (dailyLogs.isNotEmpty()) {
+            sb.append("""
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:b/>
+          <w:sz w:val="28"/>
+          <w:szCs w:val="28"/>
+        </w:rPr>
+        <w:t>Nhật ký thi công và Thời tiết</w:t>
+      </w:r>
+    </w:p>""")
+
+            dailyLogs.sortedByDescending { it.createdAtEpochMs }.forEach { log ->
+                val timeStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(log.createdAtEpochMs))
+                val temperatureText = if (log.temperature != 0.0) " | Nhiệt độ: ${"%.1f".format(log.temperature)}°C" else ""
+                val weatherText = if (log.weather.isNotBlank()) " | Thời tiết: ${log.weather}" else ""
+                val nodeText = log.nodeCode?.let { " | Node: $it" }.orEmpty()
+                val routeText = log.routeCode?.let { " | Tuyến: $it" }.orEmpty()
+                val volumeText = if (log.volume != 0.0) {
+                    val unitText = if (log.unit.isNotBlank()) " ${log.unit}" else ""
+                    " | Khối lượng: ${"%.2f".format(log.volume)}$unitText"
+                } else ""
+                val noteText = if (log.note.isNotBlank()) " | Ghi chú: ${log.note}" else ""
+                val line = "[$timeStr] ${log.workItem}$nodeText$routeText$weatherText$temperatureText$volumeText$noteText"
+
+                sb.append("""
+    <w:p>
+      <w:r>
+        <w:rPr>
+          <w:sz w:val="22"/>
+          <w:szCs w:val="22"/>
+        </w:rPr>
+        <w:t>${escapeXml(line)}</w:t>
+      </w:r>
+    </w:p>""")
+            }
+            sb.append("<w:p/>")
+        }
 
         // Photo Grid Section
         if (photos.isNotEmpty()) {
