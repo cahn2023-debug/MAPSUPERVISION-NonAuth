@@ -51,6 +51,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -80,6 +84,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -377,6 +383,14 @@ fun CameraOverlay(
     var liveAddress by remember { mutableStateOf("") }
 
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
+    val isKeyboardVisible = WindowInsets.isImeVisible
+    var showZoomIndicator by remember { mutableStateOf(false) }
+
+    LaunchedEffect(zoomRatio) {
+        showZoomIndicator = true
+        delay(1000)
+        showZoomIndicator = false
+    }
 
     var currentTileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var currentTileKey by remember { mutableStateOf<RoundedLocationKey?>(null) }
@@ -720,16 +734,18 @@ fun CameraOverlay(
 
 
 
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color.Transparent)
                 .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
-                .align(Alignment.TopCenter)
+                .align(Alignment.TopCenter),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
@@ -741,43 +757,44 @@ fun CameraOverlay(
                     },
                     color = if (isRecording || isProcessingVideoStamp) Color.Red else Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Row(
-                modifier = Modifier.align(Alignment.Center),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    Icons.Outlined.Layers,
-                    contentDescription = null,
-                    tint = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    "Stamp",
-                    color = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
-                    fontSize = 12.sp
-                )
-                Switch(
-                    checked = stampEnabled,
-                    onCheckedChange = { if (controlsEnabled) stampEnabled = it },
-                    enabled = controlsEnabled,
-                    modifier = Modifier.size(width = 44.dp, height = 24.dp),
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF1E78C8),
-                        uncheckedThumbColor = Color(0xAAFFFFFF),
-                        uncheckedTrackColor = Color(0x44FFFFFF)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Layers,
+                        contentDescription = null,
+                        tint = if (stampEnabled) Color(0xFF00E5FF) else Color(0x88FFFFFF),
+                        modifier = Modifier.size(18.dp)
                     )
-                )
-            }
-            Row(
-                modifier = Modifier.align(Alignment.CenterEnd),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+                    Text(
+                        "Stamp",
+                        color = if (stampEnabled) Color(0xFF00E5FF) else Color(0x88FFFFFF),
+                        fontSize = 12.sp
+                    )
+                    Switch(
+                        checked = stampEnabled,
+                        onCheckedChange = { if (controlsEnabled) stampEnabled = it },
+                        enabled = controlsEnabled,
+                        modifier = Modifier.size(width = 44.dp, height = 24.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF00E5FF),
+                            uncheckedThumbColor = Color(0xAAFFFFFF),
+                            uncheckedTrackColor = Color(0x44FFFFFF)
+                        )
+                    )
+                }
                 if (flashAvailable) {
                     IconButton(
                         onClick = { if (controlsEnabled) showFlashMenu = !showFlashMenu },
@@ -792,7 +809,7 @@ fun CameraOverlay(
                         Icon(
                             imageVector = flashIcon,
                             contentDescription = "Flash mode",
-                            tint = if (flashMode == CameraFlashMode.OFF) Color.White else Color(0xFF64B5F6)
+                            tint = if (flashMode == CameraFlashMode.OFF) Color.White else Color(0xFF00E5FF)
                         )
                     }
                 }
@@ -829,8 +846,8 @@ fun CameraOverlay(
                     modifier = Modifier
                         .padding(top = 60.dp, end = 48.dp)
                         .align(Alignment.TopEnd)
-                        .background(Color(0xCC111111), RoundedCornerShape(20.dp))
-                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                        .background(Color(0xCC0A0D1A), RoundedCornerShape(20.dp))
+                        .border(1.dp, Color(0x1A00E5FF), RoundedCornerShape(20.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -842,7 +859,7 @@ fun CameraOverlay(
                                 CameraFlashMode.OFF -> "Off"
                                 CameraFlashMode.ON -> "On"
                             },
-                            color = if (selected) Color(0xFF64B5F6) else Color.White,
+                            color = if (selected) Color(0xFF00E5FF) else Color.White,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                             fontSize = 12.sp,
                             modifier = Modifier
@@ -866,6 +883,7 @@ fun CameraOverlay(
                 .fillMaxWidth()
                 .background(Color.Transparent)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .align(Alignment.BottomCenter),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -889,297 +907,350 @@ fun CameraOverlay(
                     unfocusedTextColor = Color.White,
                     focusedContainerColor = Color(0x33FFFFFF),
                     unfocusedContainerColor = Color(0x15FFFFFF),
-                    focusedBorderColor = Color(0x66FFFFFF),
+                    focusedBorderColor = Color(0xFF00E5FF),
                     unfocusedBorderColor = Color(0x33FFFFFF),
-                    cursorColor = Color.White
+                    cursorColor = Color(0xFF00E5FF)
                 )
             )
 
-            // Thanh Zoom Oval trong suốt ở giữa và Nút cài đặt răng cưa không viền ở góc phải
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            ) {
-                Row(
+            if (!isKeyboardVisible) {
+                // Thanh Zoom và Cài đặt
+                Box(
                     modifier = Modifier
-                        .width(220.dp)
-                        .height(38.dp)
-                        .align(Alignment.Center)
-                        .background(Color(0x33FFFFFF), RoundedCornerShape(19.dp))
-                        .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(19.dp))
-                        .padding(horizontal = 12.dp),
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(180.dp)
+                            .align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Floating Zoom Indicator
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(22.dp),
+                            contentAlignment = Alignment.BottomStart
+                        ) {
+                            if (showZoomIndicator) {
+                                val percentage = if (maxZoomRatio > minZoomRatio) {
+                                    (zoomRatio - minZoomRatio) / (maxZoomRatio - minZoomRatio)
+                                } else {
+                                    0f
+                                }
+                                val xOffset = (170.dp * percentage) - 10.dp
+                                Text(
+                                    text = "${"%.1f".format(zoomRatio)}x",
+                                    color = Color(0xFF00E5FF),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .offset(x = xOffset)
+                                        .background(Color(0xCC0A0D1A), RoundedCornerShape(6.dp))
+                                        .border(0.5.dp, Color(0x3300E5FF), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Slider Line
+                        @OptIn(ExperimentalMaterial3Api::class)
+                        Slider(
+                            value = zoomRatio,
+                            onValueChange = { requestedZoom ->
+                                val clampedZoom = clampZoomRatio(requestedZoom, minZoomRatio, maxZoomRatio)
+                                zoomRatio = clampedZoom
+                                boundCamera?.cameraControl?.setZoomRatio(clampedZoom)
+                            },
+                            valueRange = minZoomRatio..maxZoomRatio.coerceAtLeast(minZoomRatio),
+                            enabled = controlsEnabled && maxZoomRatio > minZoomRatio,
+                            modifier = Modifier.fillMaxWidth().height(20.dp),
+                            thumb = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(Color.White, CircleShape)
+                                        .border(0.5.dp, Color(0x33FFFFFF), CircleShape)
+                                )
+                            },
+                            track = { sliderState ->
+                                SliderDefaults.Track(
+                                    sliderState = sliderState,
+                                    colors = SliderDefaults.colors(
+                                        activeTrackColor = Color(0x44FFFFFF),
+                                        inactiveTrackColor = Color(0x11FFFFFF)
+                                    ),
+                                    enabled = controlsEnabled,
+                                    modifier = Modifier.height(2.dp)
+                                )
+                            }
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { if (controlsEnabled) showSettingsSheet = true },
+                        enabled = controlsEnabled,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .align(Alignment.CenterEnd)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "Cài đặt",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                // Thanh chọn chế độ ẢNH / VIDEO
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Zoom ${"%.1f".format(zoomRatio)}x",
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(end = 8.dp)
+                        text = "ẢNH",
+                        color = if (!isVideoMode) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        fontWeight = if (!isVideoMode) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(enabled = controlsEnabled) { isVideoMode = false }
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
                     )
-                    Slider(
-                        value = zoomRatio,
-                        onValueChange = { requestedZoom ->
-                            val clampedZoom = clampZoomRatio(requestedZoom, minZoomRatio, maxZoomRatio)
-                            zoomRatio = clampedZoom
-                            boundCamera?.cameraControl?.setZoomRatio(clampedZoom)
-                        },
-                        valueRange = minZoomRatio..maxZoomRatio.coerceAtLeast(minZoomRatio),
-                        enabled = controlsEnabled && maxZoomRatio > minZoomRatio,
-                        modifier = Modifier.weight(1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color(0xFF1E78C8),
-                            inactiveTrackColor = Color(0x22FFFFFF)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "VIDEO",
+                        color = if (isVideoMode) Color(0xFF00E5FF) else Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp,
+                        fontWeight = if (isVideoMode) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(enabled = controlsEnabled) { isVideoMode = true }
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+
+                // Dải nút chính dưới cùng: [Thêm media] [Nút chụp/quay] [Xoay camera]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(
+                                enabled = controlsEnabled,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                galleryLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                )
+                            }
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Photo,
+                            contentDescription = "Thêm từ máy",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
                         )
-                    )
-                }
+                        Spacer(Modifier.height(4.dp))
+                        Text("Thêm media", color = Color.White, fontSize = 11.sp)
+                    }
 
-                IconButton(
-                    onClick = { if (controlsEnabled) showSettingsSheet = true },
-                    enabled = controlsEnabled,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .align(Alignment.CenterEnd)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Settings,
-                        contentDescription = "Cài đặt",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            // Thanh chọn chế độ ẢNH / VIDEO
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ẢNH",
-                    color = if (!isVideoMode) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.6f),
-                    fontSize = 13.sp,
-                    fontWeight = if (!isVideoMode) FontWeight.Bold else FontWeight.Normal,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = controlsEnabled) { isVideoMode = false }
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "VIDEO",
-                    color = if (isVideoMode) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.6f),
-                    fontSize = 13.sp,
-                    fontWeight = if (isVideoMode) FontWeight.Bold else FontWeight.Normal,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable(enabled = controlsEnabled) { isVideoMode = true }
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                )
-            }
-
-            // Dải nút chính dưới cùng: [Thêm media] [Nút chụp/quay] [Xoay camera]
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(
-                            enabled = controlsEnabled,
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            galleryLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                            )
-                        }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.Photo,
-                        contentDescription = "Thêm từ máy",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text("Thêm media", color = Color.White, fontSize = 11.sp)
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .background(if (isRecording) Color.Red else Color.White)
-                        .clickable(
-                            enabled = !isProcessingVideoStamp,
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            focusManager.clearFocus()
-                            if (isVideoMode) {
-                                if (isRecording) {
-                                    activeRecording?.stop()
-                                    activeRecording = null
-                                    isRecording = false
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .let {
+                                if (isVideoMode) {
+                                    it.background(if (isRecording) Color.Red else Color.White)
                                 } else {
-                                    if (!hasAudioPermission) {
-                                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                        return@clickable
+                                    it.background(Color(0x22FFFFFF))
+                                      .border(1.5.dp, Color.White, CircleShape)
+                                }
+                            }
+                            .clickable(
+                                enabled = !isProcessingVideoStamp,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                focusManager.clearFocus()
+                                if (isVideoMode) {
+                                    if (isRecording) {
+                                        activeRecording?.stop()
+                                        activeRecording = null
+                                        isRecording = false
+                                    } else {
+                                        if (!hasAudioPermission) {
+                                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            return@clickable
+                                        }
+                                        val stampAtRecordStart = buildCaptureStamp(
+                                            timestampMs = System.currentTimeMillis(),
+                                            location = liveLocation,
+                                            address = liveAddress,
+                                            note = noteText,
+                                            bearingDeg = bearing
+                                        )
+                                        val recordingTileBitmap = snapshotBitmap(currentTileBitmap)
+                                        val videoFile = photoPipelineService.createCaptureVideoOutputFile(
+                                            projectId = projectId,
+                                            objectCode = nodeCode,
+                                            folderType = CaptureFolderType.NODE
+                                        )
+                                        val outputOptions = FileOutputOptions.Builder(videoFile).build()
+                                        var pending = videoCapture.output.prepareRecording(context, outputOptions)
+                                        if (hasAudioPermission) {
+                                            pending = pending.withAudioEnabled()
+                                        }
+                                        activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
+                                            when (event) {
+                                                is VideoRecordEvent.Start -> {
+                                                    isRecording = true
+                                                }
+                                                is VideoRecordEvent.Finalize -> {
+                                                    isRecording = false
+                                                    activeRecording = null
+                                                    if (!event.hasError()) {
+                                                        coroutineScope.launch {
+                                                            try {
+                                                                postProcessRecordedVideo(
+                                                                    videoFile = videoFile,
+                                                                    stampEnabled = stampEnabled,
+                                                                    stampAtRecordStart = stampAtRecordStart,
+                                                                    tileBitmap = recordingTileBitmap,
+                                                                    photoPipelineService = photoPipelineService,
+                                                                    setProcessingVideoStamp = { isProcessingVideoStamp = it },
+                                                                    onSavePhoto = onSavePhoto,
+                                                                    onPhotoCaptured = onPhotoCaptured
+                                                                )
+                                                                onDismiss()
+                                                            } catch (error: Throwable) {
+                                                                AppLogger.e(error, "camera.overlay.capture.video.failed")
+                                                                runCatching { videoFile.delete() }
+                                                                onDismiss()
+                                                            } finally {
+                                                                recordingTileBitmap?.recycle()
+                                                            }
+                                                        }
+                                                    } else {
+                                                        runCatching { videoFile.delete() }
+                                                        onDismiss()
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    val stampAtRecordStart = buildCaptureStamp(
+                                } else {
+                                    val capturedStamp = buildCaptureStamp(
                                         timestampMs = System.currentTimeMillis(),
                                         location = liveLocation,
                                         address = liveAddress,
                                         note = noteText,
                                         bearingDeg = bearing
                                     )
-                                    val recordingTileBitmap = snapshotBitmap(currentTileBitmap)
-                                    val videoFile = photoPipelineService.createCaptureVideoOutputFile(
+                                    val capturedStampEnabled = stampEnabled
+                                    val capturedTileBitmap = snapshotBitmap(currentTileBitmap)
+                                    val file = photoPipelineService.createCaptureOutputFile(
                                         projectId = projectId,
                                         objectCode = nodeCode,
                                         folderType = CaptureFolderType.NODE
                                     )
-                                    val outputOptions = FileOutputOptions.Builder(videoFile).build()
-                                    var pending = videoCapture.output.prepareRecording(context, outputOptions)
-                                    if (hasAudioPermission) {
-                                        pending = pending.withAudioEnabled()
-                                    }
-                                    activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
-                                        when (event) {
-                                            is VideoRecordEvent.Start -> {
-                                                isRecording = true
-                                            }
-                                            is VideoRecordEvent.Finalize -> {
-                                                isRecording = false
-                                                activeRecording = null
-                                                if (!event.hasError()) {
-                                                    coroutineScope.launch {
-                                                        try {
-                                                            postProcessRecordedVideo(
-                                                                videoFile = videoFile,
-                                                                stampEnabled = stampEnabled,
-                                                                stampAtRecordStart = stampAtRecordStart,
-                                                                tileBitmap = recordingTileBitmap,
-                                                                photoPipelineService = photoPipelineService,
-                                                                setProcessingVideoStamp = { isProcessingVideoStamp = it },
-                                                                onSavePhoto = onSavePhoto,
-                                                                onPhotoCaptured = onPhotoCaptured
-                                                            )
-                                                            onDismiss()
-                                                        } catch (error: Throwable) {
-                                                            AppLogger.e(error, "camera.overlay.capture.video.failed")
-                                                            runCatching { videoFile.delete() }
-                                                            onDismiss()
-                                                        } finally {
-                                                            recordingTileBitmap?.recycle()
+                                    val output = ImageCapture.OutputFileOptions.Builder(file).build()
+                                    imageCapture.targetRotation = targetRotation
+                                    imageCapture.takePicture(
+                                        output,
+                                        ContextCompat.getMainExecutor(context),
+                                        object : ImageCapture.OnImageSavedCallback {
+                                            override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                                                coroutineScope.launch {
+                                                    try {
+                                                        if (capturedStampEnabled) {
+                                                            withContext(Dispatchers.IO) {
+                                                                photoPipelineService.applyStamp(
+                                                                    file,
+                                                                    capturedStamp,
+                                                                    selectedAspectRatio,
+                                                                    capturedTileBitmap
+                                                                )
+                                                            }
                                                         }
+                                                        if (onSavePhoto(file)) {
+                                                            onPhotoCaptured()
+                                                        }
+                                                    } finally {
+                                                        capturedTileBitmap?.recycle()
+                                                        onDismiss()
                                                     }
-                                                } else {
-                                                    runCatching { videoFile.delete() }
-                                                    onDismiss()
                                                 }
                                             }
-                                        }
-                                    }
-                                }
-                            } else {
-                                val capturedStamp = buildCaptureStamp(
-                                    timestampMs = System.currentTimeMillis(),
-                                    location = liveLocation,
-                                    address = liveAddress,
-                                    note = noteText,
-                                    bearingDeg = bearing
-                                )
-                                val capturedStampEnabled = stampEnabled
-                                val capturedTileBitmap = snapshotBitmap(currentTileBitmap)
-                                val file = photoPipelineService.createCaptureOutputFile(
-                                    projectId = projectId,
-                                    objectCode = nodeCode,
-                                    folderType = CaptureFolderType.NODE
-                                )
-                                val output = ImageCapture.OutputFileOptions.Builder(file).build()
-                                imageCapture.targetRotation = targetRotation
-                                imageCapture.takePicture(
-                                    output,
-                                    ContextCompat.getMainExecutor(context),
-                                    object : ImageCapture.OnImageSavedCallback {
-                                        override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                                            coroutineScope.launch {
-                                                try {
-                                                    if (capturedStampEnabled) {
-                                                        withContext(Dispatchers.IO) {
-                                                            photoPipelineService.applyStamp(
-                                                                file,
-                                                                capturedStamp,
-                                                                selectedAspectRatio,
-                                                                capturedTileBitmap
-                                                            )
-                                                        }
-                                                    }
-                                                    if (onSavePhoto(file)) {
-                                                        onPhotoCaptured()
-                                                    }
-                                                } finally {
-                                                    capturedTileBitmap?.recycle()
-                                                    onDismiss()
-                                                }
+
+                                            override fun onError(e: ImageCaptureException) {
+                                                AppLogger.e(e, "camera.overlay.capture.image.failed")
+                                                onDismiss()
                                             }
                                         }
-
-                                        override fun onError(e: ImageCaptureException) {
-                                            AppLogger.e(e, "camera.overlay.capture.image.failed")
-                                            onDismiss()
-                                        }
-                                    }
-                                )
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (isRecording) 24.dp else 60.dp)
-                            .clip(if (isRecording) RoundedCornerShape(6.dp) else CircleShape)
-                            .background(if (isRecording) Color.White else Color.Red)
-                    )
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(
-                            enabled = controlsEnabled && hasFrontCamera,
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            if (controlsEnabled && hasFrontCamera) {
-                                lensFacing = if (lensFacing == CaptureLensFacing.BACK) {
-                                    CaptureLensFacing.FRONT
-                                } else {
-                                    CaptureLensFacing.BACK
+                                    )
                                 }
-                            }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isVideoMode) {
+                            Box(
+                                modifier = Modifier
+                                    .size(if (isRecording) 24.dp else 60.dp)
+                                    .clip(if (isRecording) RoundedCornerShape(6.dp) else CircleShape)
+                                    .background(if (isRecording) Color.White else Color.Red)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.PhotoCamera,
+                                contentDescription = "Chụp ảnh",
+                                tint = Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
                         }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.Cached,
-                        contentDescription = "Đổi camera",
-                        tint = Color.White,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text("Xoay camera", color = Color.White, fontSize = 11.sp)
+                    }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(
+                                enabled = controlsEnabled && hasFrontCamera,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                if (controlsEnabled && hasFrontCamera) {
+                                    lensFacing = if (lensFacing == CaptureLensFacing.BACK) {
+                                        CaptureLensFacing.FRONT
+                                    } else {
+                                        CaptureLensFacing.BACK
+                                    }
+                                }
+                            }
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Cached,
+                            contentDescription = "Đổi camera",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text("Xoay camera", color = Color.White, fontSize = 11.sp)
+                    }
                 }
             }
         }
@@ -1200,10 +1271,10 @@ fun CameraOverlay(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .background(
-                            Color(0xDD111111),
+                            Color(0xDD0A0D1A),
                             RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
                         )
-                        .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .border(1.dp, Color(0x1A00E5FF), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                         .padding(20.dp)
                         .clickable(enabled = false) { }
                 ) {
@@ -1245,9 +1316,9 @@ fun CameraOverlay(
                                 label = { Text(ratio.displayName) },
                                 enabled = controlsEnabled,
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF1E78C8),
-                                    selectedLabelColor = Color.White,
-                                    containerColor = Color(0x22FFFFFF),
+                                    selectedContainerColor = Color(0xFF00E5FF),
+                                    selectedLabelColor = Color(0xFF060814),
+                                    containerColor = Color(0x15FFFFFF),
                                     labelColor = Color.White.copy(alpha = 0.7f)
                                 )
                             )
@@ -1287,9 +1358,9 @@ fun CameraOverlay(
                                     label = { Text(label) },
                                     enabled = supported && controlsEnabled,
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFF1E78C8),
-                                        selectedLabelColor = Color.White,
-                                        containerColor = Color(0x22FFFFFF),
+                                        selectedContainerColor = Color(0xFF00E5FF),
+                                        selectedLabelColor = Color(0xFF060814),
+                                        containerColor = Color(0x15FFFFFF),
                                         labelColor = Color.White.copy(alpha = 0.7f)
                                     )
                                 )
