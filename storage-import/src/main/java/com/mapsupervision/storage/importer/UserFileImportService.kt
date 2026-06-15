@@ -9,6 +9,7 @@ import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.storage.ProjectStorageManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -478,7 +479,7 @@ class UserFileImportService @Inject constructor(
     private fun resolveFileExtension(uri: Uri, displayName: String): String {
         val fromName = displayName.substringAfterLast('.', "").lowercase(Locale.US)
         if (fromName.isNotBlank()) return fromName
-        val mime = context.contentResolver.getType(uri)?.lowercase(Locale.US).orEmpty()
+        val mime = resolveMimeType(uri)?.lowercase(Locale.US).orEmpty()
         return when {
             mime.contains("kmz") -> "kmz"
             mime.contains("kml") -> "kml"
@@ -486,6 +487,23 @@ class UserFileImportService @Inject constructor(
             mime.contains("spreadsheetml") || mime.contains("excel") -> "xlsx"
             else -> uri.toString().substringAfterLast('.', "").lowercase(Locale.US)
         }
+    }
+
+    private fun resolveMimeType(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return when (File(uri.path ?: return null).extension.lowercase(Locale.US)) {
+                "kmz" -> "application/vnd.google-earth.kmz"
+                "kml" -> "application/vnd.google-earth.kml+xml"
+                "geojson", "json" -> "application/geo+json"
+                "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                "xls" -> "application/vnd.ms-excel"
+                "pdf" -> "application/pdf"
+                "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                "doc" -> "application/msword"
+                else -> null
+            }
+        }
+        return context.contentResolver.getType(uri)
     }
 
     private fun parseSummary(
@@ -958,7 +976,7 @@ class UserFileImportService @Inject constructor(
 
     private fun copyUriToTempFile(uri: Uri, name: String): File {
         val temp = File.createTempFile("xlsx_", "_$name", context.cacheDir)
-        context.contentResolver.openInputStream(uri).use { input ->
+        openUriInputStream(uri).use { input ->
             requireNotNull(input) { "E_URI: cannot open input stream" }
             FileOutputStream(temp).use { output -> input.copyTo(output) }
         }
@@ -968,11 +986,21 @@ class UserFileImportService @Inject constructor(
     private fun copyUriToImports(projectId: String, uri: Uri, name: String): File {
         val importsDir = File(storageManager.projectRoot(projectId), "imports/pending").apply { mkdirs() }
         val target = File(importsDir, "${UUID.randomUUID()}_$name")
-        context.contentResolver.openInputStream(uri).use { input ->
+        openUriInputStream(uri).use { input ->
             requireNotNull(input) { "E_URI: cannot open input stream" }
             FileOutputStream(target).use { output -> input.copyTo(output) }
         }
         return target
+    }
+
+    private fun openUriInputStream(uri: Uri): InputStream? {
+        if (uri.scheme == "file") {
+            val path = uri.path ?: return null
+            val file = File(path)
+            if (!file.exists() || !file.canRead()) return null
+            return FileInputStream(file)
+        }
+        return context.contentResolver.openInputStream(uri)
     }
 
     private fun moveImportFile(projectId: String, file: File, bucket: String): File {

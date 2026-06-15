@@ -42,6 +42,11 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.4.0")
     implementation("androidx.camera:camera-lifecycle:1.4.0")
     implementation("androidx.camera:camera-view:1.4.0")
+    implementation("androidx.camera:camera-video:1.4.0")
+    implementation("androidx.camera:camera-extensions:1.4.0")
+    implementation("androidx.media3:media3-common:1.7.1")
+    implementation("androidx.media3:media3-effect:1.7.1")
+    implementation("androidx.media3:media3-transformer:1.7.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.android.gms:play-services-location:21.3.0")
 

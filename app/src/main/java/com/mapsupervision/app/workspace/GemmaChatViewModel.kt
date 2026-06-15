@@ -18,14 +18,19 @@ import com.mapsupervision.domain.ai.ChatActionType
 import com.mapsupervision.domain.ai.DailyLogDraft
 import com.mapsupervision.domain.ai.DailyLogDateResolver
 import com.mapsupervision.domain.ai.ChatPendingAction
+import com.mapsupervision.domain.ai.ChatClarificationPrompt
+import com.mapsupervision.domain.ai.ChatIntentOption
 import com.mapsupervision.domain.ai.SitePhotoUpdateDraft
 import com.mapsupervision.domain.ai.ReportDraftDbSaveDraft
 import com.mapsupervision.domain.ai.GemmaDeviceSnapshot
 import com.mapsupervision.domain.ai.GemmaModelInfo
 import com.mapsupervision.domain.ai.GemmaModelSelection
 import com.mapsupervision.domain.ai.GemmaModelStatus
+import com.mapsupervision.domain.ai.SummaryAggregator
 import com.mapsupervision.domain.model.ChatHistoryMessage
+import com.mapsupervision.domain.model.AiActionLog
 import com.mapsupervision.domain.repository.ChatHistoryRepository
+import com.mapsupervision.domain.repository.AiActionLogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -61,7 +66,8 @@ data class GemmaChatUiState(
     val isBusy: Boolean = false,
     val lastError: String = "",
     val chatReady: Boolean = false,
-    val chatStatus: String = ""
+    val chatStatus: String = "",
+    val clarificationPrompt: ChatClarificationPrompt? = null
 )
 
 @HiltViewModel
@@ -71,7 +77,9 @@ class GemmaChatViewModel @Inject constructor(
     private val modelManager: GemmaModelManager,
     private val deviceSnapshotProvider: GemmaDeviceSnapshotProvider,
     private val chatController: GemmaChatController,
-    private val chatHistoryRepository: ChatHistoryRepository
+    private val chatHistoryRepository: ChatHistoryRepository,
+    private val aiActionLogRepository: AiActionLogRepository,
+    private val summaryAggregator: SummaryAggregator
 ) : ViewModel() {
     companion object {
         private const val CHAT_HISTORY_LIMIT = 6
@@ -94,7 +102,6 @@ class GemmaChatViewModel @Inject constructor(
         loadHistory(projectId)
         refreshModelState()
         _uiState.update { it.copy(isOpen = true) }
-        warmUpSelectedModel()
     }
 
     fun close() {
@@ -104,11 +111,42 @@ class GemmaChatViewModel @Inject constructor(
             chatController.cancelGeneration()
             chatController.close()
         }
-        _uiState.update { it.copy(isOpen = false, isBusy = false, pendingAction = null) }
+        _uiState.update {
+            it.copy(
+                isOpen = false,
+                isBusy = false,
+                pendingAction = null,
+                clarificationPrompt = null,
+                chatReady = false,
+                chatStatus = ""
+            )
+        }
     }
 
     fun updateInput(text: String) {
         _uiState.update { it.copy(input = text) }
+    }
+
+    fun clearChatHistory() {
+        activeSendJob?.cancel()
+        activeSendJob = null
+        viewModelScope.launch {
+            chatController.resetConversation()
+        }
+        val safeProj = activeProjectId
+        if (!safeProj.isNullOrBlank()) {
+            viewModelScope.launch {
+                chatHistoryRepository.clearByProject(safeProj)
+            }
+        }
+        _uiState.update { it.copy(messages = emptyList(), pendingAction = null, isBusy = false) }
+    }
+
+    fun reloadHistory() {
+        val safeProj = activeProjectId
+        if (!safeProj.isNullOrBlank()) {
+            loadHistory(safeProj)
+        }
     }
 
     fun refreshModelState(snapshot: GemmaDeviceSnapshot = deviceSnapshotProvider.snapshot()) {
@@ -150,7 +188,6 @@ class GemmaChatViewModel @Inject constructor(
             )
         }
         applyDownloadState(modelManager.currentDownloadState())
-        warmUpSelectedModel()
     }
 
     fun downloadSelectedModel() {
@@ -211,6 +248,7 @@ class GemmaChatViewModel @Inject constructor(
                 input = "",
                 messages = it.messages + GemmaChatMessage("user", text),
                 isBusy = true,
+                clarificationPrompt = null,
                 lastError = ""
             )
         }
@@ -228,15 +266,39 @@ class GemmaChatViewModel @Inject constructor(
                     normalizationContext = normalizationContext,
                     selectedRouteCode = selectedRouteCode
                 )
-                if (fastResult.pendingAction != null && fastResult.writeDisposition != com.mapsupervision.domain.ai.WriteDisposition.REJECT) {
+                val fastClarificationPrompt = fastResult.clarificationPrompt
+                if (fastClarificationPrompt != null) {
                     _uiState.update {
                         it.copy(
                             isBusy = false,
-                            pendingAction = fastResult.pendingAction,
+                            clarificationPrompt = fastClarificationPrompt,
                             messages = it.messages + GemmaChatMessage("assistant", fastResult.answer)
                         )
                     }
                     persistMessage(safeProjectId, "assistant", fastResult.answer)
+                    return@launch
+                }
+
+                val fastPendingAction = fastResult.pendingAction
+                if (fastPendingAction != null && fastResult.writeDisposition != com.mapsupervision.domain.ai.WriteDisposition.REJECT) {
+                    val finalPendingAction = if (fastPendingAction.type == ChatActionType.GENERATE_SUMMARY) null else fastPendingAction
+                    val summaryReq = fastPendingAction.summaryRequest
+                    val displayAnswer = if (fastPendingAction.type == ChatActionType.GENERATE_SUMMARY && summaryReq != null) {
+                        formatSummaryMarkdown(summaryAggregator.aggregate(summaryReq))
+                    } else {
+                        fastResult.answer
+                    }
+                    _uiState.update {
+                        it.copy(
+                            isBusy = false,
+                            pendingAction = finalPendingAction,
+                            messages = it.messages + GemmaChatMessage("assistant", displayAnswer)
+                        )
+                    }
+                    persistMessage(safeProjectId, "assistant", displayAnswer)
+                    if (finalPendingAction != null) {
+                        logAction(safeProjectId, text, fastResult, "DRAFT_CREATED")
+                    }
                     return@launch
                 }
 
@@ -295,14 +357,28 @@ class GemmaChatViewModel @Inject constructor(
                     ChatAssistantResult(answer = errorMsg)
                 }
 
+                val finalResultPendingAction = finalResult.pendingAction
+                val finalPendingAction = if (finalResultPendingAction?.type == ChatActionType.GENERATE_SUMMARY) null else finalResultPendingAction
+                val finalSummaryReq = finalResultPendingAction?.summaryRequest
+                val displayAnswer = if (finalResultPendingAction?.type == ChatActionType.GENERATE_SUMMARY && finalSummaryReq != null) {
+                    formatSummaryMarkdown(summaryAggregator.aggregate(finalSummaryReq))
+                } else {
+                    finalResult.answer
+                }
+
+                val finalClarificationPrompt = finalResult.clarificationPrompt
                 _uiState.update {
                     it.copy(
                         isBusy = false,
-                        pendingAction = finalResult.pendingAction,
-                        messages = it.messages + GemmaChatMessage("assistant", finalResult.answer)
+                        pendingAction = finalPendingAction,
+                        clarificationPrompt = finalClarificationPrompt,
+                        messages = it.messages + GemmaChatMessage("assistant", displayAnswer)
                     )
                 }
-                persistMessage(safeProjectId, "assistant", finalResult.answer)
+                persistMessage(safeProjectId, "assistant", displayAnswer)
+                if (finalPendingAction != null) {
+                    logAction(safeProjectId, text, finalResult, "DRAFT_CREATED")
+                }
             } finally {
                 activeSendJob = null
                 _uiState.update { state -> state.copy(isBusy = false) }
@@ -310,69 +386,207 @@ class GemmaChatViewModel @Inject constructor(
         }
     }
 
+    private fun formatSummaryMarkdown(rows: List<com.mapsupervision.domain.ai.SummaryRow>): String {
+        if (rows.isEmpty()) return "Không tìm thấy dữ liệu tổng hợp theo yêu cầu."
+        return buildString {
+            append("### Kết quả tổng hợp:\n\n")
+            append("| Nhóm | Tổng số node | Đã hoàn thành | Tiến độ TB | Số node trễ | Tổng khối lượng |\n")
+            append("| --- | --- | --- | --- | --- | --- |\n")
+            rows.forEach { row ->
+                append("| ${row.groupKey} | ${row.totalNodes} | ${row.completedNodes} | ${String.format(java.util.Locale.US, "%.1f%%", row.avgProgress)} | ${row.delayedCount} | ${String.format(java.util.Locale.US, "%.1f", row.totalVolume)} |\n")
+            }
+        }
+    }
+
+    fun selectClarificationOption(
+        option: ChatIntentOption,
+        normalizationContext: String,
+        selectedNodeCode: String?,
+        selectedRouteCode: String?
+    ) {
+        val lastUserMessage = _uiState.value.messages.lastOrNull { it.role == "user" }?.text ?: ""
+        if (lastUserMessage.isBlank()) return
+        _uiState.update { it.copy(clarificationPrompt = null, isBusy = true) }
+        viewModelScope.launch {
+            try {
+                val safeProj = activeProjectId ?: "P1"
+                val result = ChatActionParser.parse(
+                    message = lastUserMessage,
+                    selectedNodeCode = selectedNodeCode,
+                    normalizationContext = normalizationContext,
+                    selectedRouteCode = selectedRouteCode,
+                    explicitAction = option.type
+                )
+                val pending = result.pendingAction
+                val finalPendingAction = if (pending?.type == ChatActionType.GENERATE_SUMMARY) null else pending
+                val summaryReq = pending?.summaryRequest
+                val displayAnswer = if (pending?.type == ChatActionType.GENERATE_SUMMARY && summaryReq != null) {
+                    formatSummaryMarkdown(summaryAggregator.aggregate(summaryReq))
+                } else {
+                    result.answer
+                }
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        pendingAction = finalPendingAction,
+                        messages = it.messages + GemmaChatMessage("assistant", displayAnswer)
+                    )
+                }
+                persistMessage(safeProj, "assistant", displayAnswer)
+                if (finalPendingAction != null) {
+                    logAction(safeProj, lastUserMessage, result, "DRAFT_CREATED")
+                }
+            } finally {
+                _uiState.update { it.copy(isBusy = false) }
+            }
+        }
+    }
+
+    private suspend fun logAction(projectId: String?, rawInput: String, result: ChatAssistantResult, status: String) {
+        val pending = result.pendingAction ?: return
+        val safeProj = projectId ?: activeProjectId ?: "P1"
+        aiActionLogRepository.log(
+            AiActionLog(
+                id = pending.actionId,
+                projectId = safeProj,
+                rawInput = rawInput,
+                actionType = pending.type.name,
+                draftJson = pending.draftJson,
+                confidence = result.confidence?.overallConfidence ?: 100,
+                status = status,
+                timestamp = System.currentTimeMillis()
+            )
+        )
+    }
+
     fun confirmPendingAction(
         workspaceViewModel: WorkspaceViewModel
     ) {
         val action = _uiState.value.pendingAction ?: return
+        val safeProj = activeProjectId ?: "P1"
         viewModelScope.launch {
-            when (action.type) {
-                ChatActionType.UPDATE_CONSTRUCTION_PROGRESS -> {
-                    val draft = action.constructionProgress ?: return@launch
-                    workspaceViewModel.addConstructionProgress(draft.nodeCode, draft.planned, draft.actual)
+            // 1. Log CONFIRMED
+            aiActionLogRepository.log(
+                AiActionLog(
+                    id = action.actionId,
+                    projectId = safeProj,
+                    rawInput = "",
+                    actionType = action.type.name,
+                    draftJson = action.draftJson,
+                    confidence = 100,
+                    status = "CONFIRMED",
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+
+            val success = runCatching {
+                when (action.type) {
+                    ChatActionType.UPDATE_CONSTRUCTION_PROGRESS -> {
+                        val draft = action.constructionProgress ?: return@launch
+                        workspaceViewModel.addConstructionProgress(draft.nodeCode, draft.planned, draft.actual)
+                    }
+                    ChatActionType.ADD_DAILY_LOG -> {
+                        val draft = action.dailyLog ?: return@launch
+                        workspaceViewModel.addDailyLog(
+                            workItem = draft.workItem,
+                            manpower = draft.manpower,
+                            note = draft.note,
+                            weather = draft.weather,
+                            temperature = draft.temperature,
+                            nodeCode = draft.nodeCode,
+                            routeCode = draft.routeCode,
+                            dateEpochDay = draft.dateEpochDay,
+                            volume = draft.volume,
+                            unit = draft.unit,
+                            categoryName = draft.categoryName
+                        )
+                    }
+                    ChatActionType.UPDATE_SITE_PHOTO -> {
+                        val draft = action.sitePhotoUpdate ?: return@launch
+                        workspaceViewModel.updateSitePhoto(
+                            photoId = draft.photoId,
+                            tagCodesCsv = draft.tagCodesCsv,
+                            matchedNodeCode = draft.matchedNodeCode,
+                            lat = draft.latitude,
+                            lon = draft.longitude
+                        )
+                    }
+                    ChatActionType.SAVE_REPORT_DRAFT -> {
+                        val draft = action.reportDraftSave ?: return@launch
+                        workspaceViewModel.saveReportDraft(
+                            title = draft.title,
+                            executiveSummary = draft.executiveSummary,
+                            riskSection = draft.riskSection,
+                            recommendedActions = draft.recommendedActions
+                        )
+                    }
+                    ChatActionType.ADD_NOTE -> {
+                        val draft = action.noteDraft ?: return@launch
+                        workspaceViewModel.addNote(draft.objectCode, draft.content)
+                    }
+                    ChatActionType.ADD_TASK -> {
+                        val draft = action.taskDraft ?: return@launch
+                        workspaceViewModel.addTask(draft.objectCode, draft.title)
+                    }
+                    ChatActionType.UPDATE_MATERIAL_OR_VOLUME_PROGRESS -> {
+                        val draft = action.materialOrVolumeProgress ?: return@launch
+                        workspaceViewModel.updateMaterialProgress(draft.nodeCode, draft.materialName, draft.actualQty.toString())
+                    }
+                    ChatActionType.ADD_WORK_PLAN -> {
+                        val draft = action.workPlan ?: return@launch
+                        workspaceViewModel.addWorkPlanWithTask(
+                            plannedDateEpochDay = draft.plannedDateEpochDay,
+                            title = draft.title,
+                            description = draft.description,
+                            nodeCode = draft.nodeCode,
+                            routeCode = draft.routeCode,
+                            sourceRawInput = draft.title
+                        )
+                    }
+                    ChatActionType.GENERATE_SUMMARY -> {
+                        // Summary requests are read-only
+                    }
                 }
-                ChatActionType.ADD_DAILY_LOG -> {
-                    val draft = action.dailyLog ?: return@launch
-                    workspaceViewModel.addDailyLog(
-                        workItem = draft.workItem,
-                        manpower = draft.manpower,
-                        note = draft.note,
-                        weather = draft.weather,
-                        temperature = draft.temperature,
-                        nodeCode = draft.nodeCode,
-                        routeCode = draft.routeCode,
-                        dateEpochDay = draft.dateEpochDay,
-                        volume = draft.volume,
-                        unit = draft.unit,
-                        categoryName = draft.categoryName
-                    )
-                }
-                ChatActionType.UPDATE_SITE_PHOTO -> {
-                    val draft = action.sitePhotoUpdate ?: return@launch
-                    workspaceViewModel.updateSitePhoto(
-                        photoId = draft.photoId,
-                        tagCodesCsv = draft.tagCodesCsv,
-                        matchedNodeCode = draft.matchedNodeCode,
-                        lat = draft.latitude,
-                        lon = draft.longitude
-                    )
-                }
-                ChatActionType.SAVE_REPORT_DRAFT -> {
-                    val draft = action.reportDraftSave ?: return@launch
-                    workspaceViewModel.saveReportDraft(
-                        title = draft.title,
-                        executiveSummary = draft.executiveSummary,
-                        riskSection = draft.riskSection,
-                        recommendedActions = draft.recommendedActions
-                    )
-                }
-                ChatActionType.ADD_NOTE -> {
-                    val draft = action.noteDraft ?: return@launch
-                    workspaceViewModel.addNote(draft.objectCode, draft.content)
-                }
-                ChatActionType.ADD_TASK -> {
-                    val draft = action.taskDraft ?: return@launch
-                    workspaceViewModel.addTask(draft.objectCode, draft.title)
-                }
-                ChatActionType.UPDATE_MATERIAL_OR_VOLUME_PROGRESS -> {
-                    val draft = action.materialOrVolumeProgress ?: return@launch
-                    workspaceViewModel.updateMaterialProgress(draft.nodeCode, draft.materialName, draft.actualQty.toString())
-                }
-            }
+            }.isSuccess
+
+            // 2. Log COMMITTED / FAILED
+            val finalStatus = if (success) "COMMITTED" else "FAILED"
+            aiActionLogRepository.log(
+                AiActionLog(
+                    id = action.actionId,
+                    projectId = safeProj,
+                    rawInput = "",
+                    actionType = action.type.name,
+                    draftJson = action.draftJson,
+                    confidence = 100,
+                    status = finalStatus,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+
             _uiState.update { it.copy(pendingAction = null) }
         }
     }
 
     fun dismissPendingAction() {
+        val action = _uiState.value.pendingAction
+        if (action != null) {
+            val safeProj = activeProjectId ?: "P1"
+            viewModelScope.launch {
+                aiActionLogRepository.log(
+                    AiActionLog(
+                        id = action.actionId,
+                        projectId = safeProj,
+                        rawInput = "",
+                        actionType = action.type.name,
+                        draftJson = action.draftJson,
+                        confidence = 100,
+                        status = "REJECTED",
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
         _uiState.update { it.copy(pendingAction = null) }
     }
 
@@ -411,6 +625,38 @@ class GemmaChatViewModel @Inject constructor(
             append("\"volume\":").append(draft.volume).append(",")
             append("\"unit\":\"").append(escapeJson(draft.unit)).append("\",")
             append("\"categoryName\":\"").append(escapeJson(draft.categoryName)).append("\"")
+            append("}")
+        }
+    }
+
+    fun updatePendingWorkPlanDraft(transform: (com.mapsupervision.domain.ai.WorkPlanDraft) -> com.mapsupervision.domain.ai.WorkPlanDraft) {
+        _uiState.update { state ->
+            val action = state.pendingAction ?: return@update state
+            val draft = action.workPlan ?: return@update state
+            val updated = transform(draft)
+            state.copy(
+                pendingAction = action.copy(
+                    workPlan = updated,
+                    draftJson = buildWorkPlanDraftJson(updated)
+                )
+            )
+        }
+    }
+
+    private fun buildWorkPlanDraftJson(draft: com.mapsupervision.domain.ai.WorkPlanDraft): String {
+        val nodeCode = draft.nodeCode
+        val routeCode = draft.routeCode
+        return buildString {
+            append("{")
+            append("\"plannedDateEpochDay\":").append(draft.plannedDateEpochDay).append(",")
+            append("\"plannedDate\":\"").append(escapeJson(DailyLogDateResolver.formatEpochDay(draft.plannedDateEpochDay))).append("\",")
+            append("\"title\":\"").append(escapeJson(draft.title)).append("\",")
+            append("\"description\":\"").append(escapeJson(draft.description)).append("\",")
+            append("\"nodeCode\":")
+            if (nodeCode == null) append("null") else append("\"").append(escapeJson(nodeCode)).append("\"")
+            append(",")
+            append("\"routeCode\":")
+            if (routeCode == null) append("null") else append("\"").append(escapeJson(routeCode)).append("\"")
             append("}")
         }
     }
@@ -460,7 +706,6 @@ class GemmaChatViewModel @Inject constructor(
                     chatStatus = ""
                 )
                 is GemmaDownloadState.Completed -> {
-                    warmUpSelectedModel()
                     current.copy(
                         downloadProgress = 100,
                         downloadMessage = "Tải xong",
@@ -468,7 +713,7 @@ class GemmaChatViewModel @Inject constructor(
                         downloadFailureReason = "",
                         downloadHttpCode = 0,
                         modelStatus = if (modelManager.isModelDownloadComplete(selectedModel)) GemmaModelStatus.READY else GemmaModelStatus.LOAD_FAILED,
-                        chatStatus = "Model đã sẵn sàng.",
+                        chatStatus = "",
                         lastError = ""
                     )
                 }
@@ -521,24 +766,6 @@ class GemmaChatViewModel @Inject constructor(
                 createdAtEpochMs = System.currentTimeMillis()
             )
         )
-    }
-
-    private fun warmUpSelectedModel() {
-        val model = _uiState.value.selectedModel ?: return
-        if (_uiState.value.isBusy) return
-        if (!modelManager.isModelDownloadComplete(model) || !modelManager.canInitializeLiteRt(model)) return
-        viewModelScope.launch {
-            val init = runCatching { chatController.initialize(model) }.getOrNull() ?: return@launch
-            if (init.ready) {
-                _uiState.update { state ->
-                    state.copy(
-                        chatReady = true,
-                        chatStatus = init.warning.ifBlank { init.message },
-                        lastError = ""
-                    )
-                }
-            }
-        }
     }
 
     private fun modelIdOf(state: GemmaDownloadState): String? = when (state) {

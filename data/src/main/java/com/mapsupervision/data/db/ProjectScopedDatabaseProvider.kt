@@ -25,8 +25,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,15 +42,8 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val holders = LinkedHashMap<String, DatabaseHolder>()
     private val idleTimeoutMs = 5 * 60 * 1000L
-
-    init {
-        scope.launch {
-            while (true) {
-                delay(60_000L)
-                closeIdleDatabases()
-            }
-        }
-    }
+    @Volatile
+    private var cleanupJob: Job? = null
 
     suspend fun databaseFor(projectId: String): MapSupervisionDatabase? {
         val project = sharedDatabase.projectDao().get(projectId) ?: return null
@@ -73,6 +68,8 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         val existing = holders[dbPath]
         if (existing != null) {
             existing.lastAccessEpochMs = System.currentTimeMillis()
+            ensureCleanupSchedulerLocked()
+            ensureProjectRow(project, existing.database, "holder")
             return existing.database
         }
 
@@ -104,12 +101,16 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .build()
         AppLogger.d("project.db.open path=${dbFile.absolutePath}")
         ensureLegacyHydrated(project, database)
         holders[dbPath] = DatabaseHolder(database)
+        ensureCleanupSchedulerLocked()
         database
     }
 
@@ -123,6 +124,7 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             "project.db.seed.detect projectId=${project.id} " +
                 "sharedHasData=$sharedHasData scopedHasData=$scopedHasData"
         )
+        ensureProjectRow(project, projectDatabase, "open")
         if (scopedHasData) {
             AppLogger.d("project.db.seed.skip projectId=${project.id} reason=scoped_not_empty")
             return
@@ -159,6 +161,19 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 "notes=${payload.notes.size} tasks=${payload.tasks.size} " +
                 "sitePhotos=${payload.sitePhotos.size} workCategories=${payload.workCategories.size} reportDrafts=${payload.reportDrafts.size}"
         )
+    }
+
+    private suspend fun ensureProjectRow(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase,
+        source: String
+    ) {
+        if (projectDatabase.projectDao().get(project.id) == null) {
+            projectDatabase.projectDao().upsert(project)
+            AppLogger.d("project.db.seed.ensure_project_row projectId=${project.id} source=$source")
+        } else {
+            AppLogger.d("project.db.seed.keep_project_row projectId=${project.id} source=$source")
+        }
     }
 
     private suspend fun sharedPayload(projectId: String): LegacyProjectPayload? {
@@ -229,12 +244,11 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         }
     }
 
-    private suspend fun closeIdleDatabases() = mutex.withLock {
-        val now = System.currentTimeMillis()
+    private suspend fun closeIdleDatabases(nowEpochMs: Long = System.currentTimeMillis()): Boolean = mutex.withLock {
         val iterator = holders.entries.iterator()
         while (iterator.hasNext()) {
             val entry = iterator.next()
-            if (now - entry.value.lastAccessEpochMs >= idleTimeoutMs) {
+            if (nowEpochMs - entry.value.lastAccessEpochMs >= idleTimeoutMs) {
                 runCatching {
                     val db = entry.value.database.openHelper.writableDatabase
                     db.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -244,7 +258,33 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 iterator.remove()
             }
         }
+        if (holders.isEmpty()) {
+            cleanupJob = null
+            return false
+        }
+        true
     }
+
+    private fun ensureCleanupSchedulerLocked() {
+        val runningJob = cleanupJob
+        if (runningJob?.isActive == true) return
+        cleanupJob = scope.launch {
+            while (isActive) {
+                delay(60_000L)
+                if (!closeIdleDatabases()) {
+                    return@launch
+                }
+            }
+        }
+    }
+
+    internal fun isCleanupSchedulerRunningForTest(): Boolean = cleanupJob?.isActive == true
+
+    internal suspend fun markAllDatabasesIdleForTest(lastAccessEpochMs: Long) = mutex.withLock {
+        holders.values.forEach { it.lastAccessEpochMs = lastAccessEpochMs }
+    }
+
+    internal suspend fun runIdleCleanupForTest(nowEpochMs: Long): Boolean = closeIdleDatabases(nowEpochMs)
 
     private class DatabaseHolder(
         val database: MapSupervisionDatabase,

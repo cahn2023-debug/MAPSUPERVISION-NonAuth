@@ -186,7 +186,30 @@ fun DataHubScreen(
     }
 
     Scaffold(
-        containerColor = darkBgColor
+        containerColor = darkBgColor,
+        floatingActionButton = {
+            if (screenUiState.isDesignTab) {
+                FloatingActionButton(
+                    onClick = {
+                        onOpenPicker()
+                        picker.launch(
+                            arrayOf(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                "application/vnd.ms-excel",
+                                "application/vnd.google-earth.kml+xml",
+                                "application/vnd.google-earth.kmz",
+                                "*/*"
+                            )
+                        )
+                    },
+                    containerColor = orangeColor,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Outlined.CloudUpload, contentDescription = "Tải lên dữ liệu", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                }
+            }
+        }
     ) { paddingValues ->
         WorkspaceRefreshContainer(
             isRefreshing = state.isRefreshing,
@@ -207,69 +230,90 @@ fun DataHubScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Quản lý Danh sách & Dữ liệu", color = textColor, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("Quản lý thiết kế và cập nhật tiến độ thi công hạ tầng kỹ thuật.", color = secondaryTextColor, fontSize = 14.sp)
-                }
-                
-                if (screenUiState.isDesignTab) {
-                    IconButton(
-                        onClick = {
-                            onOpenPicker()
-                            picker.launch(
-                                arrayOf(
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    "application/vnd.ms-excel",
-                                    "application/vnd.google-earth.kml+xml",
-                                    "application/vnd.google-earth.kmz",
-                                    "*/*"
-                                )
-                            )
-                        },
-                        modifier = Modifier
-                            .background(orangeColor, RoundedCornerShape(8.dp))
-                            .size(48.dp)
-                    ) {
-                        Icon(Icons.Outlined.CloudUpload, contentDescription = "Tải lên dữ liệu", tint = MaterialTheme.colorScheme.onPrimary)
+                    Text(
+                        text = "Quản lý Danh sách & Dữ liệu",
+                        color = textColor,
+                        fontSize = if (screenUiState.isDesignTab) 20.sp else 24.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!screenUiState.isDesignTab) {
+                        Text(
+                            text = "Quản lý thiết kế và cập nhật tiến độ thi công hạ tầng kỹ thuật.",
+                            color = secondaryTextColor,
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             
             // Tab Buttons
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Thi Công Tab
-                Button(
-                    onClick = { onSetDesignTab(false) },
-                    modifier = Modifier.weight(1f).height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (!screenUiState.isDesignTab) orangeColor else cardBgColor,
-                    contentColor = if (!screenUiState.isDesignTab) MaterialTheme.colorScheme.onPrimary else secondaryTextColor
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                    Icon(Icons.Outlined.Handyman, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Cập nhật thi công", fontWeight = FontWeight.Bold)
+                val isSelected = !screenUiState.isDesignTab
+                val buttonModifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .let {
+                        if (isSelected) it.background(brush = NeonCyberOrangeGradient)
+                        else it.background(Color.White.copy(alpha = 0.05f))
+                    }
+                
+                Box(
+                    modifier = buttonModifier.clickable { onSetDesignTab(false) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Handyman, 
+                            contentDescription = null,
+                            tint = if (isSelected) Color(0xFF3D1F00) else secondaryTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "Cập nhật thi công", 
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (isSelected) Color(0xFF3D1F00) else secondaryTextColor
+                        )
+                    }
                 }
                 
-                // Thiết Kế Tab
-                Button(
-                    onClick = { onSetDesignTab(true) },
-                    modifier = Modifier.weight(1f).height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (screenUiState.isDesignTab) orangeColor else cardBgColor,
-                    contentColor = if (screenUiState.isDesignTab) MaterialTheme.colorScheme.onPrimary else secondaryTextColor
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                    Icon(Icons.Outlined.Architecture, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Nhập thiết kế", fontWeight = FontWeight.Bold)
+                val isDesignSelected = screenUiState.isDesignTab
+                val designBtnModifier = Modifier
+                    .weight(1f)
+                    .height(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .let {
+                        if (isDesignSelected) it.background(brush = NeonCyberOrangeGradient)
+                        else it.background(Color.White.copy(alpha = 0.05f))
+                    }
+                
+                Box(
+                    modifier = designBtnModifier.clickable { onSetDesignTab(true) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Outlined.Architecture, 
+                            contentDescription = null,
+                            tint = if (isDesignSelected) Color(0xFF3D1F00) else secondaryTextColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "Nhập thiết kế", 
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (isDesignSelected) Color(0xFF3D1F00) else secondaryTextColor
+                        )
+                    }
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             DesignTabContent(
                 state = state,
@@ -418,28 +462,57 @@ private fun DesignTabContent(
         
         // Search bar
         val searchFocusManager = LocalFocusManager.current
-        OutlinedTextField(
+        val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        BasicTextField(
             value = screenUiState.searchQuery,
             onValueChange = {
                 onUpdateSearchQuery(it)
             },
-            placeholder = { Text("Tìm theo mã/tên nút...", color = secondaryTextColor, fontSize = 12.sp) },
             modifier = Modifier.weight(0.6f).height(48.dp),
-            shape = RoundedCornerShape(8.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = textColor,
-                unfocusedTextColor = textColor,
-                focusedBorderColor = orangeColor,
-                unfocusedBorderColor = outlineColor,
-                focusedContainerColor = cardBgColor,
-                unfocusedContainerColor = cardBgColor
-            ),
-            trailingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = secondaryTextColor)
-            },
+            textStyle = TextStyle(color = textColor, fontSize = 13.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { searchFocusManager.clearFocus() }),
-            singleLine = true
+            singleLine = true,
+            interactionSource = interactionSource,
+            decorationBox = { innerTextField ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = screenUiState.searchQuery,
+                    innerTextField = innerTextField,
+                    enabled = true,
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+                    interactionSource = interactionSource,
+                    placeholder = { Text("Tìm theo mã/tên nút...", color = secondaryTextColor, fontSize = 12.sp) },
+                    trailingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = secondaryTextColor)
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedBorderColor = orangeColor,
+                        unfocusedBorderColor = outlineColor,
+                        focusedContainerColor = cardBgColor,
+                        unfocusedContainerColor = cardBgColor
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    container = {
+                        OutlinedTextFieldDefaults.Container(
+                            enabled = true,
+                            isError = false,
+                            interactionSource = interactionSource,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor,
+                                focusedBorderColor = orangeColor,
+                                unfocusedBorderColor = outlineColor,
+                                focusedContainerColor = cardBgColor,
+                                unfocusedContainerColor = cardBgColor
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+                )
+            }
         )
     }
 
@@ -524,7 +597,7 @@ private fun DesignTabContent(
                 val isCombineTarget = draggedFile != null && draggedFile?.id != file.id
 
                 Column {
-                    Card(
+                    GlassmorphicCard(
                         modifier = Modifier
                             .width(200.dp)
                             .onGloballyPositioned { coordinates ->
@@ -534,8 +607,7 @@ private fun DesignTabContent(
                             .pointerInput(file) {
                                 detectTapGestures(
                                     onTap = {
-                                        // Bỏ chọn nếu đang chọn file này
-                                        selectedFile = if (isSelected) null else null
+                                        selectedFile = if (isSelected) null else file
                                     },
                                     onDoubleTap = {
                                         selectedFile = null
@@ -598,10 +670,9 @@ private fun DesignTabContent(
                                     isCombineTarget -> orangeColor.copy(alpha = 0.5f)
                                     else -> Color.Transparent
                                 },
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ),
-                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -756,8 +827,7 @@ private fun DesignTabContent(
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         itemsIndexed(allItems, key = { _, item -> item.id }) { index, item ->
-            Card(
-                colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            GlassmorphicCard(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {

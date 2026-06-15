@@ -8,7 +8,8 @@ data class NormalizationRefs(
     val categories: List<NormalizationCategoryRef> = emptyList(),
     val routeRefs: List<NormalizationRouteRef> = emptyList(),
     val nodeCodes: List<String> = emptyList(),
-    val routeCodes: List<String> = emptyList()
+    val routeCodes: List<String> = emptyList(),
+    val projectId: String? = null
 )
 
 data class NormalizationCategoryRef(
@@ -29,6 +30,7 @@ object NormalizationRefsParser {
         var routeCode: String? = null
         var categoryName: String? = null
         var categoryUnit: String? = null
+        var projectId: String? = null
         val categories = mutableListOf<NormalizationCategoryRef>()
         val routeRefs = mutableListOf<NormalizationRouteRef>()
         val nodeCodes = mutableListOf<String>()
@@ -36,7 +38,9 @@ object NormalizationRefsParser {
 
         normalizationContext.lineSequence().forEach { line ->
             val trimmed = line.trim()
-            if (trimmed.startsWith("work_categories=")) {
+            if (trimmed.startsWith("project=")) {
+                projectId = trimmed.removePrefix("project=").trim().ifBlank { null }
+            } else if (trimmed.startsWith("work_categories=")) {
                 trimmed.removePrefix("work_categories=")
                     .split(',')
                     .map { it.trim() }
@@ -125,7 +129,8 @@ object NormalizationRefsParser {
             categories = categories,
             routeRefs = routeRefs,
             nodeCodes = nodeCodes,
-            routeCodes = routeCodes
+            routeCodes = routeCodes,
+            projectId = projectId
         )
     }
 }

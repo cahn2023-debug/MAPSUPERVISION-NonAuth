@@ -69,8 +69,8 @@ fun MapSupervisionTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.surfaceVariant.toArgb() // Dùng cùng màu với TopAppBar
-            window.navigationBarColor = colorScheme.surface.toArgb() // Dùng màu surface cho thanh điều hướng dưới
+            window.statusBarColor = android.graphics.Color.parseColor("#060814")
+            window.navigationBarColor = android.graphics.Color.parseColor("#060814")
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }

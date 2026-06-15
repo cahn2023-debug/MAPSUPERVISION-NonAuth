@@ -35,6 +35,17 @@ object ChatDictionaryResolver {
     fun resolveNode(message: String, selectedNodeCode: String?, refs: NormalizationRefs): Pair<String?, Int> {
         val normMsg = normalize(message)
         val explicitCode = selectedNodeCode?.trim()?.takeIf { it.isNotBlank() }
+        
+        if (explicitCode != null) {
+            val normExplicit = normalize(explicitCode)
+            refs.nodeCodes.firstOrNull { 
+                val normCode = normalize(it)
+                normCode == normExplicit || normCode.endsWith(normExplicit) || normCode.contains(normExplicit) 
+            }?.let {
+                return Pair(it, 95)
+            }
+        }
+
         val finalRefsCodes = if (explicitCode != null && !refs.nodeCodes.contains(explicitCode)) {
             refs.nodeCodes + explicitCode
         } else {

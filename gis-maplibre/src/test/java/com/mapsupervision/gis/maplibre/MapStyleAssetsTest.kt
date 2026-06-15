@@ -11,6 +11,7 @@ class MapStyleAssetsTest {
     private val styleFiles = listOf(
         "style_street.json",
         "style_satellite.json",
+        "style_satellite_labels.json",
         "style_dark.json"
     )
 
@@ -36,8 +37,8 @@ class MapStyleAssetsTest {
     }
 
     @Test
-    fun street_and_satellite_styles_request_vietnamese_labels() {
-        listOf("style_street.json", "style_satellite.json").forEach { fileName ->
+    fun street_satellite_and_hybrid_styles_request_vietnamese_labels() {
+        listOf("style_street.json", "style_satellite.json", "style_satellite_labels.json").forEach { fileName ->
             val content = File(assetDir, fileName).readText()
 
             assertTrue("$fileName should request Vietnamese labels", content.contains("hl=vi"))

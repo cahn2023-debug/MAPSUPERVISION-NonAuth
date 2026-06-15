@@ -147,7 +147,9 @@ enum class ChatActionType {
     SAVE_REPORT_DRAFT,
     ADD_NOTE,
     ADD_TASK,
-    UPDATE_MATERIAL_OR_VOLUME_PROGRESS
+    UPDATE_MATERIAL_OR_VOLUME_PROGRESS,
+    GENERATE_SUMMARY,
+    ADD_WORK_PLAN
 }
 
 enum class WriteDisposition {
@@ -155,6 +157,23 @@ enum class WriteDisposition {
     REQUIRE_CONFIRMATION,
     REJECT
 }
+
+enum class ChatIntentOptionType {
+    DAILY_LOG,
+    WORK_PLAN,
+    SUMMARY
+}
+
+data class ChatIntentOption(
+    val type: ChatActionType,
+    val label: String,
+    val draftJson: String
+)
+
+data class ChatClarificationPrompt(
+    val message: String,
+    val options: List<ChatIntentOption>
+)
 
 data class ChatConfidenceScore(
     val intentConfidence: Int,
@@ -192,6 +211,15 @@ data class DailyLogDraft(
     val categoryName: String = ""
 )
 
+data class WorkPlanDraft(
+    val plannedDateEpochDay: Long,
+    val title: String,
+    val description: String = "",
+    val nodeCode: String? = null,
+    val routeCode: String? = null,
+    val taskId: String? = null
+)
+
 data class SitePhotoUpdateDraft(
     val photoId: String,
     val tagCodesCsv: String = "",
@@ -220,6 +248,26 @@ data class TaskDraft(
     val status: TaskStatus = TaskStatus.TODO
 )
 
+data class SummaryRequestDraft(
+    val projectId: String,
+    val scope: String, // "project", "contractor", "node", "time_range"
+    val filterValue: String? = null,
+    val dateFromEpochDay: Long? = null,
+    val dateToEpochDay: Long? = null,
+    val groupBy: String? = null, // "contractor", "status", "day"
+    val columns: List<String> = emptyList()
+)
+
+data class SummaryRow(
+    val groupKey: String,
+    val totalNodes: Int,
+    val completedNodes: Int,
+    val avgProgress: Float,
+    val delayedCount: Int,
+    val totalVolume: Double,
+    val lastUpdatedEpochMs: Long
+)
+
 data class ChatPendingAction(
     val type: ChatActionType,
     val title: String,
@@ -230,7 +278,10 @@ data class ChatPendingAction(
     val reportDraftSave: ReportDraftDbSaveDraft? = null,
     val noteDraft: NoteDraft? = null,
     val taskDraft: TaskDraft? = null,
-    val materialOrVolumeProgress: MaterialOrVolumeProgressDraft? = null
+    val materialOrVolumeProgress: MaterialOrVolumeProgressDraft? = null,
+    val summaryRequest: SummaryRequestDraft? = null,
+    val workPlan: WorkPlanDraft? = null,
+    val actionId: String = java.util.UUID.randomUUID().toString()
 )
 
 data class ChatAssistantResult(
@@ -238,6 +289,7 @@ data class ChatAssistantResult(
     val suggestedAction: String? = null,
     val draftJson: String? = null,
     val pendingAction: ChatPendingAction? = null,
+    val clarificationPrompt: ChatClarificationPrompt? = null,
     val confidence: ChatConfidenceScore? = null,
     val missingFields: List<String> = emptyList(),
     val resolvedEntities: Map<String, String> = emptyMap(),

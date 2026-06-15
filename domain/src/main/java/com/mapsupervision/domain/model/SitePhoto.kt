@@ -14,6 +14,11 @@ package com.mapsupervision.domain.model
  * @property engineer Tên kỹ sư giám sát hiện trường đã chụp và ký nhận bức ảnh.
  * @property capturedAtEpochMs Dấu thời gian chụp ảnh (Epoch Milliseconds) phục vụ lập nhật ký công việc hằng ngày.
  */
+enum class MediaType {
+    IMAGE,
+    VIDEO
+}
+
 data class SitePhoto(
     val id: String,
     val projectId: String,
@@ -31,5 +36,9 @@ data class SitePhoto(
     val engineer: String,
     val capturedAtEpochMs: Long,
     val matchedAtEpochMs: Long = 0L,
-    val matchingTimeOffsetMs: Long = 0L
+    val matchingTimeOffsetMs: Long = 0L,
+    val mediaType: MediaType = MediaType.IMAGE,
+    val mimeType: String = "image/jpeg",
+    val durationMs: Long = 0L
 )
+

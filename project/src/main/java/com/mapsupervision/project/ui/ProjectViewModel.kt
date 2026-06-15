@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -26,6 +27,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 @HiltViewModel
 class ProjectViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
@@ -54,7 +56,7 @@ class ProjectViewModel @Inject constructor(
 
     private fun observeActiveProject() {
         viewModelScope.launch {
-            activeProjectRepository.activeProjectId.collectLatest {
+            activeProjectRepository.activeProjectId.debounce(250).collectLatest {
                 refresh()
             }
         }
@@ -62,7 +64,7 @@ class ProjectViewModel @Inject constructor(
 
     private fun observeProjectSync() {
         viewModelScope.launch {
-            projectSyncRepository.events.collectLatest {
+            projectSyncRepository.events.debounce(250).collectLatest {
                 refresh()
             }
         }

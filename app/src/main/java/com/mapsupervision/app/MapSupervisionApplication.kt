@@ -26,18 +26,9 @@ class MapSupervisionApplication : Application(), ImageLoaderFactory, Configurati
         super.onCreate()
         val isDebugBuild = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         AppLogger.init(this, isDebugBuild)
+        MapBridgeInstaller.install(applicationContext)
         if (isDebugBuild) {
             Timber.plant(Timber.DebugTree())
-        }
-        installOptionalMapBridge()
-    }
-
-    private fun installOptionalMapBridge() {
-        runCatching {
-            MapBridgeInstaller.install(this)
-            AppLogger.d("MapBridge installed successfully")
-        }.onFailure { e ->
-            AppLogger.e(e, "Failed to install MapBridge")
         }
     }
 

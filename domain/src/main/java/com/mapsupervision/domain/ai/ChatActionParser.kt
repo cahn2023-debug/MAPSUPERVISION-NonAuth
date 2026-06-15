@@ -9,9 +9,10 @@ object ChatActionParser {
         contextSummary: String = "",
         selectedNodeCode: String? = null,
         normalizationContext: String = "",
-        selectedRouteCode: String? = null
+        selectedRouteCode: String? = null,
+        explicitAction: ChatActionType? = null
     ): ChatAssistantResult {
-        return parseInternal(message, contextSummary, selectedNodeCode, selectedRouteCode, normalizationContext)
+        return parseInternal(message, contextSummary, selectedNodeCode, selectedRouteCode, normalizationContext, explicitAction)
     }
 
     fun parseLlmResponse(
@@ -47,55 +48,239 @@ object ChatActionParser {
         contextSummary: String,
         selectedNodeCode: String?,
         selectedRouteCode: String?,
-        normalizationContext: String
+        normalizationContext: String,
+        explicitAction: ChatActionType?
     ): ChatAssistantResult {
+        val resolvedRefs = NormalizationRefsParser.parse(normalizationContext)
         val normalized = normalizeText(message)
         val actionName: String
         val params = mutableMapOf<String, String>()
 
-        when {
-            normalized.contains("nhiem vu") || normalized.contains("task") || normalized.contains("viec can lam") -> {
-                actionName = "ADD_TASK"
-                params["objectCode"] = extractObjectCode(message, selectedNodeCode).orEmpty()
-                params["title"] = extractAfter(message, listOf("nhiem vu", "task", "viec can lam"))
+        val (nodeCode, nodeConf) = ChatDictionaryResolver.resolveNode(
+            message = message,
+            selectedNodeCode = selectedNodeCode ?: resolvedRefs.nodeCode,
+            refs = resolvedRefs
+        )
+        val (routeCode, routeConf) = ChatDictionaryResolver.resolveRoute(
+            message = message,
+            selectedRouteCode = selectedRouteCode ?: resolvedRefs.routeCode,
+            refs = resolvedRefs
+        )
+        val locationConf = maxOf(nodeConf, routeConf)
+        val categoryNameResolved = ChatDictionaryResolver.resolveCategory(
+            message = message,
+            rawCategoryName = null,
+            refs = resolvedRefs
+        )
+        val categoryConf = categoryNameResolved.third
+
+        if (explicitAction != null) {
+            actionName = explicitAction.name
+            when (explicitAction) {
+                ChatActionType.ADD_DAILY_LOG -> {
+                    params["nodeCode"] = nodeCode.orEmpty()
+                    params["routeCode"] = routeCode.orEmpty()
+                    params["workItem"] = extractAfter(message, listOf("work", "cong viec", "nhat ky", "thi cong", "trien khai"))
+                    params["manpower"] = extractInt(message, listOf("manpower", "nhan luc", "so nguoi"))?.toString() ?: "1"
+                    params["note"] = message.trim()
+                    params["volume"] = extractNumber(message, listOf("volume", "khoi luong", "thuc te", "actual"))?.toString() ?: "0"
+                    params["categoryName"] = extractAfter(message, listOf("category", "hang muc", "vat tu"))
+                }
+                ChatActionType.ADD_WORK_PLAN -> {
+                    params["nodeCode"] = nodeCode.orEmpty()
+                    params["routeCode"] = routeCode.orEmpty()
+                    params["title"] = "Kế hoạch thi công " + (nodeCode ?: routeCode ?: "")
+                    params["description"] = message.trim()
+                }
+                ChatActionType.GENERATE_SUMMARY -> {
+                    val scope = when {
+                        normalized.contains("nha thau") || normalized.contains("contractor") -> "contractor"
+                        normalized.contains("node") || normalized.contains("tram") || normalized.contains("nut") -> "node"
+                        normalized.contains("ngay") || normalized.contains("tuan") || normalized.contains("thang") || normalized.contains("time") -> "time_range"
+                        else -> "project"
+                    }
+                    params["scope"] = scope
+                    val groupBy = when {
+                        normalized.contains("nha thau") || normalized.contains("contractor") -> "contractor"
+                        normalized.contains("trang thai") || normalized.contains("status") -> "status"
+                        normalized.contains("ngay") || normalized.contains("day") -> "day"
+                        else -> null
+                    }
+                    groupBy?.let { params["groupBy"] = it }
+                    val currentEpoch = java.time.LocalDate.now().toEpochDay()
+                    if (normalized.contains("tuan nay")) {
+                        params["dateFromEpochDay"] = (currentEpoch - 7).toString()
+                        params["dateToEpochDay"] = currentEpoch.toString()
+                    } else if (normalized.contains("hom qua")) {
+                        params["dateFromEpochDay"] = (currentEpoch - 1).toString()
+                        params["dateToEpochDay"] = (currentEpoch - 1).toString()
+                    }
+                }
+                else -> {}
             }
-            normalized.contains("ghi chu") || normalized.contains("note") -> {
-                actionName = "ADD_NOTE"
-                params["objectCode"] = extractObjectCode(message, selectedNodeCode).orEmpty()
-                params["content"] = extractAfter(message, listOf("ghi chu", "note"))
-            }
-            normalized.contains("khoi luong") || normalized.contains("volume") || normalized.contains("vat tu") -> {
-                actionName = "UPDATE_MATERIAL_OR_VOLUME_PROGRESS"
-                params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
-                params["actualQty"] = extractNumber(message, listOf("actual", "thuc te", "khoi luong", "volume"))?.toString() ?: "0"
-                params["plannedQty"] = extractNumber(message, listOf("planned", "ke hoach"))?.toString() ?: ""
-                params["materialName"] = extractAfter(message, listOf("hang muc", "vat tu", "material", "khoi luong"))
-            }
-            normalized.contains("cap nhat") || normalized.contains("progress") || normalized.contains("tien do") -> {
-                actionName = "UPDATE_CONSTRUCTION_PROGRESS"
-                params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
-                params["planned"] = extractNumber(message, listOf("planned", "ke hoach"))?.toString() ?: ""
-                params["actual"] = extractNumber(message, listOf("actual", "thuc te"))?.toString() ?: ""
-            }
-            normalized.contains("nhat ky") || normalized.contains("daily log") -> {
-                actionName = "ADD_DAILY_LOG"
-                params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
-                params["workItem"] = extractAfter(message, listOf("work", "cong viec", "nhat ky"))
-                params["manpower"] = extractInt(message, listOf("manpower", "nhan luc", "so nguoi"))?.toString() ?: "1"
-                params["note"] = message.trim()
-                params["volume"] = extractNumber(message, listOf("volume", "khoi luong", "thuc te", "actual"))?.toString() ?: "0"
-                params["categoryName"] = extractAfter(message, listOf("category", "hang muc", "vat tu"))
-            }
-            normalized.contains("bao cao") || normalized.contains("report") -> {
-                actionName = "SAVE_REPORT_DRAFT"
-                params["title"] = "Báo cáo giám sát tự động"
-            }
-            else -> {
-                return ChatAssistantResult(
-                    answer = buildFallbackAnswer(message, contextSummary),
-                    confidence = ChatConfidenceScore(30, 0, 0, 30, false),
-                    writeDisposition = WriteDisposition.REJECT
+        } else {
+            val hasLocation = nodeCode != null || routeCode != null
+            val hasDate = DailyLogDateResolver.parseDateText(message) != null ||
+                    normalized.contains("hom nay") || normalized.contains("hom qua") ||
+                    Regex("""\d{1,2}[/-]\d{1,2}""").containsMatchIn(message)
+            val hasWork = normalized.contains("thi cong") || normalized.contains("trien khai") ||
+                    normalized.contains("mong") || normalized.contains("cot") ||
+                    normalized.contains("lap") || normalized.contains("keo cap")
+            val hasExplicitIntent = normalized.contains("nhat ky") || normalized.contains("daily log") ||
+                    normalized.contains("nhiem vu") || normalized.contains("task") ||
+                    normalized.contains("ghi chu") || normalized.contains("note") ||
+                    normalized.contains("tong hop") || normalized.contains("summary") ||
+                    normalized.contains("bao cao") || normalized.contains("report")
+
+            if (hasDate && hasWork && hasLocation && !hasExplicitIntent) {
+                val resolvedEntities = buildMap {
+                    if (nodeCode != null) put("node", nodeCode)
+                    if (routeCode != null) put("route", routeCode)
+                }
+                val options = listOf(
+                    ChatIntentOption(
+                        type = ChatActionType.ADD_DAILY_LOG,
+                        label = "Ghi nhật ký",
+                        draftJson = ""
+                    ),
+                    ChatIntentOption(
+                        type = ChatActionType.ADD_WORK_PLAN,
+                        label = "Kế hoạch",
+                        draftJson = ""
+                    ),
+                    ChatIntentOption(
+                        type = ChatActionType.GENERATE_SUMMARY,
+                        label = "Tổng hợp",
+                        draftJson = ""
+                    )
                 )
+                return ChatAssistantResult(
+                    answer = "Mình nhận thấy tin nhắn liên quan đến cả kế hoạch và nhật ký thi công. Bạn muốn làm gì tiếp theo?",
+                    clarificationPrompt = ChatClarificationPrompt(
+                        message = "Vui lòng chọn một hành động:",
+                        options = options
+                    ),
+                    writeDisposition = WriteDisposition.REQUIRE_CONFIRMATION,
+                    confidence = ChatConfidenceScore(90, locationConf, categoryConf, 85, true),
+                    resolvedEntities = resolvedEntities
+                )
+            }
+
+            when {
+                normalized.contains("nhiem vu") || normalized.contains("task") || normalized.contains("viec can lam") -> {
+                    actionName = "ADD_TASK"
+                    params["objectCode"] = extractObjectCode(message, selectedNodeCode).orEmpty()
+                    params["title"] = extractAfter(message, listOf("nhiem vu", "task", "viec can lam"))
+                }
+                normalized.contains("ghi chu") || normalized.contains("note") -> {
+                    actionName = "ADD_NOTE"
+                    params["objectCode"] = extractObjectCode(message, selectedNodeCode).orEmpty()
+                    params["content"] = extractAfter(message, listOf("ghi chu", "note"))
+                }
+                normalized.contains("tong hop") || normalized.contains("tom tat") || normalized.contains("thong ke") || normalized.contains("summary") -> {
+                    actionName = "GENERATE_SUMMARY"
+                    val scope = when {
+                        normalized.contains("nha thau") || normalized.contains("contractor") -> "contractor"
+                        normalized.contains("node") || normalized.contains("tram") || normalized.contains("nut") -> "node"
+                        normalized.contains("ngay") || normalized.contains("tuan") || normalized.contains("thang") || normalized.contains("time") -> "time_range"
+                        else -> "project"
+                    }
+                    params["scope"] = scope
+                    val groupBy = when {
+                        normalized.contains("nha thau") || normalized.contains("contractor") -> "contractor"
+                        normalized.contains("trang thai") || normalized.contains("status") -> "status"
+                        normalized.contains("ngay") || normalized.contains("day") -> "day"
+                        else -> null
+                    }
+                    groupBy?.let { params["groupBy"] = it }
+                    val currentEpoch = java.time.LocalDate.now().toEpochDay()
+                    if (normalized.contains("tuan nay")) {
+                        params["dateFromEpochDay"] = (currentEpoch - 7).toString()
+                        params["dateToEpochDay"] = currentEpoch.toString()
+                    } else if (normalized.contains("hom qua")) {
+                        params["dateFromEpochDay"] = (currentEpoch - 1).toString()
+                        params["dateToEpochDay"] = (currentEpoch - 1).toString()
+                    }
+                }
+                normalized.contains("khoi luong") || normalized.contains("volume") || normalized.contains("vat tu") ||
+                        normalized.contains(" met ") || normalized.contains(" md ") || normalized.contains(" cai ") || normalized.contains(" ong ") -> {
+                    actionName = "UPDATE_MATERIAL_OR_VOLUME_PROGRESS"
+                    params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
+                    val plannedVal = extractNumber(message, listOf("planned", "ke hoach"))
+                    if (plannedVal != null) {
+                        params["plannedQty"] = plannedVal.toString()
+                    }
+                    var cleanMsgForActual = message
+                    val nodeCodeToStrip = params["nodeCode"]
+                    if (!nodeCodeToStrip.isNullOrBlank()) {
+                        val escapeNode = Regex.escape(nodeCodeToStrip)
+                        val stripRegex = Regex("""(?:node|tram|trạm|nut|nút|ho\s*ga|hố\s*ga)\s*$escapeNode""", RegexOption.IGNORE_CASE)
+                        cleanMsgForActual = cleanMsgForActual.replace(stripRegex, "")
+                        val wordRegex = Regex("""\b$escapeNode\b""", RegexOption.IGNORE_CASE)
+                        cleanMsgForActual = cleanMsgForActual.replace(wordRegex, "")
+                    }
+                    val plannedRegexes = listOf(
+                        Regex("""planned\s*[:=]?\s*\d+(?:[.,]\d+)?""", RegexOption.IGNORE_CASE),
+                        Regex("""ke\s*hoach\s*[:=]?\s*\d+(?:[.,]\d+)?""", RegexOption.IGNORE_CASE)
+                    )
+                    plannedRegexes.forEach { r ->
+                        cleanMsgForActual = cleanMsgForActual.replace(r, "")
+                    }
+                    val qty = extractProgressOrQty(cleanMsgForActual)
+                    if (qty != null) {
+                        params["actualQty"] = qty.toString()
+                    }
+                    params["materialName"] = extractAfter(message, listOf("hang muc", "vat tu", "material", "khoi luong"))
+                }
+                normalized.contains("cap nhat") || normalized.contains("progress") || normalized.contains("tien do") ||
+                        normalized.contains("xong") || normalized.contains("hoan thanh") || normalized.contains("%") -> {
+                    actionName = "UPDATE_CONSTRUCTION_PROGRESS"
+                    params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
+                    val plannedVal = extractNumber(message, listOf("planned", "ke hoach"))
+                    if (plannedVal != null) {
+                        params["planned"] = plannedVal.toString()
+                    }
+                    var cleanMsgForActual = message
+                    val nodeCodeToStrip = params["nodeCode"]
+                    if (!nodeCodeToStrip.isNullOrBlank()) {
+                        val escapeNode = Regex.escape(nodeCodeToStrip)
+                        val stripRegex = Regex("""(?:node|tram|trạm|nut|nút|ho\s*ga|hố\s*ga)\s*$escapeNode""", RegexOption.IGNORE_CASE)
+                        cleanMsgForActual = cleanMsgForActual.replace(stripRegex, "")
+                        val wordRegex = Regex("""\b$escapeNode\b""", RegexOption.IGNORE_CASE)
+                        cleanMsgForActual = cleanMsgForActual.replace(wordRegex, "")
+                    }
+                    val plannedRegexes = listOf(
+                        Regex("""planned\s*[:=]?\s*\d+(?:[.,]\d+)?""", RegexOption.IGNORE_CASE),
+                        Regex("""ke\s*hoach\s*[:=]?\s*\d+(?:[.,]\d+)?""", RegexOption.IGNORE_CASE)
+                    )
+                    plannedRegexes.forEach { r ->
+                        cleanMsgForActual = cleanMsgForActual.replace(r, "")
+                    }
+                    val pct = extractProgressOrQty(cleanMsgForActual)
+                    if (pct != null) {
+                        params["actual"] = pct.toString()
+                    }
+                }
+                normalized.contains("nhat ky") || normalized.contains("daily log") -> {
+                    actionName = "ADD_DAILY_LOG"
+                    params["nodeCode"] = extractNodeCode(message, selectedNodeCode).orEmpty()
+                    params["workItem"] = extractAfter(message, listOf("work", "cong viec", "nhat ky"))
+                    params["manpower"] = extractInt(message, listOf("manpower", "nhan luc", "so nguoi"))?.toString() ?: "1"
+                    params["note"] = message.trim()
+                    params["volume"] = extractNumber(message, listOf("volume", "khoi luong", "thuc te", "actual"))?.toString() ?: "0"
+                    params["categoryName"] = extractAfter(message, listOf("category", "hang muc", "vat tu"))
+                }
+                normalized.contains("bao cao") || normalized.contains("report") -> {
+                    actionName = "SAVE_REPORT_DRAFT"
+                    params["title"] = "Báo cáo giám sát tự động"
+                }
+                else -> {
+                    return ChatAssistantResult(
+                        answer = buildFallbackAnswer(message, contextSummary),
+                        confidence = ChatConfidenceScore(30, 0, 0, 30, false),
+                        writeDisposition = WriteDisposition.REJECT
+                    )
+                }
             }
         }
 
@@ -103,11 +288,28 @@ object ChatActionParser {
             actionName = actionName,
             params = params,
             message = message,
-            cleanAnswer = "Mình đã chuẩn bị sẵn phiếu xử lý.",
+            cleanAnswer = if (actionName == "GENERATE_SUMMARY") "Dưới đây là tổng hợp báo cáo." else "Mình đã chuẩn bị sẵn phiếu xử lý.",
             selectedNodeCode = selectedNodeCode,
             selectedRouteCode = selectedRouteCode,
             normalizationContext = normalizationContext
         )
+    }
+
+    private fun extractProgressOrQty(message: String): Float? {
+        val normalized = normalizeText(message)
+        val percentRegex = Regex("""(\d+(?:[.,]\d+)?)\s*%""")
+        percentRegex.find(message)?.let { match ->
+            return match.groupValues[1].replace(',', '.').toFloatOrNull()
+        }
+        if (normalized.contains("xong") || normalized.contains("hoan thanh")) {
+            return 100f
+        }
+        val numRegex = Regex("""(?:\b|[^0-9])(\d+(?:[.,]\d+)?)(?:\b|[^0-9])""")
+        numRegex.findAll(message).forEach { match ->
+            val numStr = match.groupValues[1].replace(',', '.')
+            numStr.toFloatOrNull()?.let { return it }
+        }
+        return null
     }
 
     private fun processPipeline(
@@ -329,17 +531,76 @@ object ChatActionParser {
                     taskDraft = draft
                 )
             }
+            ChatActionType.GENERATE_SUMMARY -> {
+                val projId = params["projectId"] ?: resolvedRefs.projectId ?: resolvedRefs.nodeCode ?: "P1"
+                val scope = params["scope"] ?: "project"
+                val filterValue = params["filterValue"]
+                val dateFrom = params["dateFromEpochDay"]?.toLongOrNull()
+                val dateTo = params["dateToEpochDay"]?.toLongOrNull()
+                val groupBy = params["groupBy"]
+                val cols = params["columns"]?.split("|")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+
+                isDataComplete = true
+                val draft = SummaryRequestDraft(
+                    projectId = projId,
+                    scope = scope,
+                    filterValue = filterValue,
+                    dateFromEpochDay = dateFrom,
+                    dateToEpochDay = dateTo,
+                    groupBy = groupBy,
+                    columns = cols
+                )
+                draftJson = buildSummaryRequestJson(draft)
+                pendingAction = ChatPendingAction(
+                    type = intent,
+                    title = "Tổng hợp báo cáo dự án",
+                    draftJson = draftJson,
+                    summaryRequest = draft
+                )
+            }
+            ChatActionType.ADD_WORK_PLAN -> {
+                val explicitDate = params["date"] ?: params["logDate"]
+                val dateEpochDay = DailyLogDateResolver.resolveEpochDay(message = message, explicitDate = explicitDate)
+                val title = params["title"]?.takeIf { it.isNotBlank() } ?: "Kế hoạch thi công ${nodeCode ?: routeCode ?: ""}"
+                val desc = params["description"] ?: message
+                val draft = WorkPlanDraft(
+                    plannedDateEpochDay = dateEpochDay,
+                    title = title,
+                    description = desc,
+                    nodeCode = nodeCode,
+                    routeCode = routeCode,
+                    taskId = null
+                )
+                val taskTitle = "Xử lý kế hoạch: $title"
+                val taskDraft = TaskDraft(
+                    objectCode = nodeCode ?: routeCode ?: "",
+                    title = taskTitle,
+                    description = desc,
+                    status = TaskStatus.TODO
+                )
+                draftJson = """{"plannedDateEpochDay":$dateEpochDay,"title":"${escapeJson(title)}","description":"${escapeJson(desc)}","nodeCode":${if (nodeCode == null) "null" else "\"${escapeJson(nodeCode)}\""},"routeCode":${if (routeCode == null) "null" else "\"${escapeJson(routeCode)}\""}}"""
+                isDataComplete = (nodeCode != null || routeCode != null) && title.isNotBlank()
+                pendingAction = ChatPendingAction(
+                    type = intent,
+                    title = "Thêm kế hoạch thi công ${nodeCode ?: routeCode ?: ""}",
+                    draftJson = draftJson,
+                    workPlan = draft,
+                    taskDraft = taskDraft
+                )
+            }
         }
 
         // Calculate overall confidence with completeness penalty based on intent requirements
         var overallConfidence = when (intent) {
             ChatActionType.SAVE_REPORT_DRAFT -> intentConfidence
+            ChatActionType.GENERATE_SUMMARY -> intentConfidence
             ChatActionType.UPDATE_SITE_PHOTO -> (intentConfidence * 2 + locationConf) / 3
             ChatActionType.UPDATE_CONSTRUCTION_PROGRESS,
             ChatActionType.UPDATE_MATERIAL_OR_VOLUME_PROGRESS,
             ChatActionType.ADD_DAILY_LOG,
             ChatActionType.ADD_NOTE,
-            ChatActionType.ADD_TASK -> {
+            ChatActionType.ADD_TASK,
+            ChatActionType.ADD_WORK_PLAN -> {
                 if (locationConf > 0) {
                     (intentConfidence + locationConf) / 2
                 } else {
@@ -351,10 +612,11 @@ object ChatActionParser {
         if (!isDataComplete) {
             val isCriticalMissing = when (intent) {
                 ChatActionType.UPDATE_CONSTRUCTION_PROGRESS -> {
-                    nodeCode == null || (params["planned"]?.toFloatOrNull() == null && params["actual"]?.toFloatOrNull() == null)
+                    nodeCode == null || params["actual"]?.toFloatOrNull() == null
                 }
                 ChatActionType.UPDATE_MATERIAL_OR_VOLUME_PROGRESS -> {
-                    nodeCode == null || (params["actualQty"]?.toFloatOrNull() ?: params["actual"]?.toFloatOrNull() ?: params["volume"]?.toFloatOrNull()) == null
+                    val matName = categoryName?.takeIf { it.isNotBlank() } ?: params["materialName"] ?: ""
+                    nodeCode == null || matName.isBlank()
                 }
                 ChatActionType.ADD_DAILY_LOG -> {
                     false
@@ -364,6 +626,9 @@ object ChatActionParser {
                 }
                 ChatActionType.ADD_TASK -> {
                     nodeCode == null || (params["title"] ?: cleanAnswer).isBlank()
+                }
+                ChatActionType.ADD_WORK_PLAN -> {
+                    nodeCode == null && routeCode == null
                 }
                 else -> {
                     missingFields.isNotEmpty()
@@ -375,7 +640,8 @@ object ChatActionParser {
 
         // Determine WriteDisposition
         val writeDisposition = when {
-            overallConfidence >= 85 && isDataComplete -> WriteDisposition.AUTO_SAVE
+            intent == ChatActionType.GENERATE_SUMMARY -> WriteDisposition.AUTO_SAVE
+            overallConfidence >= 85 && isDataComplete -> WriteDisposition.REQUIRE_CONFIRMATION
             overallConfidence >= 50 -> WriteDisposition.REQUIRE_CONFIRMATION
             else -> WriteDisposition.REJECT
         }
@@ -402,7 +668,9 @@ object ChatActionParser {
                 }
             }
             WriteDisposition.REQUIRE_CONFIRMATION -> {
-                if (friendlyMissing.isNotEmpty()) {
+                if (cleanAnswer != "Mình đã chuẩn bị sẵn phiếu xử lý." && cleanAnswer != "Dưới đây là tổng hợp báo cáo." && cleanAnswer.isNotBlank()) {
+                    cleanAnswer
+                } else if (friendlyMissing.isNotEmpty()) {
                     "Mình đã tạo phiếu nháp nhưng còn thiếu thông tin: $friendlyMissingStr. Bạn vui lòng bổ sung trong phiếu xác nhận."
                 } else {
                     "Mình đã chuẩn bị phiếu nháp. Bạn vui lòng xác nhận."
@@ -438,14 +706,21 @@ object ChatActionParser {
         )
     }
 
+    private fun buildSummaryRequestJson(draft: SummaryRequestDraft): String {
+        val filterVal = if (draft.filterValue == null) "null" else "\"${escapeJson(draft.filterValue)}\""
+        val groupByVal = if (draft.groupBy == null) "null" else "\"${escapeJson(draft.groupBy)}\""
+        val columnsJson = draft.columns.joinToString(prefix = "[", postfix = "]") { "\"${escapeJson(it)}\"" }
+        return """{"projectId":"${escapeJson(draft.projectId)}","scope":"${escapeJson(draft.scope)}","filterValue":$filterVal,"dateFromEpochDay":${draft.dateFromEpochDay ?: "null"},"dateToEpochDay":${draft.dateToEpochDay ?: "null"},"groupBy":$groupByVal,"columns":$columnsJson}"""
+    }
+
 
     private fun extractNodeCode(message: String, selectedNodeCode: String?): String? {
-        val regex = Regex("""(?:node|tram|trạm)\s*([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+        val regex = Regex("""(?:node|tram|trạm|nut|nút|ho\s*ga|hố\s*ga)\s*([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
         return regex.find(message)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() } ?: selectedNodeCode
     }
 
     private fun extractObjectCode(message: String, selectedNodeCode: String?): String? {
-        val regex = Regex("""(?:object|objectcode|node|tram|trạm|doi tuong|đối tượng)\s*([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+        val regex = Regex("""(?:object|objectcode|node|tram|trạm|doi tuong|đối tượng|nut|nút|ho\s*ga|hố\s*ga)\s*([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
         return regex.find(message)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() } ?: selectedNodeCode
     }
 

@@ -20,4 +20,7 @@ interface ChatHistoryDao {
 
     @Query("SELECT * FROM chat_history WHERE projectId = :projectId ORDER BY createdAtEpochMs ASC")
     fun observeByProject(projectId: String): Flow<List<ChatHistoryEntity>>
+
+    @Query("DELETE FROM chat_history WHERE projectId = :projectId")
+    suspend fun clearByProject(projectId: String)
 }

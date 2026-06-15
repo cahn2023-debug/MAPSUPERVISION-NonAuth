@@ -44,6 +44,13 @@ object DailyLogDateResolver {
             return toEpochDay(year, month, day)
         }
 
+        Regex("""\b(\d{1,2})[/-](\d{1,2})\b""").find(trimmed)?.let { match ->
+            val day = match.groupValues[1].toIntOrNull() ?: return null
+            val month = match.groupValues[2].toIntOrNull() ?: return null
+            val year = LocalDate.now().year
+            return toEpochDay(year, month, day)
+        }
+
         Regex("""\b(\d{4})-(\d{1,2})-(\d{1,2})\b""").find(trimmed)?.let { match ->
             val year = match.groupValues[1].toIntOrNull() ?: return null
             val month = match.groupValues[2].toIntOrNull() ?: return null

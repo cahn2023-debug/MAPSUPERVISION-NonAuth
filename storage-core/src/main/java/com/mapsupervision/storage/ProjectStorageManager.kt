@@ -12,6 +12,23 @@ import javax.inject.Singleton
 class ProjectStorageManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        internal val mediaFolderChildren = listOf(
+            "photos/Nodes",
+            "photos/Routes",
+            "media/videos/Nodes",
+            "media/videos/Routes",
+            "thumbs",
+            "reports",
+            "exports",
+            "imports",
+            "imports/pending",
+            "imports/processed",
+            "imports/failed",
+            "db"
+        )
+    }
+
     /**
      * Returns the public project root under Downloads/MapSupervision/Projects/<slug>.
      * Falls back to internal filesDir if external storage is not available.
@@ -19,7 +36,7 @@ class ProjectStorageManager @Inject constructor(
     fun projectRoot(projectSlug: String): File {
         val base = publicBaseDir()
         val root = File(base, "Projects/$projectSlug")
-        listOf("photos/Nodes", "thumbs", "reports", "exports", "imports", "imports/pending", "imports/processed", "imports/failed", "db").forEach { child ->
+        mediaFolderChildren.forEach { child ->
             File(root, child).mkdirs()
         }
         return root
@@ -31,10 +48,15 @@ class ProjectStorageManager @Inject constructor(
     fun privateProjectRoot(projectSlug: String): File {
         val base = File(context.filesDir, "MapSupervision")
         val root = File(base, "Projects/$projectSlug")
-        listOf("photos/Nodes", "thumbs", "reports", "exports", "imports", "imports/pending", "imports/processed", "imports/failed", "db").forEach { child ->
+        mediaFolderChildren.forEach { child ->
             File(root, child).mkdirs()
         }
         return root
+    }
+
+    fun sanitizeFolderName(rawName: String): String {
+        val trimmed = rawName.trim().replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
+        return trimmed.ifBlank { "Unnamed" }
     }
 
     /**

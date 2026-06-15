@@ -83,61 +83,67 @@ class GemmaModelDownloadWorker @AssistedInject constructor(
         var lastProgress = initialRunningState
 
         try {
-            while (true) {
-                try {
-                    downloader.download(
-                        url = downloadUrl,
-                        targetFile = targetFile,
-                        expectedBytes = expectedBytes
-                    ) { progress ->
-                        val runningState = GemmaDownloadState.Running(
-                            workName = workName,
-                            modelId = model.downloadFileName,
-                            fileName = model.downloadFileName,
-                            bytesDownloaded = progress.bytesDownloaded,
-                            totalBytes = progress.totalBytes,
-                            lastUpdatedAt = System.currentTimeMillis()
-                        )
-                        lastProgress = runningState
-                        downloadStateStore.update(runningState)
-                        updateProgressNotification(runningState)
-                    }
-
-                    val completed = GemmaDownloadState.Completed(
-                        workName = workName,
-                        modelId = model.downloadFileName,
-                        fileName = model.downloadFileName,
-                        totalBytes = expectedBytes,
-                        lastUpdatedAt = System.currentTimeMillis()
-                    )
-                    downloadStateStore.update(completed)
-                    showTerminalNotification(buildCompletedNotification(model.displayName))
-                    return Result.success()
-
-                } catch (cancelled: CancellationException) {
-                    downloadStateStore.update(GemmaDownloadState.Idle)
-                    removeForegroundNotification()
-                    throw cancelled
-                } catch (failure: GemmaDownloadFailure) {
-                    // Check if network error and should retry, but let's fail and let WorkManager retry
-                    // or handle it gracefully
-                    val failed = GemmaDownloadState.Failed(
-                        workName = workName,
-                        modelId = model.downloadFileName,
-                        fileName = model.downloadFileName,
-                        errorCode = failure.code,
-                        message = failure.userMessage,
-                        httpCode = failure.httpCode,
-                        bytesDownloaded = lastProgress.bytesDownloaded,
-                        totalBytes = expectedBytes,
-                        lastUpdatedAt = System.currentTimeMillis()
-                    )
-                    downloadStateStore.update(failed)
-                    showTerminalNotification(buildFailedNotification(model.displayName, failure.userMessage))
-                    return Result.failure()
-                }
+            downloader.download(
+                url = downloadUrl,
+                targetFile = targetFile,
+                expectedBytes = expectedBytes
+            ) { progress ->
+                val runningState = GemmaDownloadState.Running(
+                    workName = workName,
+                    modelId = model.downloadFileName,
+                    fileName = model.downloadFileName,
+                    bytesDownloaded = progress.bytesDownloaded,
+                    totalBytes = progress.totalBytes,
+                    lastUpdatedAt = System.currentTimeMillis()
+                )
+                lastProgress = runningState
+                downloadStateStore.update(runningState)
+                updateProgressNotification(runningState)
             }
+
+            val completed = GemmaDownloadState.Completed(
+                workName = workName,
+                modelId = model.downloadFileName,
+                fileName = model.downloadFileName,
+                totalBytes = expectedBytes,
+                lastUpdatedAt = System.currentTimeMillis()
+            )
+            downloadStateStore.update(completed)
+            showTerminalNotification(buildCompletedNotification(model.displayName))
+            return Result.success()
+        } catch (cancelled: CancellationException) {
+            downloadStateStore.update(GemmaDownloadState.Idle)
+            removeForegroundNotification()
+            throw cancelled
+        } catch (failure: GemmaDownloadFailure) {
+            val failed = GemmaDownloadState.Failed(
+                workName = workName,
+                modelId = model.downloadFileName,
+                fileName = model.downloadFileName,
+                errorCode = failure.code,
+                message = failure.userMessage,
+                httpCode = failure.httpCode,
+                bytesDownloaded = lastProgress.bytesDownloaded,
+                totalBytes = expectedBytes,
+                lastUpdatedAt = System.currentTimeMillis()
+            )
+            downloadStateStore.update(failed)
+            showTerminalNotification(buildFailedNotification(model.displayName, failure.userMessage))
+            return Result.failure()
         } catch (e: Exception) {
+            val failed = GemmaDownloadState.Failed(
+                workName = workName,
+                modelId = model.downloadFileName,
+                fileName = model.downloadFileName,
+                errorCode = "UNEXPECTED_ERROR",
+                message = e.message ?: "Tai model that bai.",
+                httpCode = 0,
+                bytesDownloaded = lastProgress.bytesDownloaded,
+                totalBytes = expectedBytes,
+                lastUpdatedAt = System.currentTimeMillis()
+            )
+            downloadStateStore.update(failed)
+            showTerminalNotification(buildFailedNotification(model.displayName, failed.message))
             return Result.failure()
         }
     }

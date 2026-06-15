@@ -39,9 +39,9 @@ import com.mapsupervision.domain.repository.ProjectSyncRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
+import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.domain.service.WeatherService
 import com.mapsupervision.domain.util.StringSimilarity
-import com.mapsupervision.storage.ProjectStorageManager
 import com.mapsupervision.storage.importer.UserFileImportService
 import com.mapsupervision.storage.importer.ConfirmedFieldFlags
 import com.mapsupervision.storage.importer.ExcelColumnMapping
@@ -488,7 +488,7 @@ fun WorkspaceViewModel.onFilterContractorChanged(contractor: String?) {
         )
     )
     AppLogger.d("map.filter change applied contractor=${_state.value.mapUi.filterContractor}")
-    updateFilteredMapData()
+    updateFilteredMapData(FilteredMapUpdateReason.FILTER)
 }
 
 fun WorkspaceViewModel.onFilterMaterialTypeChanged(materialType: String?) {
@@ -499,7 +499,7 @@ fun WorkspaceViewModel.onFilterMaterialTypeChanged(materialType: String?) {
             message = ""
         )
     )
-    updateFilteredMapData()
+    updateFilteredMapData(FilteredMapUpdateReason.FILTER)
 }
 
 fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: String) {
@@ -512,7 +512,6 @@ fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: St
     if (projectId != null) {
         saveContractorColor(projectId, contractor, hexColor)
     }
-    updateFilteredMapData()
 }
 
 fun WorkspaceViewModel.onSearchQueryChanged(query: String) {
@@ -520,6 +519,7 @@ fun WorkspaceViewModel.onSearchQueryChanged(query: String) {
     _state.value = _state.value.copy(
         mapUi = _state.value.mapUi.copy(searchQuery = trimmed, message = "")
     )
+    updateFilteredMapData(FilteredMapUpdateReason.SEARCH)
     if (trimmed.isBlank()) return
     mapSearchJob?.cancel()
     mapSearchJob = viewModelScope.launch {
@@ -1054,9 +1054,30 @@ fun WorkspaceViewModel.getPreviewMaterialRows(previewNodeCode: String?): List<co
     )
 }
 
+internal fun resolveCaptureTargetCode(mapUi: MapUiState): String? {
+    val nodeCode = mapUi.selectedNode?.code?.trim().orEmpty()
+    if (nodeCode.isNotBlank()) return nodeCode
+    val routeCode = mapUi.selectedRoute?.code?.trim().orEmpty()
+    return routeCode.takeIf { it.isNotBlank() }
+}
+
 fun WorkspaceViewModel.triggerCapture() {
+    val mapUi = _state.value.mapUi
+    val selectedNodeCode = mapUi.selectedNode?.code?.trim().orEmpty()
+    val selectedRouteCode = mapUi.selectedRoute?.code?.trim().orEmpty()
+    val targetCode = resolveCaptureTargetCode(mapUi)
+    AppLogger.d(
+        "capture.trigger request selectedNode=${selectedNodeCode.isNotBlank()} " +
+            "selectedRoute=${selectedRouteCode.isNotBlank()} targetCode=${targetCode.orEmpty()}"
+    )
+    if (targetCode == null) {
+        AppLogger.d("capture.trigger blocked reason=no_selection")
+        showMessage("Hãy chọn một nút hoặc tuyến trước khi chụp ảnh")
+        return
+    }
+    AppLogger.d("capture.trigger accepted targetCode=$targetCode")
     _state.value = _state.value.copy(
-        pendingCaptureNodeCode = _state.value.mapUi.selectedNode?.code ?: _state.value.mapUi.selectedRoute?.code ?: ""
+        pendingCaptureNodeCode = targetCode
     )
 }
 
@@ -1064,31 +1085,86 @@ fun WorkspaceViewModel.clearCaptureRequest() {
     _state.value = _state.value.copy(pendingCaptureNodeCode = null)
 }
 
-fun WorkspaceViewModel.savePhoto(file: java.io.File, nodeCode: String) {
-    viewModelScope.launch {
-        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-        withContext(Dispatchers.IO) {
+suspend fun WorkspaceViewModel.savePhoto(file: java.io.File, nodeCode: String): Boolean {
+    val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return false
+    val targetCode = nodeCode.trim()
+    AppLogger.d(
+        "capture.save.start projectId=$projectId nodeCode=$targetCode file=${file.absolutePath}"
+    )
+    if (targetCode.isBlank()) {
+        AppLogger.d("capture.save.blocked reason=blank_node_code file=${file.absolutePath}")
+        showMessage("Không thể lưu ảnh khi chưa có mã đối tượng")
+        return false
+    }
+    return try {
+        val saved = withContext(Dispatchers.IO) {
             val loc = locationProvider.lastKnownLocation()
+            AppLogger.d(
+                "capture.save.io.start projectId=$projectId nodeCode=$targetCode file=${file.absolutePath}"
+            )
             val thumb = photoPipelineService.createThumbnail(projectId, file)
-            val isRoute = _state.value.designRoutes.any { it.code == nodeCode }
-            val matchedNode = if (!isRoute) nodeCode else null
-            val matchedRoute = if (isRoute) nodeCode else null
+            AppLogger.d(
+                "capture.save.thumbnail.ok projectId=$projectId nodeCode=$targetCode thumb=${thumb.absolutePath}"
+            )
+            val isRoute = _state.value.designRoutes.any { it.code == targetCode }
+            val matchedNode = if (!isRoute) targetCode else null
+            val matchedRoute = if (isRoute) targetCode else null
+            val isVideo = file.name.endsWith(".mp4", ignoreCase = true)
+            var durationMs = 0L
+            if (isVideo) {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(file.absolutePath)
+                    durationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                } catch (e: Exception) {
+                    AppLogger.e(e, "capture.save.video.duration.fail file=${file.absolutePath}")
+                } finally {
+                    try { retriever.release() } catch (_: Exception) {}
+                }
+            }
             val photo = createStoredSitePhoto(
                 projectId = projectId,
-                objectCode = nodeCode,
+                objectCode = targetCode,
                 file = file,
                 thumbnailFile = thumb,
                 location = loc,
                 engineer = "Field",
                 matchedNodeCode = matchedNode,
-                matchedRouteCode = matchedRoute
+                matchedRouteCode = matchedRoute,
+                mediaType = if (isVideo) com.mapsupervision.domain.model.MediaType.VIDEO else com.mapsupervision.domain.model.MediaType.IMAGE,
+                mimeType = if (isVideo) "video/mp4" else "image/jpeg",
+                durationMs = durationMs
             )
-            photoRepository.add(photo)
-            storageManager.scanFile(file)
+            val result = photoRepository.add(photo)
+            if (result is AppResult.Error) {
+                AppLogger.e(
+                    result.throwable,
+                    "capture.save.repository.fail projectId=$projectId nodeCode=$targetCode file=${file.absolutePath} thumb=${thumb.absolutePath}"
+                )
+                showMessage("Lưu ảnh thất bại: ${result.throwable.message ?: "không xác định"}")
+                false
+            } else {
+                AppLogger.d(
+                    "capture.save.repository.ok projectId=$projectId nodeCode=$targetCode file=${file.absolutePath} thumb=${thumb.absolutePath}"
+                )
+                true
+            }
         }
+        if (!saved) return false
         markProjectChanged(projectId, "photo_saved")
         // Increment counter so ReportingScreen knows to refresh
         _state.value = _state.value.copy(photoSaveCount = _state.value.photoSaveCount + 1)
+        AppLogger.d(
+            "capture.save.done projectId=$projectId nodeCode=$targetCode file=${file.absolutePath} photoSaveCount=${_state.value.photoSaveCount}"
+        )
+        true
+    } catch (error: Throwable) {
+        AppLogger.e(
+            error,
+            "capture.save.fail projectId=$projectId nodeCode=$targetCode file=${file.absolutePath}"
+        )
+        showMessage(error.message ?: "Không thể lưu ảnh chụp")
+        false
     }
 }
 
@@ -1219,6 +1295,109 @@ private fun WorkspaceViewModel.collectSummaryProperties(startSummary: String?, e
     return map.entries.map { it.key to it.value }
 }
 
+internal data class MediaStorageSpec(
+    val mediaType: com.mapsupervision.domain.model.MediaType,
+    val mimeType: String,
+    val durationMs: Long
+)
+
+internal fun resolveMediaStorageSpec(
+    file: java.io.File,
+    sourceMimeType: String? = null
+): MediaStorageSpec {
+    val normalizedMimeType = sourceMimeType?.trim().orEmpty()
+    val isVideo = normalizedMimeType.startsWith("video/") || file.name.endsWith(".mp4", ignoreCase = true)
+    val durationMs = if (isVideo) extractVideoDurationMs(file) else 0L
+    val resolvedMimeType = when {
+        normalizedMimeType.isNotBlank() -> normalizedMimeType
+        isVideo -> "video/mp4"
+        else -> "image/jpeg"
+    }
+    return MediaStorageSpec(
+        mediaType = if (isVideo) com.mapsupervision.domain.model.MediaType.VIDEO else com.mapsupervision.domain.model.MediaType.IMAGE,
+        mimeType = resolvedMimeType,
+        durationMs = durationMs
+    )
+}
+
+internal fun normalizeMediaObjectCode(
+    objectCode: String,
+    nodes: List<GisNode>,
+    routes: List<GisRoute>
+): String {
+    val normalized = objectCode.trim()
+    if (normalized.isBlank()) return ""
+    nodes.firstOrNull { it.code.equals(normalized, ignoreCase = true) }?.let { return it.code }
+    routes.firstOrNull { it.code.equals(normalized, ignoreCase = true) }?.let { return it.code }
+    return normalized
+}
+
+internal fun extractVideoDurationMs(file: java.io.File): Long {
+    val retriever = android.media.MediaMetadataRetriever()
+    return try {
+        retriever.setDataSource(file.absolutePath)
+        retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+            ?.toLongOrNull()
+            ?: 0L
+    } catch (e: Exception) {
+        AppLogger.e(e, "media.duration.fail file=${file.absolutePath}")
+        0L
+    } finally {
+        try {
+            retriever.release()
+        } catch (_: Exception) {
+        }
+    }
+}
+
+fun WorkspaceViewModel.importMediaFromGallery(
+    uris: List<Uri>,
+    objectCode: String,
+    engineer: String
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val normalizedObjectCode = normalizeMediaObjectCode(objectCode, _state.value.designNodes, _state.value.designRoutes)
+        if (normalizedObjectCode.isBlank()) {
+            showMessage("Vui lòng nhập mã đối tượng trước khi chọn media")
+            return@launch
+        }
+
+        val folderType = if (_state.value.designRoutes.any { it.code == normalizedObjectCode }) {
+            CaptureFolderType.ROUTE
+        } else {
+            CaptureFolderType.NODE
+        }
+
+        var savedCount = 0
+        withContext(Dispatchers.IO) {
+            uris.forEach { uri ->
+                runCatching {
+                    val sourceMimeType = context.contentResolver.getType(uri)
+                    val file = photoPipelineService.importFromGallery(
+                        context = context,
+                        projectId = projectId,
+                        objectCode = normalizedObjectCode,
+                        engineer = engineer,
+                        sourceUri = uri,
+                        folderType = folderType
+                    )
+                    saveImportedMedia(projectId, normalizedObjectCode, engineer, file, sourceMimeType)
+                    savedCount++
+                }.onFailure { error ->
+                    AppLogger.e(error, "media.import.gallery.fail projectId=$projectId uri=$uri")
+                }
+            }
+        }
+
+        if (savedCount > 0) {
+            markProjectChanged(projectId, "gallery_media_imported")
+            _state.value = _state.value.copy(photoSaveCount = _state.value.photoSaveCount + savedCount)
+        }
+        refresh()
+    }
+}
+
 fun WorkspaceViewModel.updateSitePhoto(
     photoId: String,
     tagCodesCsv: String,
@@ -1265,6 +1444,38 @@ fun WorkspaceViewModel.updateSitePhoto(
         _state.value = _state.value.copy(
             importUi = _state.value.importUi.copy(message = "Đã cập nhật ảnh $photoId thành công.")
         )
+    }
+}
+
+private suspend fun WorkspaceViewModel.saveImportedMedia(
+    projectId: String,
+    objectCode: String,
+    engineer: String,
+    file: java.io.File,
+    sourceMimeType: String?
+) {
+    val location = locationProvider.lastKnownLocation()
+    val thumb = photoPipelineService.createThumbnail(projectId, file)
+    val isRoute = _state.value.designRoutes.any { it.code == objectCode }
+    val matchedNode = if (!isRoute) objectCode else null
+    val matchedRoute = if (isRoute) objectCode else null
+    val spec = resolveMediaStorageSpec(file, sourceMimeType)
+    val photo = createStoredSitePhoto(
+        projectId = projectId,
+        objectCode = objectCode,
+        file = file,
+        thumbnailFile = thumb,
+        location = location,
+        engineer = engineer,
+        matchedNodeCode = matchedNode,
+        matchedRouteCode = matchedRoute,
+        mediaType = spec.mediaType,
+        mimeType = spec.mimeType,
+        durationMs = spec.durationMs
+    )
+    val result = photoRepository.add(photo)
+    if (result is AppResult.Error) {
+        throw IllegalStateException(result.throwable.message ?: "Failed to save media")
     }
 }
 
@@ -1381,6 +1592,92 @@ fun WorkspaceViewModel.addDailyLogBatch(
             return@launch
         }
         markProjectChanged(projectId, "daily_log_batch_added")
+    }
+}
+
+fun WorkspaceViewModel.addWorkPlan(
+    plannedDateEpochDay: Long,
+    title: String,
+    description: String,
+    nodeCode: String?,
+    routeCode: String?,
+    taskId: String?,
+    sourceRawInput: String
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        val normalizedRouteCode = routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
+        val workPlan = com.mapsupervision.domain.model.WorkPlan(
+            id = java.util.UUID.randomUUID().toString(),
+            projectId = projectId,
+            title = title,
+            description = description,
+            plannedDateEpochDay = plannedDateEpochDay,
+            nodeCode = normalizedNodeCode,
+            routeCode = normalizedRouteCode,
+            taskId = taskId,
+            sourceRawInput = sourceRawInput,
+            createdAtEpochMs = System.currentTimeMillis()
+        )
+        val result = workPlanRepository.add(workPlan)
+        if (result is AppResult.Success) {
+            markProjectChanged(projectId, "work_plan_added")
+        }
+    }
+}
+
+fun WorkspaceViewModel.addWorkPlanWithTask(
+    plannedDateEpochDay: Long,
+    title: String,
+    description: String,
+    nodeCode: String?,
+    routeCode: String?,
+    sourceRawInput: String
+) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        val normalizedRouteCode = routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
+        val generatedTaskId = java.util.UUID.randomUUID().toString()
+        
+        // 1. Create task
+        taskRepository.upsert(
+            Task(
+                id = generatedTaskId,
+                projectId = projectId,
+                objectCode = normalizedNodeCode ?: normalizedRouteCode ?: "",
+                title = title,
+                description = description,
+                status = TaskStatus.TODO,
+                createdAtEpochMs = System.currentTimeMillis()
+            )
+        )
+        
+        // 2. Create work plan
+        val workPlan = com.mapsupervision.domain.model.WorkPlan(
+            id = java.util.UUID.randomUUID().toString(),
+            projectId = projectId,
+            title = title,
+            description = description,
+            plannedDateEpochDay = plannedDateEpochDay,
+            nodeCode = normalizedNodeCode,
+            routeCode = normalizedRouteCode,
+            taskId = generatedTaskId,
+            sourceRawInput = sourceRawInput,
+            createdAtEpochMs = System.currentTimeMillis()
+        )
+        
+        val result = workPlanRepository.add(workPlan)
+        if (result is AppResult.Success) {
+            markProjectChanged(projectId, "work_plan_added")
+        }
+        
+        // Reload notes and tasks to update the UI
+        val targetCode = normalizedNodeCode ?: normalizedRouteCode
+        if (targetCode != null) {
+            loadNotesAndTasks(targetCode)
+        }
     }
 }
 

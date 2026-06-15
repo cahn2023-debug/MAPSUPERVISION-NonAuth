@@ -42,5 +42,9 @@ data class SitePhotoEntity(
     val engineer: String,
     val capturedAtEpochMs: Long,
     val matchedAtEpochMs: Long,
-    val matchingTimeOffsetMs: Long
+    val matchingTimeOffsetMs: Long,
+    val mediaType: com.mapsupervision.domain.model.MediaType = com.mapsupervision.domain.model.MediaType.IMAGE,
+    val mimeType: String = "image/jpeg",
+    val durationMs: Long = 0L
 )
+

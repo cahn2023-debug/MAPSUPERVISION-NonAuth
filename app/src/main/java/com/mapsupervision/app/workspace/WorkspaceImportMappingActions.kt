@@ -72,6 +72,7 @@ import org.json.JSONArray
 import kotlin.math.roundToLong
 fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null, sheetName: String? = null) {
     viewModelScope.launch {
+        AppLogger.d("import.mapping.flow loadExcelPreview.start uri=$uri existingFileId=$existingFileId sheetName=$sheetName")
         _state.value = _state.value.copy(
             excelParserUi = _state.value.excelParserUi.copy(
                 isLoading = true,
@@ -163,6 +164,10 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
                 confidence > 0 -> "thấp"
                 else -> "không có"
             }
+            AppLogger.d(
+                "import.mapping.flow loadExcelPreview.success headers=${preview.headers.size} " +
+                    "showMappingDialog=true file=${preview.fileName}"
+            )
             _state.value = _state.value.copy(
                 excelParserUi = ExcelParserUiState(
                     sourceUri = uri,
@@ -186,7 +191,12 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
                     selectedSheet = sheetName ?: preview.sheets.firstOrNull().orEmpty()
                 )
             )
+            AppLogger.d(
+                "import.mapping.flow loadExcelPreview.stateApplied showMappingDialog=${_state.value.excelParserUi.showMappingDialog} " +
+                    "message=${_state.value.excelParserUi.message}"
+            )
         }.onFailure { ex ->
+            AppLogger.e(ex, "import.mapping.flow loadExcelPreview.failure uri=$uri sheetName=$sheetName")
             _state.value = _state.value.copy(
                 excelParserUi = _state.value.excelParserUi.copy(
                     isLoading = false,
@@ -205,6 +215,7 @@ fun WorkspaceViewModel.updateSelectedExcelSheet(sheetName: String) {
 
 fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = null) {
     viewModelScope.launch {
+        AppLogger.d("import.mapping.flow loadNonExcelPreview.start uri=$uri existingFileId=$existingFileId")
         _state.value = _state.value.copy(
             importMappingUi = _state.value.importMappingUi.copy(
                 sourceUri = uri,
@@ -262,6 +273,10 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                 }
                 aiMessage = "Đã dùng AI gợi ý ánh xạ non-Excel. Vui lòng xác nhận vị trí."
             }
+            AppLogger.d(
+                "import.mapping.flow loadNonExcelPreview.success type=${preview.fileType} " +
+                    "showMappingDialog=true file=${preview.fileName}"
+            )
             _state.value = _state.value.copy(
                 importMappingUi = ImportMappingUiState(
                     sourceUri = uri,
@@ -291,7 +306,12 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     message = aiMessage
                 )
             )
+            AppLogger.d(
+                "import.mapping.flow loadNonExcelPreview.stateApplied showMappingDialog=${_state.value.importMappingUi.showMappingDialog} " +
+                    "message=${_state.value.importMappingUi.message}"
+            )
         }.onFailure { ex ->
+            AppLogger.e(ex, "import.mapping.flow loadNonExcelPreview.failure uri=$uri")
             _state.value = _state.value.copy(
                 importMappingUi = _state.value.importMappingUi.copy(
                     isLoading = false,

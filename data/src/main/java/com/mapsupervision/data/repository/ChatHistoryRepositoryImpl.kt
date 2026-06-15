@@ -45,6 +45,13 @@ class ChatHistoryRepositoryImpl @Inject constructor(
         emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
     }
 
+    override suspend fun clearByProject(projectId: String): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
+        dao(projectId).clearByProject(projectId)
+    }.fold(
+        onSuccess = { AppResult.Success(Unit) },
+        onFailure = { AppResult.Error(DatabaseException("Failed to clear chat history", it)) }
+    ) }
+
     private suspend fun dao(projectId: String): ChatHistoryDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.chatHistoryDao() ?: dao
 

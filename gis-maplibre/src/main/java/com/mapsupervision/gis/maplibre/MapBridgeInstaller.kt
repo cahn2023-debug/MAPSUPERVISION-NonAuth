@@ -46,6 +46,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -112,6 +113,36 @@ private fun List<GisRoute>.stableRouteSignature(): Long {
 
 private fun Long.mix(value: Any?): Long = 31L * this + (value?.hashCode() ?: 0).toLong()
 
+internal enum class MapRenderTier { LIGHTWEIGHT, FULL }
+
+internal data class MapRenderPolicyDecision(
+    val renderTier: MapRenderTier,
+    val scheduleDetailUpgrade: Boolean
+)
+
+internal fun resolveMapRenderPolicy(
+    preferLightweightRender: Boolean,
+    requestedShowNumberLabels: Boolean,
+    isLowRamDevice: Boolean
+): MapRenderPolicyDecision {
+    if (!preferLightweightRender || !requestedShowNumberLabels) {
+        return MapRenderPolicyDecision(
+            renderTier = MapRenderTier.FULL,
+            scheduleDetailUpgrade = false
+        )
+    }
+    if (isLowRamDevice) {
+        return MapRenderPolicyDecision(
+            renderTier = MapRenderTier.LIGHTWEIGHT,
+            scheduleDetailUpgrade = false
+        )
+    }
+    return MapRenderPolicyDecision(
+        renderTier = MapRenderTier.LIGHTWEIGHT,
+        scheduleDetailUpgrade = true
+    )
+}
+
 object MapBridgeInstaller {
     @JvmStatic
     fun install(context: android.content.Context) {
@@ -132,6 +163,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         private const val NODE_LABELS_LAYER_ID = "nodes_labels"
         private const val ROUTES_LAYER_ID = "routes"
         private const val MEASURE_LAYER_ID = "measure_line"
+        private const val DETAIL_UPGRADE_DELAY_MS = 350L
     }
 
     private val renderScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -161,8 +193,11 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private var lastFocusedSelectionKey: String? = null
     private var lastRenderKey: MapRenderKey? = null
     private var mapUpdateJob: Job? = null
+    private var detailUpgradeJob: Job? = null
     private var styleEpoch: Int = 0
     private val missingSourceWarnings = mutableSetOf<String>()
+    private var preferLightweightRender: Boolean = true
+    private var isCurrentDeviceLowRam: Boolean = false
 
     @Composable
     override fun Render(
@@ -184,6 +219,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
     ) {
         val context = LocalContext.current
         appContext = context.applicationContext
+        isCurrentDeviceLowRam = isLowRamDevice(context.applicationContext)
         nodesSnapshot = nodes
         routesSnapshot = routes
         latestShowNumberLabels = showNumberLabels
@@ -382,6 +418,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val styleUri = when (type) {
             MapLayerType.STREET -> "asset://style_street.json"
             MapLayerType.SATELLITE -> "asset://style_satellite.json"
+            MapLayerType.SATELLITE_LABELS -> "asset://style_satellite_labels.json"
             MapLayerType.DARK -> "asset://style_dark.json"
         }
         styleEpoch++
@@ -479,12 +516,14 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val localColorByContractor = latestColorByContractor
         val localContractorColors = latestContractorColors
         val localStyleEpoch = styleEpoch
+        val localPreferLightweightRender = preferLightweightRender
+        val localIsLowRamDevice = isCurrentDeviceLowRam
         val previousRenderKey = lastRenderKey
 
         mapUpdateJob?.cancel()
         mapUpdateJob = renderScope.launch {
             val renderPayload = withContext(Dispatchers.Default) {
-                val renderKey = buildMapRenderKey(
+                val requestedRenderKey = buildMapRenderKey(
                     nodes = localNodes,
                     routes = localRoutes,
                     labelField = localLabelField,
@@ -492,8 +531,18 @@ private class MapLibreGisMapBridge : GisMapBridge {
                     colorByContractor = localColorByContractor,
                     contractorColors = localContractorColors
                 )
+                val renderPolicy = resolveMapRenderPolicy(
+                    preferLightweightRender = localPreferLightweightRender,
+                    requestedShowNumberLabels = localShowNumberLabels,
+                    isLowRamDevice = localIsLowRamDevice
+                )
+                val effectiveShowNumberLabels =
+                    localShowNumberLabels && renderPolicy.renderTier == MapRenderTier.FULL
+                val effectiveRenderKey = requestedRenderKey.copy(
+                    showNumberLabels = effectiveShowNumberLabels
+                )
 
-                if (renderKey == previousRenderKey && localStyleEpoch == styleEpoch) {
+                if (effectiveRenderKey == previousRenderKey && localStyleEpoch == styleEpoch) {
                     return@withContext null
                 }
 
@@ -521,7 +570,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
                         addStringProperty("contractor", node.contractor)
                         addStringProperty(
                             "label",
-                            if (!localShowNumberLabels) "" else formatNodeLabel(node, localLabelField)
+                            if (!effectiveShowNumberLabels) "" else formatNodeLabel(node, localLabelField)
                         )
                         addStringProperty(
                             "color",
@@ -570,7 +619,10 @@ private class MapLibreGisMapBridge : GisMapBridge {
                     nodeFeaturesBuilt = nodeFeatures.size,
                     routeFeaturesBuilt = routeFeatures.size,
                     skippedRoutes = skippedRoutes,
-                    newRenderKey = renderKey
+                    newRenderKey = effectiveRenderKey,
+                    scheduleDetailUpgrade = renderPolicy.scheduleDetailUpgrade,
+                    requestedRenderKey = requestedRenderKey,
+                    committedTier = renderPolicy.renderTier
                 )
             }
 
@@ -592,12 +644,22 @@ private class MapLibreGisMapBridge : GisMapBridge {
             } ?: warnMissingSourceOnce(ROUTES_SOURCE_ID)
 
             lastRenderKey = renderPayload.newRenderKey
+            when (renderPayload.committedTier) {
+                MapRenderTier.FULL -> preferLightweightRender = false
+                MapRenderTier.LIGHTWEIGHT -> preferLightweightRender = true
+            }
+            if (renderPayload.scheduleDetailUpgrade) {
+                scheduleDetailUpgrade(renderPayload.requestedRenderKey, localStyleEpoch)
+            } else {
+                clearPendingDetailUpgrade()
+            }
 
             Log.d(
                 TAG,
                 "updateMapData committed nodesIn=${localNodes.size} " +
                     "nodeFeatures=${renderPayload.nodeFeaturesBuilt} routesIn=${localRoutes.size} " +
-                    "routeFeatures=${renderPayload.routeFeaturesBuilt} skippedRoutes=${renderPayload.skippedRoutes}"
+                    "routeFeatures=${renderPayload.routeFeaturesBuilt} skippedRoutes=${renderPayload.skippedRoutes} " +
+                    "tier=${renderPayload.committedTier}"
             )
         }
     }
@@ -614,6 +676,31 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private fun clearPendingMapUpdate() {
         mapUpdateJob?.cancel()
         mapUpdateJob = null
+    }
+
+    private fun clearPendingDetailUpgrade() {
+        detailUpgradeJob?.cancel()
+        detailUpgradeJob = null
+    }
+
+    private fun scheduleDetailUpgrade(requestedRenderKey: MapRenderKey, expectedStyleEpoch: Int) {
+        clearPendingDetailUpgrade()
+        detailUpgradeJob = renderScope.launch {
+            delay(DETAIL_UPGRADE_DELAY_MS)
+            if (styleEpoch != expectedStyleEpoch) return@launch
+            if (!preferLightweightRender) return@launch
+            val latestRequestedRenderKey = buildMapRenderKey(
+                nodes = nodesSnapshot,
+                routes = routesSnapshot,
+                labelField = latestLabelField,
+                showNumberLabels = latestShowNumberLabels,
+                colorByContractor = latestColorByContractor,
+                contractorColors = latestContractorColors
+            )
+            if (latestRequestedRenderKey != requestedRenderKey) return@launch
+            preferLightweightRender = false
+            updateMapData()
+        }
     }
 
     private fun updateMeasureGeoJson() {
@@ -804,12 +891,14 @@ private class MapLibreGisMapBridge : GisMapBridge {
 
     private fun resetRuntimeState(keepSnapshots: Boolean) {
         clearPendingMapUpdate()
+        clearPendingDetailUpgrade()
         lastLayerSignature = 0
         lastMeasureSignature = 0
         lastRenderKey = null
         lastFocusedSelectionKey = null
         didFitBoundsOnce = false
         clickListenerAttached = false
+        preferLightweightRender = true
         missingSourceWarnings.clear()
         if (!keepSnapshots) {
             nodesSnapshot = emptyList()
@@ -843,7 +932,10 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val nodeFeaturesBuilt: Int,
         val routeFeaturesBuilt: Int,
         val skippedRoutes: Int,
-        val newRenderKey: MapRenderKey
+        val newRenderKey: MapRenderKey,
+        val scheduleDetailUpgrade: Boolean,
+        val requestedRenderKey: MapRenderKey,
+        val committedTier: MapRenderTier
     )
 }
 

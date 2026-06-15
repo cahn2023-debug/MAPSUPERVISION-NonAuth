@@ -29,12 +29,12 @@ import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import com.mapsupervision.domain.service.WeatherService
 import com.mapsupervision.domain.usecase.ObserveWorkspaceSnapshotUseCase
-import com.mapsupervision.storage.ProjectStorageManager
 import com.mapsupervision.storage.importer.UserFileImportService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,14 +43,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalCoroutinesApi::class)
+internal enum class FilteredMapUpdateReason { SNAPSHOT, FILTER, SEARCH }
+
+internal fun resolveFilteredMapUpdateDelayMs(reason: FilteredMapUpdateReason): Long = when (reason) {
+    FilteredMapUpdateReason.SNAPSHOT -> 0L
+    FilteredMapUpdateReason.FILTER,
+    FilteredMapUpdateReason.SEARCH -> 180L
+}
+
+internal fun shouldPublishFilteredMapData(
+    previousNodes: List<GisNode>,
+    previousRoutes: List<GisRoute>,
+    nextNodes: List<GisNode>,
+    nextRoutes: List<GisRoute>
+): Boolean = previousNodes != nextNodes || previousRoutes != nextRoutes
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 @HiltViewModel
 class WorkspaceViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @ApplicationContext internal val context: Context,
     internal val activeProjectRepository: ActiveProjectRepository,
     internal val importedFileRepository: ImportedFileRepository,
     internal val progressRepository: ProgressRepository,
@@ -63,11 +80,11 @@ class WorkspaceViewModel @Inject constructor(
     internal val photoRepository: PhotoRepository,
     internal val photoPipelineService: IPhotoPipelineService,
     internal val locationProvider: IPhotoLocationProvider,
-    internal val storageManager: ProjectStorageManager,
     internal val dailyLogRepository: DailyLogRepository,
     internal val noteRepository: NoteRepository,
     internal val taskRepository: TaskRepository,
     internal val workCategoryRepository: WorkCategoryRepository,
+    internal val workPlanRepository: com.mapsupervision.domain.repository.WorkPlanRepository,
     internal val weatherService: WeatherService,
     internal val reportDraftRepository: com.mapsupervision.domain.repository.ReportDraftRepository,
     private val observeWorkspaceSnapshot: ObserveWorkspaceSnapshotUseCase
@@ -84,6 +101,7 @@ class WorkspaceViewModel @Inject constructor(
 
     internal var mapSearchJob: Job? = null
     internal var aiOpsJob: Job? = null
+    internal var filteredMapUpdateJob: Job? = null
     internal val materialProgressPersistJobs = mutableMapOf<String, Job>()
     internal var cachedIndexes = WorkspaceIndexes()
     internal var cachedNodesRef: List<GisNode> = emptyList()
@@ -193,7 +211,7 @@ class WorkspaceViewModel @Inject constructor(
 
     private fun observeProjectSync() {
         viewModelScope.launch {
-            projectSyncRepository.events.collectLatest { event ->
+            projectSyncRepository.events.debounce(250).collectLatest { event ->
                 val activeProjectId = _state.value.activeProjectId
                 if (event.projectId != null && event.projectId != activeProjectId) return@collectLatest
                 when (event.reason) {
@@ -212,12 +230,18 @@ class WorkspaceViewModel @Inject constructor(
     private val _filteredRoutesForMap = MutableStateFlow<List<GisRoute>>(emptyList())
     val filteredRoutesForMap: StateFlow<List<GisRoute>> = _filteredRoutesForMap.asStateFlow()
 
-    internal fun updateFilteredMapData() {
-        val stateSnapshot = _state.value
-        val indexes = ensureIndexes(stateSnapshot)
-        viewModelScope.launch(Dispatchers.Default) {
+    internal fun updateFilteredMapData(reason: FilteredMapUpdateReason = FilteredMapUpdateReason.SNAPSHOT) {
+        val delayMs = resolveFilteredMapUpdateDelayMs(reason)
+        filteredMapUpdateJob?.cancel()
+        filteredMapUpdateJob = viewModelScope.launch(Dispatchers.Default) {
+            if (delayMs > 0L) delay(delayMs)
+            val stateSnapshot = _state.value
+            val indexes = ensureIndexes(stateSnapshot)
             val nodes = buildMapDesignNodes(stateSnapshot, indexes)
             val routes = filterRoutes(stateSnapshot.designRoutes, stateSnapshot.mapUi, indexes, nodes)
+            if (!shouldPublishFilteredMapData(_filteredNodesForMap.value, _filteredRoutesForMap.value, nodes, routes)) {
+                return@launch
+            }
             _filteredNodesForMap.value = nodes
             _filteredRoutesForMap.value = routes
         }
@@ -266,6 +290,7 @@ class WorkspaceViewModel @Inject constructor(
                 dailyLogs = snapshot.dailyLogs,
                 workCategories = snapshot.workCategories,
                 selectedNodePhotos = nextSelectedPhotos,
+                projectPhotos = snapshot.sitePhotos,
                 isRefreshing = false,
                 lastRefreshedAtEpochMs = System.currentTimeMillis()
             )

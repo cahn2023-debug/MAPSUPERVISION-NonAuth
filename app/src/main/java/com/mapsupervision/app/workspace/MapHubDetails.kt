@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.platform.LocalContext
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.Task
@@ -611,7 +613,14 @@ fun MapPhotoFullscreenDialog(
     photo: com.mapsupervision.domain.model.SitePhoto,
     onDismiss: () -> Unit
 ) {
-    val imageFile = java.io.File(photo.filePath)
+    val displayFile = java.io.File(
+        if (photo.mediaType == com.mapsupervision.domain.model.MediaType.VIDEO) {
+            photo.thumbnailPath.ifBlank { photo.filePath }
+        } else {
+            photo.filePath
+        }
+    )
+    val context = LocalContext.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -626,13 +635,44 @@ fun MapPhotoFullscreenDialog(
                     onClick = onDismiss
                 )
         ) {
-            if (imageFile.exists()) {
+            if (displayFile.exists()) {
                 Image(
-                    painter = coil.compose.rememberAsyncImagePainter(imageFile),
+                    painter = coil.compose.rememberAsyncImagePainter(displayFile),
                     contentDescription = photo.objectCode,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+            if (photo.mediaType == com.mapsupervision.domain.model.MediaType.VIDEO) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable {
+                            try {
+                                val videoFile = java.io.File(photo.filePath)
+                                val authority = "${context.packageName}.fileprovider"
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, videoFile)
+                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, "video/mp4")
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.material3.Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Phát Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
             }
             Column(
                 modifier = Modifier
@@ -645,7 +685,7 @@ fun MapPhotoFullscreenDialog(
                 Text("Đối tượng: ${photo.objectCode}", color = Color.White, fontWeight = FontWeight.Bold)
                 val ts = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US)
                     .format(java.util.Date(photo.capturedAtEpochMs))
-                Text("Thời gian: ", color = Color.White, fontSize = 12.sp)
+                Text("Thời gian: $ts", color = Color.White, fontSize = 12.sp)
                 if (photo.latitude != null && photo.longitude != null) {
                     Text(
                         "Tọa độ: ${"%.6f".format(photo.latitude)}, ${"%.6f".format(photo.longitude)}",

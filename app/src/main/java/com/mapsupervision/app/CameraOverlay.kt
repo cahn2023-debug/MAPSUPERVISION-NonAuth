@@ -1,6 +1,7 @@
 package com.mapsupervision.app
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -9,26 +10,48 @@ import android.hardware.SensorManager
 import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
+import androidx.camera.core.UseCaseGroup
+import com.mapsupervision.photo.worker.PhotoStampRenderer
+import com.mapsupervision.photo.worker.calculateAspectCropRect
+import com.mapsupervision.domain.model.CameraAspectRatio
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import android.graphics.Bitmap
+import androidx.camera.extensions.ExtensionMode
+import androidx.camera.extensions.ExtensionsManager
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,15 +61,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cached
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.FlashOff
+import androidx.compose.material.icons.outlined.FlashAuto
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -56,31 +89,179 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mapsupervision.core.logging.AppLogger
+import com.mapsupervision.domain.model.CaptureStamp
+import com.mapsupervision.domain.model.PhotoLocationSnapshot
 import com.mapsupervision.domain.service.IPhotoLocationProvider
+import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.runtime.rememberCoroutineScope
 
+private enum class CaptureLensFacing { BACK, FRONT }
+
+internal enum class CameraFlashMode { AUTO, OFF, ON }
+
+internal fun resolveImageCaptureFlashMode(flashMode: CameraFlashMode): Int = when (flashMode) {
+    CameraFlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
+    CameraFlashMode.OFF -> ImageCapture.FLASH_MODE_OFF
+    CameraFlashMode.ON -> ImageCapture.FLASH_MODE_ON
+}
+
+internal fun resolveVideoTorchEnabled(flashMode: CameraFlashMode): Boolean = flashMode != CameraFlashMode.OFF
+
+internal fun clampZoomRatio(requestedZoomRatio: Float, minZoomRatio: Float, maxZoomRatio: Float): Float {
+    val normalizedMin = minZoomRatio.coerceAtLeast(1f)
+    val normalizedMax = maxZoomRatio.coerceAtLeast(normalizedMin)
+    return requestedZoomRatio.coerceIn(normalizedMin, normalizedMax)
+}
+
+internal fun buildCaptureStamp(
+    timestampMs: Long,
+    location: PhotoLocationSnapshot?,
+    address: String,
+    note: String,
+    bearingDeg: Float
+): CaptureStamp = CaptureStamp(
+    timestampMs = timestampMs,
+    latitude = location?.latitude,
+    longitude = location?.longitude,
+    address = address.trim(),
+    note = note.trim(),
+    bearingDeg = bearingDeg
+)
+
+internal suspend fun postProcessRecordedVideo(
+    videoFile: java.io.File,
+    stampEnabled: Boolean,
+    stampAtRecordStart: CaptureStamp?,
+    tileBitmap: Bitmap?,
+    photoPipelineService: IPhotoPipelineService,
+    setProcessingVideoStamp: (Boolean) -> Unit,
+    onSavePhoto: suspend (java.io.File) -> Boolean,
+    onPhotoCaptured: () -> Unit
+): Boolean {
+    return try {
+        if (stampEnabled) {
+            val stamp = requireNotNull(stampAtRecordStart) {
+                "Missing capture stamp for video export"
+            }
+            setProcessingVideoStamp(true)
+            photoPipelineService.exportVideoStamp(videoFile, stamp, tileBitmap)
+        }
+        val saved = onSavePhoto(videoFile)
+        if (saved) onPhotoCaptured()
+        saved
+    } finally {
+        setProcessingVideoStamp(false)
+    }
+}
+
+internal fun buildPreviewStampOverlayBitmap(
+    frameWidthPx: Int,
+    frameHeightPx: Int,
+    stamp: CaptureStamp,
+    tileBitmap: Bitmap?
+): Bitmap {
+    return PhotoStampRenderer.createStampOverlayBitmap(
+        frameWidthPx = frameWidthPx,
+        frameHeightPx = frameHeightPx,
+        stamp = stamp,
+        tileBitmap = tileBitmap
+    )
+}
+
+internal fun snapshotBitmap(bitmap: Bitmap?): Bitmap? {
+    return bitmap?.copy(Bitmap.Config.ARGB_8888, false)
+}
+
+internal data class RoundedLocationKey(
+    val latitudeE4: Int,
+    val longitudeE4: Int
+)
+
+internal data class PreviewStampRenderKey(
+    val stampEnabled: Boolean,
+    val isVideoMode: Boolean,
+    val aspectRatio: CameraAspectRatio,
+    val viewportWidth: Int,
+    val viewportHeight: Int,
+    val locationKey: RoundedLocationKey?,
+    val address: String,
+    val note: String,
+    val tileKey: RoundedLocationKey?
+)
+
+private const val LOCATION_POLL_INTERVAL_MS = 8_000L
+private const val LOCATION_RENDER_DECIMALS = 4
+
+internal fun roundedLocationKey(
+    latitude: Double?,
+    longitude: Double?,
+    decimals: Int = LOCATION_RENDER_DECIMALS
+): RoundedLocationKey? {
+    if (latitude == null || longitude == null) return null
+    val scale = when (decimals) {
+        0 -> 1.0
+        1 -> 10.0
+        2 -> 100.0
+        3 -> 1_000.0
+        4 -> 10_000.0
+        else -> Math.pow(10.0, decimals.toDouble())
+    }
+    return RoundedLocationKey(
+        latitudeE4 = kotlin.math.round(latitude * scale).toInt(),
+        longitudeE4 = kotlin.math.round(longitude * scale).toInt()
+    )
+}
+
+internal fun buildPreviewStampRenderKey(
+    stampEnabled: Boolean,
+    isVideoMode: Boolean,
+    aspectRatio: CameraAspectRatio,
+    viewport: com.mapsupervision.photo.worker.AspectCropRect?,
+    location: PhotoLocationSnapshot?,
+    address: String,
+    note: String,
+    tileKey: RoundedLocationKey?
+): PreviewStampRenderKey {
+    return PreviewStampRenderKey(
+        stampEnabled = stampEnabled,
+        isVideoMode = isVideoMode,
+        aspectRatio = aspectRatio,
+        viewportWidth = viewport?.width ?: 0,
+        viewportHeight = viewport?.height ?: 0,
+        locationKey = roundedLocationKey(location?.latitude, location?.longitude),
+        address = address.trim(),
+        note = note.trim(),
+        tileKey = tileKey
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Suppress("DEPRECATION")
 @Composable
 fun CameraOverlay(
@@ -89,120 +270,313 @@ fun CameraOverlay(
     photoPipelineService: IPhotoPipelineService,
     locationProvider: IPhotoLocationProvider,
     onPhotoCaptured: () -> Unit,
-    onSavePhoto: (java.io.File) -> Unit,
+    onSavePhoto: suspend (java.io.File) -> Boolean,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
 
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
-
-    // Request WRITE_EXTERNAL_STORAGE on Android <= 9 (API 28) for saving to Downloads
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* proceed regardless — fallback to internal if denied */ }
-
-    LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P) {
-            val writeGranted = ContextCompat.checkSelfPermission(
-                context, Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!writeGranted) {
-                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
-    }
-
-    var noteText by remember { mutableStateOf("") }
-    val focusManager = LocalFocusManager.current
-    var stampEnabled by remember { mutableStateOf(true) }
-    var bearing by remember { mutableStateOf(0f) }
-
-    // Live location for stamp preview
-    var liveLocation by remember { mutableStateOf<com.mapsupervision.domain.model.PhotoLocationSnapshot?>(null) }
-    var liveAddress by remember { mutableStateOf("") }
-    LaunchedEffect(stampEnabled) {
-        if (stampEnabled) {
-            val snapshot = withContext(Dispatchers.IO) {
-                val loc = locationProvider.lastKnownLocation()
-                val lat = loc.latitude
-                val lng = loc.longitude
-                loc to if (lat != null && lng != null) reverseGeocode(context, lat, lng) else ""
-            }
-            liveLocation = snapshot.first
-            liveAddress = snapshot.second
-        }
-    }
-
-    // Read compass bearing from sensor
-    DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(android.content.Context.SENSOR_SERVICE) as SensorManager
-        val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
-        val rotationMatrix = FloatArray(9)
-        val orientationAngles = FloatArray(3)
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
-                    SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-                    SensorManager.getOrientation(rotationMatrix, orientationAngles)
-                    bearing = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
-                    if (bearing < 0) bearing += 360f
-                } else if (event.sensor.type == Sensor.TYPE_ORIENTATION) {
-                    bearing = event.values[0]
-                }
-            }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-        }
-        rotationSensor?.let {
-            sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI)
-        }
-        onDispose { sensorManager.unregisterListener(listener) }
-    }
+    ) { granted -> hasAudioPermission = granted }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents()
+        ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris ->
-        if (uris.isNotEmpty()) {
-            // Close camera overlay immediately so user doesn't wait
-            onPhotoCaptured()
-            onDismiss()
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
 
-            coroutineScope.launch {
-                uris.forEach { uri ->
-                    runCatching {
-                        val file = withContext(Dispatchers.IO) {
-                            photoPipelineService.importFromGallery(context, projectId, nodeCode, "Field", uri)
-                        }
-                        // Gallery photos: never apply stamp (per requirement)
-                        onSavePhoto(file)
+        coroutineScope.launch {
+            var savedAny = false
+            uris.forEach { uri ->
+                runCatching {
+                    val file = withContext(Dispatchers.IO) {
+                        photoPipelineService.importFromGallery(
+                            context = context,
+                            projectId = projectId,
+                            objectCode = nodeCode,
+                            engineer = "Field",
+                            sourceUri = uri,
+                            folderType = CaptureFolderType.NODE
+                        )
                     }
+                    if (onSavePhoto(file)) {
+                        savedAny = true
+                    }
+                }.onFailure {
+                    AppLogger.e(it, "camera.overlay.gallery.import.failed uri=$uri")
                 }
             }
+            if (savedAny) {
+                onPhotoCaptured()
+            }
+            onDismiss()
         }
     }
 
     val previewView = remember { PreviewView(context) }
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var extensionsManager by remember { mutableStateOf<ExtensionsManager?>(null) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+    var hasFrontCamera by remember { mutableStateOf(false) }
+    var flashAvailable by remember { mutableStateOf(false) }
+
     val preview = remember { Preview.Builder().build() }
     val imageCapture = remember {
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
     }
-    var targetRotation by remember { mutableStateOf(Surface.ROTATION_0) }
+    val recorder = remember {
+        Recorder.Builder()
+            .setQualitySelector(
+                QualitySelector.fromOrderedList(
+                    listOf(Quality.FHD, Quality.HD, Quality.SD),
+                    FallbackStrategy.higherQualityOrLowerThan(Quality.SD)
+                )
+            )
+            .build()
+    }
+    val videoCapture = remember { VideoCapture.withOutput(recorder) }
 
-    DisposableEffect(context, previewView, preview, imageCapture) {
-                targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
+    var targetRotation by remember { mutableStateOf(Surface.ROTATION_0) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+    var isVideoMode by remember { mutableStateOf(false) }
+    var isProcessingVideoStamp by remember { mutableStateOf(false) }
+    var lensFacing by remember { mutableStateOf(CaptureLensFacing.BACK) }
+    var flashMode by remember { mutableStateOf(CameraFlashMode.OFF) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showFlashMenu by remember { mutableStateOf(false) }
+    var activeExtensionMode by remember { mutableStateOf(ExtensionMode.NONE) }
+    var previousExtensionMode by remember { mutableStateOf(ExtensionMode.NONE) }
+    var zoomRatio by remember { mutableStateOf(1f) }
+    var minZoomRatio by remember { mutableStateOf(1f) }
+    var maxZoomRatio by remember { mutableStateOf(1f) }
+
+    var stampEnabled by remember { mutableStateOf(true) }
+    var noteText by remember { mutableStateOf("") }
+    var bearing by remember { mutableStateOf(0f) }
+    var liveLocation by remember { mutableStateOf<PhotoLocationSnapshot?>(null) }
+    var liveAddress by remember { mutableStateOf("") }
+
+    var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
+
+    var currentTileBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var currentTileKey by remember { mutableStateOf<RoundedLocationKey?>(null) }
+    var cachedTileBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var cachedTileKey by remember { mutableStateOf<RoundedLocationKey?>(null) }
+    val addressCache = remember { mutableMapOf<RoundedLocationKey, String>() }
+    var previewSurfaceSize by remember { mutableStateOf(IntSize.Zero) }
+    var previewOverlayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val previewViewport = remember(previewSurfaceSize, selectedAspectRatio) {
+        if (previewSurfaceSize.width <= 0 || previewSurfaceSize.height <= 0) {
+            null
+        } else {
+            calculateAspectCropRect(previewSurfaceSize.width, previewSurfaceSize.height, selectedAspectRatio)
+        }
+    }
+    val previewRenderKey = remember(
+        stampEnabled,
+        isVideoMode,
+        selectedAspectRatio,
+        previewViewport,
+        liveLocation,
+        liveAddress,
+        noteText,
+        currentTileKey
+    ) {
+        buildPreviewStampRenderKey(
+            stampEnabled = stampEnabled,
+            isVideoMode = isVideoMode,
+            aspectRatio = selectedAspectRatio,
+            viewport = previewViewport,
+            location = liveLocation,
+            address = liveAddress,
+            note = noteText,
+            tileKey = currentTileKey
+        )
+    }
+
+    LaunchedEffect(previewRenderKey) {
+        previewOverlayBitmap?.recycle()
+        previewOverlayBitmap = null
+        val viewport = previewViewport ?: return@LaunchedEffect
+        if (!stampEnabled) return@LaunchedEffect
+        val previewStamp = buildCaptureStamp(
+            timestampMs = System.currentTimeMillis(),
+            location = liveLocation,
+            address = liveAddress,
+            note = noteText,
+            bearingDeg = bearing
+        )
+        val tileSnapshot = snapshotBitmap(currentTileBitmap)
+        val overlay = withContext(Dispatchers.Default) {
+            buildPreviewStampOverlayBitmap(
+                frameWidthPx = viewport.width,
+                frameHeightPx = viewport.height,
+                stamp = previewStamp,
+                tileBitmap = tileSnapshot
+            )
+        }
+        tileSnapshot?.recycle()
+        previewOverlayBitmap = overlay
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            previewOverlayBitmap?.recycle()
+            currentTileBitmap?.recycle()
+            cachedTileBitmap?.recycle()
+        }
+    }
+
+    val controlsEnabled = !isRecording && !isProcessingVideoStamp
+
+    LaunchedEffect(stampEnabled) {
+        if (!stampEnabled) {
+            val oldTile = currentTileBitmap
+            currentTileBitmap = null
+            currentTileKey = null
+            oldTile?.recycle()
+            cachedTileBitmap?.recycle()
+            cachedTileBitmap = null
+            cachedTileKey = null
+            addressCache.clear()
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            runCatching {
+                val loc = locationProvider.lastKnownLocation()
+                liveLocation = loc
+                val lat = loc.latitude
+                val lng = loc.longitude
+                val locationKey = roundedLocationKey(lat, lng)
+                if (locationKey == null) {
+                    liveAddress = ""
+                    currentTileKey = null
+                    currentTileBitmap?.recycle()
+                    currentTileBitmap = null
+                    return@runCatching
+                }
+                val safeLat = lat ?: return@runCatching
+                val safeLng = lng ?: return@runCatching
+
+                liveAddress = addressCache[locationKey] ?: withContext(Dispatchers.IO) {
+                    reverseGeocode(context, safeLat, safeLng)
+                }.also { addressCache[locationKey] = it }
+
+                val nextTileBitmap = when {
+                    currentTileKey == locationKey && currentTileBitmap != null -> currentTileBitmap
+                    cachedTileKey == locationKey && cachedTileBitmap != null -> snapshotBitmap(cachedTileBitmap)
+                    else -> {
+                        val fetchedTile = withContext(Dispatchers.IO) {
+                            PhotoStampRenderer.fetchOsmTile(safeLat, safeLng, zoom = 17)
+                        }
+                        cachedTileBitmap?.takeIf { cachedTileKey != locationKey }?.recycle()
+                        cachedTileBitmap = snapshotBitmap(fetchedTile)
+                        cachedTileKey = locationKey
+                        fetchedTile
+                    }
+                }
+
+                if (nextTileBitmap !== currentTileBitmap) {
+                    currentTileBitmap?.recycle()
+                    currentTileBitmap = nextTileBitmap
+                }
+                currentTileKey = locationKey
+            }.onFailure {
+                AppLogger.e(it, "camera.overlay.location.poll.failed")
+            }
+            delay(LOCATION_POLL_INTERVAL_MS)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+            ?: sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
+        val rotationMatrix = FloatArray(9)
+        val orientationAngles = FloatArray(3)
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                when (event.sensor.type) {
+                    Sensor.TYPE_ROTATION_VECTOR -> {
+                        SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                        SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                        bearing = Math.toDegrees(orientationAngles[0].toDouble()).toFloat().let {
+                            if (it < 0f) it + 360f else it
+                        }
+                    }
+
+                    Sensor.TYPE_ORIENTATION -> bearing = event.values[0]
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        rotationSensor?.let { sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI) }
+        onDispose { sensorManager.unregisterListener(listener) }
+    }
+
+    DisposableEffect(cameraProviderFuture) {
+        val executor = ContextCompat.getMainExecutor(context)
+        cameraProviderFuture.addListener(
+            { cameraProvider = runCatching { cameraProviderFuture.get() }.getOrNull() },
+            executor
+        )
+        onDispose {
+            runCatching { cameraProvider?.unbindAll() }
+        }
+    }
+
+    LaunchedEffect(cameraProvider) {
+        val provider = cameraProvider ?: return@LaunchedEffect
+        val managerFuture = ExtensionsManager.getInstanceAsync(context, provider)
+        managerFuture.addListener(
+            {
+                extensionsManager = runCatching { managerFuture.get() }.getOrNull()
+                hasFrontCamera = runCatching { provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) }.getOrDefault(false)
+            },
+            ContextCompat.getMainExecutor(context)
+        )
+    }
+
+    LaunchedEffect(lensFacing) {
+        zoomRatio = 1f
+    }
+
+    LaunchedEffect(isVideoMode) {
+        if (isVideoMode) {
+            previousExtensionMode = activeExtensionMode
+            activeExtensionMode = ExtensionMode.NONE
+        } else if (previousExtensionMode != ExtensionMode.NONE) {
+            activeExtensionMode = previousExtensionMode
+        }
+    }
+
+    DisposableEffect(context, previewView, preview, imageCapture, videoCapture) {
+        targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
         preview.targetRotation = targetRotation
         imageCapture.targetRotation = targetRotation
+        videoCapture.targetRotation = targetRotation
 
         val orientationListener = object : OrientationEventListener(context) {
             override fun onOrientationChanged(orientation: Int) {
@@ -212,6 +586,7 @@ fun CameraOverlay(
                     targetRotation = updatedRotation
                     preview.targetRotation = updatedRotation
                     imageCapture.targetRotation = updatedRotation
+                    videoCapture.targetRotation = updatedRotation
                 }
             }
         }
@@ -221,20 +596,60 @@ fun CameraOverlay(
         onDispose { orientationListener.disable() }
     }
 
-    if (hasCameraPermission) {
-        DisposableEffect(lifecycleOwner, preview, imageCapture) {
-            val future = ProcessCameraProvider.getInstance(context)
-            val executor = ContextCompat.getMainExecutor(context)
-            future.addListener({
-                val provider = future.get()
-                preview.surfaceProvider = previewView.surfaceProvider
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture)
-            }, executor)
-            onDispose {
-                runCatching { ProcessCameraProvider.getInstance(context).get().unbindAll() }
-            }
+    val selectedLensSelector = remember(lensFacing) {
+        if (lensFacing == CaptureLensFacing.BACK) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
+    }
+    val cameraSelector = remember(activeExtensionMode, extensionsManager, isVideoMode, selectedLensSelector) {
+        if (isVideoMode || extensionsManager == null || activeExtensionMode == ExtensionMode.NONE) {
+            selectedLensSelector
+        } else if (extensionsManager!!.isExtensionAvailable(selectedLensSelector, activeExtensionMode)) {
+            extensionsManager!!.getExtensionEnabledCameraSelector(selectedLensSelector, activeExtensionMode)
+        } else {
+            selectedLensSelector
         }
+    }
+
+    LaunchedEffect(cameraProvider, cameraSelector, isVideoMode, zoomRatio, stampEnabled) {
+        val provider = cameraProvider ?: return@LaunchedEffect
+        runCatching {
+            provider.unbindAll()
+            preview.surfaceProvider = previewView.surfaceProvider
+            val useCaseGroup = UseCaseGroup.Builder()
+                .addUseCase(preview)
+                .let { builder ->
+                    if (isVideoMode) builder.addUseCase(videoCapture) else builder.addUseCase(imageCapture)
+                }
+                .build()
+            val camera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, useCaseGroup)
+            boundCamera = camera
+            val zoomState = camera.cameraInfo.zoomState.value
+            val resolvedMinZoom = zoomState?.minZoomRatio ?: 1f
+            val resolvedMaxZoom = zoomState?.maxZoomRatio ?: 1f
+            minZoomRatio = resolvedMinZoom
+            maxZoomRatio = resolvedMaxZoom
+            val clampedZoom = clampZoomRatio(zoomRatio, resolvedMinZoom, resolvedMaxZoom)
+            zoomRatio = clampedZoom
+            flashAvailable = camera.cameraInfo.hasFlashUnit()
+            if (!flashAvailable && flashMode != CameraFlashMode.OFF) {
+                flashMode = CameraFlashMode.OFF
+            }
+            imageCapture.flashMode = resolveImageCaptureFlashMode(flashMode)
+            camera.cameraControl.setZoomRatio(clampedZoom)
+        }.onFailure {
+            boundCamera = null
+            AppLogger.e(it, "camera.overlay.bind.failed")
+        }
+    }
+
+    LaunchedEffect(flashMode) {
+        imageCapture.flashMode = resolveImageCaptureFlashMode(flashMode)
+    }
+
+    LaunchedEffect(boundCamera, isVideoMode, isRecording, flashMode, flashAvailable) {
+        val camera = boundCamera ?: return@LaunchedEffect
+        val enableTorch = isVideoMode && isRecording && flashAvailable && resolveVideoTorchEnabled(flashMode)
+        runCatching { camera.cameraControl.enableTorch(enableTorch) }
+            .onFailure { AppLogger.e(it, "camera.overlay.torch.failed enabled=$enableTorch") }
     }
 
     Box(
@@ -243,7 +658,6 @@ fun CameraOverlay(
             .background(Color.Black)
     ) {
         if (!hasCameraPermission) {
-            // Permission request screen
             Column(
                 modifier = Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -257,282 +671,441 @@ fun CameraOverlay(
                     Text("Hủy")
                 }
             }
-        } else {
-            // Camera preview
+            return@Box
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { previewSurfaceSize = it }
+        ) {
             AndroidView(
                 factory = { previewView },
                 modifier = Modifier.fillMaxSize()
             )
+            val viewport = previewViewport
+            if (previewOverlayBitmap != null && viewport != null) {
+                Image(
+                    bitmap = previewOverlayBitmap!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .offset { IntOffset(viewport.left, viewport.top) }
+                        .width(with(density) { viewport.width.toDp() })
+                        .height(with(density) { viewport.height.toDp() })
+                )
+            }
+        }
 
-            // Stamp preview overlay — mirrors exactly what PhotoStampRenderer draws on the photo
-            if (stampEnabled) {
-                val stampTime = remember(Unit) {
-                    java.text.SimpleDateFormat("HH:mm  dd/MM/yyyy", java.util.Locale.getDefault())
-                        .format(java.util.Date())
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            if (selectedAspectRatio != CameraAspectRatio.RATIO_FULL) {
+                val viewport = calculateAspectCropRect(size.width.toInt(), size.height.toInt(), selectedAspectRatio)
+                val outW = size.width
+                val outH = size.height
+                val vpX = viewport.left.toFloat()
+                val vpY = viewport.top.toFloat()
+                val vpW = viewport.width.toFloat()
+                val vpH = viewport.height.toFloat()
+
+                val paintColor = Color.Black.copy(alpha = 0.85f)
+                if (vpX > 0f) {
+                    drawRect(color = paintColor, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(vpX, outH))
+                    drawRect(color = paintColor, topLeft = androidx.compose.ui.geometry.Offset(vpX + vpW, 0f), size = androidx.compose.ui.geometry.Size(vpX, outH))
                 }
-                val locationText = when {
-                    liveAddress.isNotBlank() -> liveAddress
-                    liveLocation?.latitude != null && liveLocation?.longitude != null ->
-                        "${"%.5f".format(liveLocation!!.latitude)}, ${"%.5f".format(liveLocation!!.longitude)}"
-                    else -> "Đang lấy vị trí..."
-                }
-                val lat = liveLocation?.latitude
-                val lng = liveLocation?.longitude
-
-                // Load OSM tile bitmap for real map background
-                var tileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-                LaunchedEffect(lat, lng) {
-                    if (lat != null && lng != null) {
-                        tileBitmap = withContext(Dispatchers.IO) {
-                            loadOsmTileBitmap(lat, lng, zoom = 17)
-                        }
-                    }
-                }
-
-                val stampRotation = rotationToDegrees(targetRotation).toFloat()
-                val (mapAlignment, mapModifier) = when (targetRotation) {
-                    Surface.ROTATION_90 -> Alignment.BottomEnd to Modifier.padding(end = 10.dp, bottom = 150.dp)
-                    Surface.ROTATION_180 -> Alignment.TopEnd to Modifier.padding(end = 10.dp, top = 150.dp)
-                    Surface.ROTATION_270 -> Alignment.TopStart to Modifier.padding(start = 10.dp, top = 150.dp)
-                    else -> Alignment.BottomStart to Modifier.padding(start = 10.dp, bottom = 150.dp)
-                }
-                val (pillAlignment, pillModifier) = when (targetRotation) {
-                    Surface.ROTATION_90 -> Alignment.TopEnd to Modifier.padding(end = 10.dp, top = 150.dp)
-                    Surface.ROTATION_180 -> Alignment.TopStart to Modifier.padding(start = 10.dp, top = 150.dp)
-                    Surface.ROTATION_270 -> Alignment.BottomStart to Modifier.padding(start = 10.dp, bottom = 150.dp)
-                    else -> Alignment.BottomEnd to Modifier.padding(end = 10.dp, bottom = 150.dp)
-                }
-
-                Box(modifier = Modifier.fillMaxSize()) {
-
-                // Bottom-left: minimap with real OSM tile
-                val mapSizeDp = 100.dp
-                androidx.compose.foundation.Canvas(
-                    modifier = mapModifier
-                        .align(mapAlignment)
-                        .size(mapSizeDp)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                        .graphicsLayer { rotationZ = stampRotation }
-                ) {
-                    val w = size.width
-                    val h = size.height
-                    val cx = w / 2f
-                    val cy = h / 2f
-                    val scale = w / 300f
-
-                    drawIntoCanvas { composeCanvas ->
-                        val nc = composeCanvas.nativeCanvas
-
-                        // Draw real OSM tile if loaded, else fallback background
-                        val tile = tileBitmap
-                        if (tile != null) {
-                            // Crop center square from tile and draw
-                            val tileW = tile.width.toFloat()
-                            val tileH = tile.height.toFloat()
-                            // Calculate pixel offset of our location within the tile
-                            val (tileX, tileY) = if (lat != null && lng != null) {
-                                osmTilePixelOffset(lat, lng, zoom = 17, tileSize = tileW.toInt())
-                            } else Pair(tileW / 2f, tileH / 2f)
-                            // Source rect centered on our location
-                            val half = minOf(tileW, tileH) / 2f
-                            val srcLeft = (tileX - half).coerceIn(0f, tileW - 1f)
-                            val srcTop  = (tileY - half).coerceIn(0f, tileH - 1f)
-                            val srcRight  = (srcLeft + minOf(tileW, tileH)).coerceAtMost(tileW)
-                            val srcBottom = (srcTop  + minOf(tileW, tileH)).coerceAtMost(tileH)
-                            val src = android.graphics.Rect(srcLeft.toInt(), srcTop.toInt(), srcRight.toInt(), srcBottom.toInt())
-                            val dst = android.graphics.RectF(0f, 0f, w, h)
-                            nc.drawBitmap(tile, src, dst, null)
-                        } else {
-                            // Fallback: OSM-style drawn background
-                            nc.drawColor(android.graphics.Color.argb(255, 242, 239, 233))
-                            val roadPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                                color = android.graphics.Color.WHITE
-                                strokeWidth = 5f * scale
-                                strokeCap = android.graphics.Paint.Cap.ROUND
-                                style = android.graphics.Paint.Style.STROKE
-                            }
-                            nc.drawLine(6f * scale, cy - 6f * scale, w - 6f * scale, cy + 6f * scale, roadPaint)
-                            nc.drawLine(cx + 5f * scale, 6f * scale, cx - 5f * scale, h - 6f * scale, roadPaint)
-                        }
-
-                        // Bearing cone
-                        val bearingRad = Math.toRadians(bearing.toDouble()).toFloat()
-                        val coneAngle = Math.toRadians(45.0).toFloat()
-                        val coneLen = w * 0.42f
-                        val conePath = android.graphics.Path().apply {
-                            moveTo(cx, cy)
-                            val leftAngle = bearingRad - coneAngle / 2
-                            lineTo(cx + kotlin.math.sin(leftAngle) * coneLen, cy - kotlin.math.cos(leftAngle) * coneLen)
-                            val sweepDeg = Math.toDegrees(coneAngle.toDouble()).toFloat()
-                            val startDeg = Math.toDegrees((bearingRad - coneAngle / 2).toDouble()).toFloat() - 90f
-                            arcTo(android.graphics.RectF(cx - coneLen, cy - coneLen, cx + coneLen, cy + coneLen), startDeg, sweepDeg)
-                            close()
-                        }
-                        nc.drawPath(conePath, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            color = android.graphics.Color.argb(100, 255, 200, 0)
-                        })
-
-                        // Location dot — glow + red + white
-                        nc.drawCircle(cx, cy, 18f * scale, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            color = android.graphics.Color.argb(60, 220, 50, 50)
-                        })
-                        nc.drawCircle(cx, cy, 12f * scale, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            color = android.graphics.Color.argb(255, 220, 50, 50)
-                        })
-                        nc.drawCircle(cx, cy, 5f * scale, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                            color = android.graphics.Color.WHITE
-                        })
-
-                        // Border
-                        nc.drawRoundRect(
-                            android.graphics.RectF(0f, 0f, w, h), 10f * scale, 10f * scale,
-                            android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-                                color = android.graphics.Color.argb(200, 25, 110, 190)
-                                style = android.graphics.Paint.Style.STROKE
-                                strokeWidth = 3f * scale
-                            })
-                    }
-                }
-
-                // Bottom-right: pills column aligned to right edge
-                Column(
-                    modifier = pillModifier
-                        .align(pillAlignment)
-                        .graphicsLayer { rotationZ = stampRotation },
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    StampPill(icon = "⏱", text = stampTime)
-                    StampPill(icon = "📍", text = locationText)
-                    if (noteText.isNotBlank()) {
-                        StampPill(icon = "📝", text = noteText)
-                    }
+                if (vpY > 0f) {
+                    drawRect(color = paintColor, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(outW, vpY))
+                    drawRect(color = paintColor, topLeft = androidx.compose.ui.geometry.Offset(0f, vpY + vpH), size = androidx.compose.ui.geometry.Size(outW, vpY))
                 }
             }
+        }
 
-            // Node info overlay at top
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xCC000000))
-                    .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-                    .align(Alignment.TopCenter)
+
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Transparent)
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .align(Alignment.TopCenter)
+        ) {
+            Column(
+                modifier = Modifier.align(Alignment.CenterStart),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = if (nodeCode.isBlank()) "Chụp ảnh hiện trường" else "Đối tượng: $nodeCode",
-                    color = Color.White,
+                    text = when {
+                        isProcessingVideoStamp -> "ĐANG ĐÓNG STAMP VIDEO..."
+                        isRecording -> "ĐANG QUAY..."
+                        nodeCode.isBlank() -> "Chụp ảnh hiện trường"
+                        else -> "Đối tượng: $nodeCode"
+                    },
+                    color = if (isRecording || isProcessingVideoStamp) Color.Red else Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.align(Alignment.CenterStart)
+                    fontSize = 14.sp
                 )
-                // Stamp toggle in center
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.Layers,
-                        contentDescription = null,
-                        tint = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
-                        modifier = Modifier.size(18.dp)
+            }
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.Layers,
+                    contentDescription = null,
+                    tint = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    "Stamp",
+                    color = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
+                    fontSize = 12.sp
+                )
+                Switch(
+                    checked = stampEnabled,
+                    onCheckedChange = { if (controlsEnabled) stampEnabled = it },
+                    enabled = controlsEnabled,
+                    modifier = Modifier.size(width = 44.dp, height = 24.dp),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF1E78C8),
+                        uncheckedThumbColor = Color(0xAAFFFFFF),
+                        uncheckedTrackColor = Color(0x44FFFFFF)
                     )
-                    Text(
-                        "Stamp",
-                        color = if (stampEnabled) Color(0xFF64B5F6) else Color(0x88FFFFFF),
-                        fontSize = 12.sp
-                    )
-                    Switch(
-                        checked = stampEnabled,
-                        onCheckedChange = { stampEnabled = it },
-                        modifier = Modifier.size(width = 44.dp, height = 24.dp),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFF1E78C8),
-                            uncheckedThumbColor = Color(0xAAFFFFFF),
-                            uncheckedTrackColor = Color(0x44FFFFFF)
+                )
+            }
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (flashAvailable) {
+                    IconButton(
+                        onClick = { if (controlsEnabled) showFlashMenu = !showFlashMenu },
+                        enabled = controlsEnabled,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        val flashIcon = when (flashMode) {
+                            CameraFlashMode.AUTO -> Icons.Outlined.FlashAuto
+                            CameraFlashMode.OFF -> Icons.Outlined.FlashOff
+                            CameraFlashMode.ON -> Icons.Outlined.FlashOn
+                        }
+                        Icon(
+                            imageVector = flashIcon,
+                            contentDescription = "Flash mode",
+                            tint = if (flashMode == CameraFlashMode.OFF) Color.White else Color(0xFF64B5F6)
                         )
-                    )
+                    }
                 }
                 IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.CenterEnd).size(32.dp)
+                    onClick = {
+                        if (!isProcessingVideoStamp) {
+                            if (isRecording) {
+                                activeRecording?.stop()
+                                activeRecording = null
+                                isRecording = false
+                            }
+                            onDismiss()
+                        }
+                    },
+                    enabled = !isProcessingVideoStamp,
+                    modifier = Modifier.size(32.dp)
                 ) {
                     Icon(Icons.Outlined.Close, contentDescription = "Đóng", tint = Color.White)
                 }
             }
+        }
 
-            // Bottom controls: note input + gallery + shutter
-            Column(
+        // Popup chọn Flash mờ nổi trên màn hình
+        if (showFlashMenu && controlsEnabled) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { showFlashMenu = false }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .padding(top = 60.dp, end = 48.dp)
+                        .align(Alignment.TopEnd)
+                        .background(Color(0xCC111111), RoundedCornerShape(20.dp))
+                        .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    CameraFlashMode.entries.forEach { mode ->
+                        val selected = flashMode == mode
+                        Text(
+                            text = when (mode) {
+                                CameraFlashMode.AUTO -> "Auto"
+                                CameraFlashMode.OFF -> "Off"
+                                CameraFlashMode.ON -> "On"
+                            },
+                            color = if (selected) Color(0xFF64B5F6) else Color.White,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 12.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    if (controlsEnabled && flashAvailable) {
+                                        flashMode = mode
+                                    }
+                                    showFlashMenu = false
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Cụm các nút điều khiển phía dưới màn hình hoàn toàn trong suốt
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Transparent)
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .align(Alignment.BottomCenter),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Trường nhập ghi chú bán trong suốt
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { if (controlsEnabled) noteText = it },
+                enabled = controlsEnabled,
+                placeholder = { Text("Ghi chú (tùy chọn)...", color = Color(0xAAFFFFFF), fontSize = 13.sp) },
+                singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xCC000000))
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-                    .align(Alignment.BottomCenter),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Note input field
-                OutlinedTextField(
-                    value = noteText,
-                    onValueChange = { noteText = it },
-                    placeholder = { Text("Ghi chú (tùy chọn)...", color = Color(0xAAFFFFFF), fontSize = 13.sp) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFF1E78C8),
-                        unfocusedBorderColor = Color(0x88FFFFFF),
-                        cursorColor = Color.White
-                    )
+                    .padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(24.dp),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color(0x33FFFFFF),
+                    unfocusedContainerColor = Color(0x15FFFFFF),
+                    focusedBorderColor = Color(0x66FFFFFF),
+                    unfocusedBorderColor = Color(0x33FFFFFF),
+                    cursorColor = Color.White
                 )
+            )
 
+            // Thanh Zoom Oval trong suốt ở giữa và Nút cài đặt răng cưa không viền ở góc phải
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .width(220.dp)
+                        .height(38.dp)
+                        .align(Alignment.Center)
+                        .background(Color(0x33FFFFFF), RoundedCornerShape(19.dp))
+                        .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(19.dp))
+                        .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Gallery button
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) { galleryLauncher.launch("image/*") }
-                            .padding(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Outlined.Photo,
-                            contentDescription = "Thêm từ máy",
-                            tint = Color.White,
-                            modifier = Modifier.size(32.dp)
+                    Text(
+                        text = "Zoom ${"%.1f".format(zoomRatio)}x",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Slider(
+                        value = zoomRatio,
+                        onValueChange = { requestedZoom ->
+                            val clampedZoom = clampZoomRatio(requestedZoom, minZoomRatio, maxZoomRatio)
+                            zoomRatio = clampedZoom
+                            boundCamera?.cameraControl?.setZoomRatio(clampedZoom)
+                        },
+                        valueRange = minZoomRatio..maxZoomRatio.coerceAtLeast(minZoomRatio),
+                        enabled = controlsEnabled && maxZoomRatio > minZoomRatio,
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color(0xFF1E78C8),
+                            inactiveTrackColor = Color(0x22FFFFFF)
                         )
-                        Spacer(Modifier.height(4.dp))
-                        Text("Thêm ảnh", color = Color.White, fontSize = 11.sp)
-                    }
+                    )
+                }
 
-                    // Shutter button
-                    Box(
-                        modifier = Modifier
-                            .size(72.dp)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                focusManager.clearFocus()
-                                val capturedNote    = noteText
-                                val capturedBearing = bearing
-                                val capturedStamp   = stampEnabled
-                                val file = photoPipelineService.createCaptureOutputFile(projectId, nodeCode)
+                IconButton(
+                    onClick = { if (controlsEnabled) showSettingsSheet = true },
+                    enabled = controlsEnabled,
+                    modifier = Modifier
+                        .size(38.dp)
+                        .align(Alignment.CenterEnd)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = "Cài đặt",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            // Thanh chọn chế độ ẢNH / VIDEO
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ẢNH",
+                    color = if (!isVideoMode) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    fontWeight = if (!isVideoMode) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = controlsEnabled) { isVideoMode = false }
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "VIDEO",
+                    color = if (isVideoMode) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    fontWeight = if (isVideoMode) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = controlsEnabled) { isVideoMode = true }
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+
+            // Dải nút chính dưới cùng: [Thêm media] [Nút chụp/quay] [Xoay camera]
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(
+                            enabled = controlsEnabled,
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                            )
+                        }
+                        .padding(8.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Photo,
+                        contentDescription = "Thêm từ máy",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text("Thêm media", color = Color.White, fontSize = 11.sp)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(CircleShape)
+                        .background(if (isRecording) Color.Red else Color.White)
+                        .clickable(
+                            enabled = !isProcessingVideoStamp,
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            focusManager.clearFocus()
+                            if (isVideoMode) {
+                                if (isRecording) {
+                                    activeRecording?.stop()
+                                    activeRecording = null
+                                    isRecording = false
+                                } else {
+                                    if (!hasAudioPermission) {
+                                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        return@clickable
+                                    }
+                                    val stampAtRecordStart = buildCaptureStamp(
+                                        timestampMs = System.currentTimeMillis(),
+                                        location = liveLocation,
+                                        address = liveAddress,
+                                        note = noteText,
+                                        bearingDeg = bearing
+                                    )
+                                    val recordingTileBitmap = snapshotBitmap(currentTileBitmap)
+                                    val videoFile = photoPipelineService.createCaptureVideoOutputFile(
+                                        projectId = projectId,
+                                        objectCode = nodeCode,
+                                        folderType = CaptureFolderType.NODE
+                                    )
+                                    val outputOptions = FileOutputOptions.Builder(videoFile).build()
+                                    var pending = videoCapture.output.prepareRecording(context, outputOptions)
+                                    if (hasAudioPermission) {
+                                        pending = pending.withAudioEnabled()
+                                    }
+                                    activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
+                                        when (event) {
+                                            is VideoRecordEvent.Start -> {
+                                                isRecording = true
+                                            }
+                                            is VideoRecordEvent.Finalize -> {
+                                                isRecording = false
+                                                activeRecording = null
+                                                if (!event.hasError()) {
+                                                    coroutineScope.launch {
+                                                        try {
+                                                            postProcessRecordedVideo(
+                                                                videoFile = videoFile,
+                                                                stampEnabled = stampEnabled,
+                                                                stampAtRecordStart = stampAtRecordStart,
+                                                                tileBitmap = recordingTileBitmap,
+                                                                photoPipelineService = photoPipelineService,
+                                                                setProcessingVideoStamp = { isProcessingVideoStamp = it },
+                                                                onSavePhoto = onSavePhoto,
+                                                                onPhotoCaptured = onPhotoCaptured
+                                                            )
+                                                            onDismiss()
+                                                        } catch (error: Throwable) {
+                                                            AppLogger.e(error, "camera.overlay.capture.video.failed")
+                                                            runCatching { videoFile.delete() }
+                                                            onDismiss()
+                                                        } finally {
+                                                            recordingTileBitmap?.recycle()
+                                                        }
+                                                    }
+                                                } else {
+                                                    runCatching { videoFile.delete() }
+                                                    onDismiss()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                val capturedStamp = buildCaptureStamp(
+                                    timestampMs = System.currentTimeMillis(),
+                                    location = liveLocation,
+                                    address = liveAddress,
+                                    note = noteText,
+                                    bearingDeg = bearing
+                                )
+                                val capturedStampEnabled = stampEnabled
+                                val capturedTileBitmap = snapshotBitmap(currentTileBitmap)
+                                val file = photoPipelineService.createCaptureOutputFile(
+                                    projectId = projectId,
+                                    objectCode = nodeCode,
+                                    folderType = CaptureFolderType.NODE
+                                )
                                 val output = ImageCapture.OutputFileOptions.Builder(file).build()
                                 imageCapture.targetRotation = targetRotation
                                 imageCapture.takePicture(
@@ -540,116 +1113,239 @@ fun CameraOverlay(
                                     ContextCompat.getMainExecutor(context),
                                     object : ImageCapture.OnImageSavedCallback {
                                         override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                                            // Close UI immediately when raw photo is ready
-                                            onPhotoCaptured()
-                                            onDismiss()
-                                            
-                                            // Process watermark and save to database in background coroutine
                                             coroutineScope.launch {
-                                                withContext(Dispatchers.IO) {
-                                                    if (capturedStamp) {
-                                                        val loc = locationProvider.lastKnownLocation()
-                                                        val lat = loc.latitude
-                                                        val lng = loc.longitude
-                                                        val address = if (lat != null && lng != null)
-                                                            reverseGeocode(context, lat, lng)
-                                                        else ""
-                                                        photoPipelineService.applyStamp(
-                                                            file = file,
-                                                            latitude = lat,
-                                                            longitude = lng,
-                                                            address = address,
-                                                            note = capturedNote,
-                                                            bearingDeg = capturedBearing
-                                                        )
+                                                try {
+                                                    if (capturedStampEnabled) {
+                                                        withContext(Dispatchers.IO) {
+                                                            photoPipelineService.applyStamp(
+                                                                file,
+                                                                capturedStamp,
+                                                                selectedAspectRatio,
+                                                                capturedTileBitmap
+                                                            )
+                                                        }
                                                     }
+                                                    if (onSavePhoto(file)) {
+                                                        onPhotoCaptured()
+                                                    }
+                                                } finally {
+                                                    capturedTileBitmap?.recycle()
+                                                    onDismiss()
                                                 }
-                                                onSavePhoto(file)
                                             }
                                         }
-                                        override fun onError(e: ImageCaptureException) { onDismiss() }
+
+                                        override fun onError(e: ImageCaptureException) {
+                                            AppLogger.e(e, "camera.overlay.capture.image.failed")
+                                            onDismiss()
+                                        }
                                     }
                                 )
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(CircleShape)
-                                .background(Color.White)
-                                .padding(3.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFE0E0E0))
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(if (isRecording) 24.dp else 60.dp)
+                            .clip(if (isRecording) RoundedCornerShape(6.dp) else CircleShape)
+                            .background(if (isRecording) Color.White else Color.Red)
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(
+                            enabled = controlsEnabled && hasFrontCamera,
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            if (controlsEnabled && hasFrontCamera) {
+                                lensFacing = if (lensFacing == CaptureLensFacing.BACK) {
+                                    CaptureLensFacing.FRONT
+                                } else {
+                                    CaptureLensFacing.BACK
+                                }
+                            }
+                        }
+                        .padding(8.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.Cached,
+                        contentDescription = "Đổi camera",
+                        tint = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text("Xoay camera", color = Color.White, fontSize = 11.sp)
+                }
+            }
+        }
+
+        // Bảng cài đặt mờ (Bottom Sheet dạng Custom Card)
+        if (showSettingsSheet) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x33000000))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { showSettingsSheet = false }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(
+                            Color(0xDD111111),
+                            RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
                         )
+                        .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .padding(20.dp)
+                        .clickable(enabled = false) { }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CÀI ĐẶT CAMERA",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        IconButton(
+                            onClick = { showSettingsSheet = false },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Đóng", tint = Color.White)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "Tỷ lệ khung hình",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CameraAspectRatio.entries.forEach { ratio ->
+                            FilterChip(
+                                selected = selectedAspectRatio == ratio,
+                                onClick = { if (controlsEnabled) selectedAspectRatio = ratio },
+                                label = { Text(ratio.displayName) },
+                                enabled = controlsEnabled,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF1E78C8),
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0x22FFFFFF),
+                                    labelColor = Color.White.copy(alpha = 0.7f)
+                                )
+                            )
+                        }
                     }
 
-                    // Spacer to balance layout
-                    Spacer(Modifier.width(80.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    if (!isVideoMode) {
+                        Text(
+                            text = "Chế độ chụp ảnh",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                "Normal" to ExtensionMode.NONE,
+                                "HDR" to ExtensionMode.HDR,
+                                "Night" to ExtensionMode.NIGHT,
+                                "Bokeh" to ExtensionMode.BOKEH,
+                                "Face Retouch" to ExtensionMode.FACE_RETOUCH
+                            ).forEach { (label, mode) ->
+                                val supported = mode == ExtensionMode.NONE ||
+                                    extensionsManager?.isExtensionAvailable(selectedLensSelector, mode) == true
+                                FilterChip(
+                                    selected = activeExtensionMode == mode,
+                                    onClick = {
+                                        if (controlsEnabled && supported) {
+                                            activeExtensionMode = mode
+                                        }
+                                    },
+                                    label = { Text(label) },
+                                    enabled = supported && controlsEnabled,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFF1E78C8),
+                                        selectedLabelColor = Color.White,
+                                        containerColor = Color(0x22FFFFFF),
+                                        labelColor = Color.White.copy(alpha = 0.7f)
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "* Cài đặt chế độ mở rộng chỉ hỗ trợ khi chụp ảnh",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 11.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
+        }
+
+        if (isProcessingVideoStamp) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x99000000)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                    Text("Đang đóng stamp vào video...", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
-}
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun StampPill(icon: String, text: String) {
-    androidx.compose.foundation.layout.Row(
-        modifier = androidx.compose.ui.Modifier
+    Row(
+        modifier = Modifier
             .background(
                 Color(0xCC1964BE),
-                androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+                RoundedCornerShape(20.dp)
             )
             .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        androidx.compose.material3.Text(icon, fontSize = 13.sp)
-        androidx.compose.material3.Text(
+        Text(icon, fontSize = 13.sp)
+        Text(
             text = text,
             color = Color.White,
             fontSize = 11.sp,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            maxLines = 2,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            fontWeight = FontWeight.Bold
         )
     }
-}
-
-/** Download a single OSM tile bitmap for the given lat/lng at the given zoom level. */
-private fun loadOsmTileBitmap(lat: Double, lng: Double, zoom: Int): android.graphics.Bitmap? {
-    return try {
-        val n = 1 shl zoom
-        val xTile = ((lng + 180.0) / 360.0 * n).toInt().coerceIn(0, n - 1)
-        val latRad = Math.toRadians(lat)
-        val yTile = ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * n)
-            .toInt().coerceIn(0, n - 1)
-        val url = java.net.URL("https://tile.openstreetmap.org/$zoom/$xTile/$yTile.png")
-        val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "MapSupervision/1.0 (Android)")
-            connectTimeout = 4000
-            readTimeout = 4000
-        }
-        if (conn.responseCode == 200) {
-            android.graphics.BitmapFactory.decodeStream(conn.inputStream)
-        } else null
-    } catch (_: Exception) { null }
-}
-
-/**
- * Returns the pixel (x, y) within a [tileSize]×[tileSize] OSM tile
- * that corresponds to the given lat/lng at the given zoom level.
- */
-private fun osmTilePixelOffset(lat: Double, lng: Double, zoom: Int, tileSize: Int): Pair<Float, Float> {
-    val n = 1 shl zoom
-    val xFrac = (lng + 180.0) / 360.0 * n
-    val latRad = Math.toRadians(lat)
-    val yFrac = (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * n
-    val px = ((xFrac - xFrac.toInt()) * tileSize).toFloat()
-    val py = ((yFrac - yFrac.toInt()) * tileSize).toFloat()
-    return Pair(px, py)
 }
 
 private fun orientationToSurfaceRotation(orientation: Int): Int {
@@ -661,17 +1357,7 @@ private fun orientationToSurfaceRotation(orientation: Int): Int {
     }
 }
 
-private fun rotationToDegrees(rotation: Int): Int {
-    return when (rotation) {
-        Surface.ROTATION_90 -> 90
-        Surface.ROTATION_180 -> 180
-        Surface.ROTATION_270 -> 270
-        else -> 0
-    }
-}
-
-private fun reverseGeocode(context: android.content.Context, lat: Double, lng: Double): String {
-    // 1. Try Android Native Geocoder (Google Play Services powered, fast & offline caching supported)
+private fun reverseGeocode(context: Context, lat: Double, lng: Double): String {
     if (android.location.Geocoder.isPresent()) {
         try {
             val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
@@ -683,7 +1369,6 @@ private fun reverseGeocode(context: android.content.Context, lat: Double, lng: D
                 val ward = address.subLocality ?: ""
                 val district = address.locality ?: address.subAdminArea ?: ""
                 val city = address.adminArea ?: ""
-                
                 val parts = listOf(street, ward, district, city).filter { it.isNotBlank() }
                 if (parts.isNotEmpty()) {
                     return parts.joinToString(", ").take(60)
@@ -692,14 +1377,13 @@ private fun reverseGeocode(context: android.content.Context, lat: Double, lng: D
                 if (!featureName.isNullOrBlank()) return featureName.take(60)
             }
         } catch (e: Exception) {
-            com.mapsupervision.core.logging.AppLogger.e(e, "reverseGeocode.native_failed lat=$lat lng=$lng")
+            AppLogger.e(e, "camera.overlay.reverseGeocode.nativeFailed")
         }
     }
 
-    // 2. Fallback to optimized Nominatim HTTP request with quick 1.2-second timeout
     return try {
         val url = java.net.URL(
-            "https://nominatim.openstreetmap.org/reverse?lat="
+            "https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lng&format=jsonv2"
         )
         val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
             requestMethod = "GET"
@@ -715,7 +1399,13 @@ private fun reverseGeocode(context: android.content.Context, lat: Double, lng: D
                 val valueStart = body.indexOf('"', start + key.length) + 1
                 val valueEnd = body.indexOf('"', valueStart)
                 body.substring(valueStart, valueEnd).take(60)
-            } else ""
-        } else ""
-    } catch (_: Exception) { "" }
+            } else {
+                ""
+            }
+        } else {
+            ""
+        }
+    } catch (_: Exception) {
+        ""
+    }
 }

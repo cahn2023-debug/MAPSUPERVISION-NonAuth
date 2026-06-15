@@ -15,10 +15,12 @@ import com.mapsupervision.domain.model.ProjectStorageMode
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -158,6 +160,41 @@ class ProjectScopedDatabaseProviderTest {
     }
 
     @Test
+    fun `databaseFor ensures scoped project row exists before photo inserts`() = runBlocking {
+        val scopedFile = File(tempDir, "orphaned/project.sqlite")
+        val project = projectEntity("project-4", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+
+        createDatabase(scopedFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "orphan-node",
+                    projectId = project.id,
+                    code = "ORPHAN",
+                    contractor = "Scoped",
+                    latitude = 20.0,
+                    longitude = 106.0,
+                    mapNumberLabel = "2",
+                    materialSummary = ""
+                )
+            )
+            scopedSeed.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys = OFF")
+            scopedSeed.openHelper.writableDatabase.execSQL("DELETE FROM projects WHERE id = '${project.id}'")
+            scopedSeed.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys = ON")
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        assertNotNull(scopedDatabase.projectDao().get(project.id))
+        assertTrue(scopedDatabase.gisNodeDao().byProject(project.id).any { it.code == "ORPHAN" })
+    }
+
+    @Test
     fun `databaseFor skips seed when shared db has no legacy project data`() = runBlocking {
         val project = projectEntity("project-3", File(tempDir, "empty/project.sqlite"))
         sharedDatabase.projectDao().upsert(project)
@@ -171,11 +208,92 @@ class ProjectScopedDatabaseProviderTest {
         assertEquals(0, scopedDatabase.importedFileDao().byProject(project.id).size)
     }
 
+    @Test
+    fun `databaseFor migrates legacy scoped db from version 24 to 26`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy-v24/project.sqlite")
+        val project = projectEntity("project-legacy-24", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+        createLegacyVersion24Database(scopedFile)
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val version = scopedDatabase.openHelper.readableDatabase.version
+        assertEquals(26, version)
+        scopedDatabase.openHelper.readableDatabase.query("PRAGMA table_info(`work_plan`)").use { cursor ->
+            var found = false
+            val nameIndex = cursor.getColumnIndex("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == "plannedDateEpochDay") {
+                    found = true
+                    break
+                }
+            }
+            assertEquals(true, found)
+        }
+    }
+
+    @Test
+    fun `cleanup scheduler only runs while scoped holders exist`() = runBlocking {
+        val scopedFile = File(tempDir, "scheduler/project.sqlite")
+        val project = projectEntity("project-scheduler", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        assertEquals(false, provider.isCleanupSchedulerRunningForTest())
+
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+        assertEquals(true, provider.isCleanupSchedulerRunningForTest())
+
+        provider.markAllDatabasesIdleForTest(lastAccessEpochMs = 0L)
+        val hasOpenHolders = provider.runIdleCleanupForTest(nowEpochMs = 10 * 60 * 1000L)
+
+        assertEquals(false, hasOpenHolders)
+        assertEquals(false, provider.isCleanupSchedulerRunningForTest())
+    }
+
     private fun createDatabase(file: File): MapSupervisionDatabase {
         file.parentFile?.mkdirs()
         return Room.databaseBuilder(context, MapSupervisionDatabase::class.java, file.absolutePath)
             .allowMainThreadQueries()
             .build()
+    }
+
+    private fun createLegacyVersion24Database(dbFile: File) {
+        dbFile.parentFile?.mkdirs()
+        val schema = loadSchema(24)
+        SQLiteDatabase.openOrCreateDatabase(dbFile.absolutePath, null).use { db ->
+            val entities = schema.getJSONObject("database").getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                val tableName = entity.getString("tableName")
+                val createSql = entity.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                db.execSQL(createSql)
+
+                val indices = entity.optJSONArray("indices")
+                if (indices != null) {
+                    for (j in 0 until indices.length()) {
+                        val index = indices.getJSONObject(j)
+                        val indexSql = index.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                        db.execSQL(indexSql)
+                    }
+                }
+            }
+            db.setVersion(24)
+        }
+    }
+
+    private fun loadSchema(version: Int): JSONObject {
+        val candidates = listOf(
+            File("data/schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json"),
+            File("../data/schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json"),
+            File("schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json")
+        )
+        val schemaFile = candidates.firstOrNull { it.exists() }
+            ?: error("Missing Room schema file for version $version")
+        return JSONObject(schemaFile.readText(Charsets.UTF_8))
     }
 
     private fun projectEntity(projectId: String, scopedFile: File) = ProjectEntity(

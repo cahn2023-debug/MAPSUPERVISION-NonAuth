@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -59,6 +61,7 @@ import com.mapsupervision.app.workspace.GemmaChatViewModel
 import com.mapsupervision.app.workspace.GemmaChatSheet
 import com.mapsupervision.app.workspace.buildChatContextSummary
 import com.mapsupervision.app.workspace.buildChatNormalizationSummary
+import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.app.workspace.DataHubRoute
 import com.mapsupervision.app.workspace.ProgressHubRoute
 import com.mapsupervision.app.workspace.addConstructionProgress
@@ -90,6 +93,7 @@ import com.mapsupervision.app.workspace.loadExcelPreview
 import com.mapsupervision.app.workspace.loadNonExcelPreview
 import com.mapsupervision.app.workspace.loadNotesAndTasks
 import com.mapsupervision.app.workspace.loadPhotosForSelectedNode
+import com.mapsupervision.app.workspace.importMediaFromGallery
 import com.mapsupervision.app.workspace.onContractorColorChanged
 import com.mapsupervision.app.workspace.onFilterContractorChanged
 import com.mapsupervision.app.workspace.onFilterMaterialTypeChanged
@@ -129,9 +133,10 @@ import com.mapsupervision.project.ui.ProjectViewModel
 import com.mapsupervision.reporting.ui.ReportPreviewDialog
 import com.mapsupervision.reporting.ui.ReportingScreen
 import com.mapsupervision.reporting.ui.ReportingViewModel
-import java.io.File
-import kotlin.collections.List
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
+import java.io.File
 
 private data class ShellDestination(
     val tab: WorkspaceTab,
@@ -153,6 +158,7 @@ fun WorkspaceAppShell(
     locationProvider: IPhotoLocationProvider
 ) {
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
+    val coroutineScope = rememberCoroutineScope()
     val chatViewModel: GemmaChatViewModel = hiltViewModel()
     val projectViewModel: ProjectViewModel = hiltViewModel()
     val reportingViewModel: ReportingViewModel = hiltViewModel()
@@ -281,25 +287,56 @@ fun WorkspaceAppShell(
     val previewMaterialRows = reportingSnapshot.materialRows
 
     val navChrome: @Composable () -> Unit = {
+        val theme = MaterialTheme.colorScheme
+        val glassBg = theme.surface.copy(alpha = 0.75f)
+        val borderBrush = androidx.compose.ui.graphics.Brush.verticalGradient(
+            colors = listOf(Color.White.copy(alpha = 0.15f), Color.Transparent)
+        )
+        val itemColors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+            indicatorColor = theme.primaryContainer.copy(alpha = 0.35f),
+            selectedIconColor = Color(0xFFFFB074),
+            selectedTextColor = Color(0xFFFFB074),
+            unselectedIconColor = theme.onSurfaceVariant.copy(alpha = 0.6f),
+            unselectedTextColor = theme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+        val railItemColors = androidx.compose.material3.NavigationRailItemDefaults.colors(
+            indicatorColor = theme.primaryContainer.copy(alpha = 0.35f),
+            selectedIconColor = Color(0xFFFFB074),
+            selectedTextColor = Color(0xFFFFB074),
+            unselectedIconColor = theme.onSurfaceVariant.copy(alpha = 0.6f),
+            unselectedTextColor = theme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+
         if (workspaceUiState.layoutMode == WorkspaceLayoutMode.EXPANDED) {
-            NavigationRail {
+            NavigationRail(
+                containerColor = glassBg,
+                modifier = Modifier.background(glassBg).padding(end = 1.dp).background(borderBrush)
+            ) {
+                Spacer(modifier = Modifier.height(16.dp))
                 shellDestinations.forEach { destination ->
                     NavigationRailItem(
                         selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
                         onClick = { workspaceViewModel.dispatch(WorkspaceAction.SelectTab(destination.tab)) },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
-                        label = { Text(destination.label) }
+                        label = { Text(destination.label) },
+                        colors = railItemColors
                     )
                 }
             }
         } else {
-            NavigationBar {
+            NavigationBar(
+                containerColor = Color.Transparent,
+                modifier = Modifier
+                    .background(glassBg)
+                    .background(borderBrush)
+            ) {
                 shellDestinations.forEach { destination ->
                     NavigationBarItem(
                         selected = currentDestination?.hierarchy?.any { it.route == destination.route } == true,
                         onClick = { workspaceViewModel.dispatch(WorkspaceAction.SelectTab(destination.tab)) },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
-                        label = { Text(destination.label) }
+                        label = { Text(destination.label) },
+                        colors = itemColors
                     )
                 }
             }
@@ -491,16 +528,26 @@ fun WorkspaceAppShell(
 
     val pendingCapture = workspaceState.pendingCaptureNodeCode
     if (pendingCapture != null) {
-        CameraOverlay(
-            nodeCode = pendingCapture,
-            projectId = workspaceState.activeProjectId ?: "",
-            photoPipelineService = photoPipelineService,
-            locationProvider = locationProvider,
-            onPhotoCaptured = workspaceViewModel::refresh,
-            onSavePhoto = { file -> workspaceViewModel.savePhoto(file, pendingCapture) },
-            onDismiss = workspaceViewModel::clearCaptureRequest
-        )
-    }
+        DisposableEffect(pendingCapture) {
+            AppLogger.d(
+                "camera.overlay.mount pendingCapture=$pendingCapture projectId=${workspaceState.activeProjectId}"
+            )
+            onDispose {
+                AppLogger.d(
+                    "camera.overlay.unmount pendingCapture=$pendingCapture projectId=${workspaceState.activeProjectId}"
+                )
+            }
+        }
+            CameraOverlay(
+                nodeCode = pendingCapture,
+                projectId = workspaceState.activeProjectId ?: "",
+                photoPipelineService = photoPipelineService,
+                locationProvider = locationProvider,
+                onPhotoCaptured = workspaceViewModel::refresh,
+                onSavePhoto = { file -> workspaceViewModel.savePhoto(file, pendingCapture) },
+                onDismiss = workspaceViewModel::clearCaptureRequest
+            )
+        }
 
     if (chatState.isOpen) {
         GemmaChatSheet(
@@ -523,6 +570,24 @@ fun WorkspaceAppShell(
               onConfirmPendingAction = { chatViewModel.confirmPendingAction(workspaceViewModel) },
               onDismissPendingAction = chatViewModel::dismissPendingAction,
               onUpdatePendingDailyLogDraft = chatViewModel::updatePendingDailyLogDraft,
+              onUpdatePendingWorkPlanDraft = chatViewModel::updatePendingWorkPlanDraft,
+              onSelectClarificationOption = { option ->
+                  val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
+                  val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
+                  val inputHints = chatDictionaryResolver.buildInputHints(
+                      chatState.input,
+                      selectedNodeCode,
+                      selectedRouteCode
+                  )
+                  chatViewModel.selectClarificationOption(
+                      option = option,
+                      normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
+                      selectedNodeCode = selectedNodeCode,
+                      selectedRouteCode = selectedRouteCode
+                  )
+              },
+              onClearHistory = chatViewModel::clearChatHistory,
+              onReloadHistory = chatViewModel::reloadHistory,
               onSend = {
                   val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
                   val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
@@ -610,8 +675,8 @@ private fun BoxScope.FloatingChatBubble(
             .background(
                 brush = androidx.compose.ui.graphics.Brush.linearGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primary,
-                        MaterialTheme.colorScheme.secondary
+                        Color(0xFFFFB074), // Neon Peach
+                        Color(0xFFFF8F00)  // Neon Orange
                     )
                 ),
                 shape = CircleShape
@@ -622,7 +687,7 @@ private fun BoxScope.FloatingChatBubble(
         Icon(
             imageVector = Icons.Outlined.AutoAwesome,
             contentDescription = "Chatbot AI",
-            tint = MaterialTheme.colorScheme.onPrimary,
+            tint = Color(0xFF3D1F00), // OnPrimary dark contrast
             modifier = Modifier.size(28.dp)
         )
     }

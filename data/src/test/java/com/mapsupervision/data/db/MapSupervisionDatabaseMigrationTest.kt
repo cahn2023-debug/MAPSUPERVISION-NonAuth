@@ -60,7 +60,10 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .allowMainThreadQueries()
             .build()
@@ -118,7 +121,10 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .allowMainThreadQueries()
             .build()
@@ -163,7 +169,10 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .allowMainThreadQueries()
             .build()
@@ -191,7 +200,7 @@ class MapSupervisionDatabaseMigrationTest {
 
     @Test
     fun confirmRequiredSchemasExist() {
-        for (version in 9..24) {
+        for (version in 9..27) {
             val file = File("data/schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json")
             val relativeFile = File("../data/schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json")
             val alternateFile = File("schemas/com.mapsupervision.data.db.MapSupervisionDatabase/$version.json")
@@ -682,7 +691,10 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .allowMainThreadQueries()
             .build()
@@ -702,6 +714,85 @@ class MapSupervisionDatabaseMigrationTest {
             }
         } finally {
             database.close()
+        }
+    }
+
+    @Test
+    fun `migration 25 to 26 adds work plan table`() {
+        val dbName = "legacy25.sqlite"
+        val dbFile = File(tempDir, dbName)
+        createLegacyVersion25Database(dbFile)
+
+        val database = Room.databaseBuilder(context, MapSupervisionDatabase::class.java, dbName)
+            .addMigrations(
+                MapSupervisionDatabase.MIGRATION_8_9,
+                MapSupervisionDatabase.MIGRATION_9_10,
+                MapSupervisionDatabase.MIGRATION_10_11,
+                MapSupervisionDatabase.MIGRATION_11_12,
+                MapSupervisionDatabase.MIGRATION_12_13,
+                MapSupervisionDatabase.MIGRATION_13_14,
+                MapSupervisionDatabase.MIGRATION_14_15,
+                MapSupervisionDatabase.MIGRATION_15_16,
+                MapSupervisionDatabase.MIGRATION_16_17,
+                MapSupervisionDatabase.MIGRATION_17_18,
+                MapSupervisionDatabase.MIGRATION_18_19,
+                MapSupervisionDatabase.MIGRATION_19_20,
+                MapSupervisionDatabase.MIGRATION_20_21,
+                MapSupervisionDatabase.MIGRATION_21_22,
+                MapSupervisionDatabase.MIGRATION_22_23,
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
+            )
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            database.openHelper.readableDatabase.query("PRAGMA table_info(`work_plan`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                val typeIndex = cursor.getColumnIndex("type")
+                val columns = mutableMapOf<String, String>()
+                while (cursor.moveToNext()) {
+                    columns[cursor.getString(nameIndex)] = cursor.getString(typeIndex)
+                }
+                assertEquals("TEXT", columns["id"])
+                assertEquals("TEXT", columns["projectId"])
+                assertEquals("TEXT", columns["title"])
+                assertEquals("TEXT", columns["description"])
+                assertEquals("INTEGER", columns["plannedDateEpochDay"])
+                assertEquals("TEXT", columns["nodeCode"])
+                assertEquals("TEXT", columns["routeCode"])
+                assertEquals("TEXT", columns["taskId"])
+                assertEquals("TEXT", columns["sourceRawInput"])
+                assertEquals("INTEGER", columns["createdAtEpochMs"])
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createLegacyVersion25Database(dbFile: File) {
+        dbFile.parentFile?.mkdirs()
+        val schema = loadSchema(25)
+        SQLiteDatabase.openOrCreateDatabase(dbFile.absolutePath, null).use { db ->
+            val entities = schema.getJSONObject("database").getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                val tableName = entity.getString("tableName")
+                val createSql = entity.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                db.execSQL(createSql)
+
+                val indices = entity.optJSONArray("indices")
+                if (indices != null) {
+                    for (j in 0 until indices.length()) {
+                        val index = indices.getJSONObject(j)
+                        val indexSql = index.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                        db.execSQL(indexSql)
+                    }
+                }
+            }
+            db.setVersion(25)
         }
     }
 
@@ -774,7 +865,9 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26
             )
             .allowMainThreadQueries()
             .build()
@@ -868,7 +961,9 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26
             )
             .allowMainThreadQueries()
             .build()
@@ -945,7 +1040,9 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26
             )
             .allowMainThreadQueries()
             .build()
@@ -1041,7 +1138,10 @@ class MapSupervisionDatabaseMigrationTest {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .allowMainThreadQueries()
             .build()
@@ -1078,6 +1178,80 @@ class MapSupervisionDatabaseMigrationTest {
                 }
             }
             db.setVersion(23)
+        }
+    }
+
+    private fun createLegacyVersion26Database(dbFile: File) {
+        dbFile.parentFile?.mkdirs()
+        val schema = loadSchema(26)
+        SQLiteDatabase.openOrCreateDatabase(dbFile.absolutePath, null).use { db ->
+            val entities = schema.getJSONObject("database").getJSONArray("entities")
+            for (i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                val tableName = entity.getString("tableName")
+                val createSql = entity.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                db.execSQL(createSql)
+
+                val indices = entity.optJSONArray("indices")
+                if (indices != null) {
+                    for (j in 0 until indices.length()) {
+                        val index = indices.getJSONObject(j)
+                        val indexSql = index.getString("createSql").replace("\${TABLE_NAME}", tableName)
+                        db.execSQL(indexSql)
+                    }
+                }
+            }
+            db.setVersion(26)
+        }
+    }
+
+    @Test
+    fun `migration 26 to 27 adds mediaType, mimeType, durationMs columns to site photos`() {
+        val dbName = "legacy26.sqlite"
+        val dbFile = File(tempDir, dbName)
+        createLegacyVersion26Database(dbFile)
+
+        SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.execSQL("INSERT INTO `projects` (`id`, `name`, `slug`, `isArchived`, `createdAtEpochMs`, `metadataVersion`, `updatedAtEpochMs`, `storageMode`, `projectDbPath`) VALUES ('proj1', 'Project 1', 'proj1', 0, 1000, 3, 1000, 'LEGACY_SHARED', '')")
+            db.execSQL("INSERT INTO `site_photos` (`id`, `projectId`, `objectCode`, `tagCodesCsv`, `filePath`, `thumbnailPath`, `isGpsMocked`, `locationStatus`, `engineer`, `capturedAtEpochMs`, `matchedAtEpochMs`, `matchingTimeOffsetMs`) " +
+                    "VALUES ('photo1', 'proj1', 'N1', '', '/path/to/file.jpg', '/path/to/thumb.jpg', 0, 'OK', 'Engineer', 1000, 0, 0)")
+        }
+
+        val database = Room.databaseBuilder(context, MapSupervisionDatabase::class.java, dbName)
+            .addMigrations(
+                MapSupervisionDatabase.MIGRATION_8_9,
+                MapSupervisionDatabase.MIGRATION_9_10,
+                MapSupervisionDatabase.MIGRATION_10_11,
+                MapSupervisionDatabase.MIGRATION_11_12,
+                MapSupervisionDatabase.MIGRATION_12_13,
+                MapSupervisionDatabase.MIGRATION_13_14,
+                MapSupervisionDatabase.MIGRATION_14_15,
+                MapSupervisionDatabase.MIGRATION_15_16,
+                MapSupervisionDatabase.MIGRATION_16_17,
+                MapSupervisionDatabase.MIGRATION_17_18,
+                MapSupervisionDatabase.MIGRATION_18_19,
+                MapSupervisionDatabase.MIGRATION_19_20,
+                MapSupervisionDatabase.MIGRATION_20_21,
+                MapSupervisionDatabase.MIGRATION_21_22,
+                MapSupervisionDatabase.MIGRATION_22_23,
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
+            )
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            val photos = runBlocking { database.sitePhotoDao().byProject("proj1") }
+            assertEquals(1, photos.size)
+            val photo = photos.first()
+            assertEquals("photo1", photo.id)
+            assertEquals(com.mapsupervision.domain.model.MediaType.IMAGE, photo.mediaType)
+            assertEquals("image/jpeg", photo.mimeType)
+            assertEquals(0L, photo.durationMs)
+        } finally {
+            database.close()
         }
     }
 }

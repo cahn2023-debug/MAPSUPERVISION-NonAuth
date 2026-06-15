@@ -14,6 +14,7 @@ import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
+import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.photo.location.PhotoLocationProvider
 import com.mapsupervision.photo.worker.PhotoPipelineService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,6 +50,8 @@ class PhotoViewModel @Inject constructor(
     private val _availableTagOptions = MutableStateFlow<List<String>>(emptyList())
     val availableTagOptions: StateFlow<List<String>> = _availableTagOptions.asStateFlow()
     private var activeProjectIdCache: String? = null
+    private var activeNodeCodesCache: Set<String> = emptySet()
+    private var activeRouteCodesCache: Set<String> = emptySet()
 
     init {
         observeSharedState()
@@ -87,13 +90,11 @@ class PhotoViewModel @Inject constructor(
     private suspend fun refreshTagOptions(projectId: String) {
         val nodes = (gisRepository.searchNodes(projectId, "") as? AppResult.Success)?.data.orEmpty()
         val routes = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty()
+        activeNodeCodesCache = nodes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
+        activeRouteCodesCache = routes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet()
         _availableTagOptions.value = buildSet {
-            nodes.forEach { node ->
-                if (node.code.isNotBlank()) add(node.code.trim())
-            }
-            routes.forEach { route ->
-                if (route.code.isNotBlank()) add(route.code.trim())
-            }
+            addAll(activeNodeCodesCache)
+            addAll(activeRouteCodesCache)
         }.toList().sorted()
     }
 
@@ -177,7 +178,12 @@ class PhotoViewModel @Inject constructor(
 
     fun createCaptureFile(objectCode: String): File? {
         val activeId = activeProjectIdCache ?: return null
-        return photoPipelineService.createCaptureOutputFile(activeId, objectCode)
+        return photoPipelineService.createCaptureOutputFile(activeId, objectCode, resolveCaptureFolderType(objectCode))
+    }
+
+    fun createCaptureVideoFile(objectCode: String): File? {
+        val activeId = activeProjectIdCache ?: return null
+        return photoPipelineService.createCaptureVideoOutputFile(activeId, objectCode, resolveCaptureFolderType(objectCode))
     }
 
     fun registerCapturedPhoto(file: File, objectCode: String, engineer: String) {
@@ -202,12 +208,29 @@ class PhotoViewModel @Inject constructor(
         }
     }
 
+    fun registerCapturedVideo(file: File, durationMs: Long, objectCode: String, engineer: String) {
+        viewModelScope.launch {
+            val activeId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+            val location = locationProvider.lastKnownLocation()
+            withContext(Dispatchers.IO) {
+                saveVideoModel(activeId, objectCode, engineer, file, location, durationMs)
+            }
+            markProjectChanged(activeId, "video_registered")
+            refresh()
+        }
+    }
+
     fun addDemoPhoto(objectCode: String, engineer: String) {
         viewModelScope.launch {
             val activeId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
             val location = locationProvider.lastKnownLocation()
             withContext(Dispatchers.IO) {
-                val file = photoPipelineService.createEmptyPhoto(activeId, objectCode, engineer)
+                val file = photoPipelineService.createEmptyPhoto(
+                    projectId = activeId,
+                    objectCode = objectCode,
+                    engineer = engineer,
+                    folderType = resolveCaptureFolderType(objectCode)
+                )
                 savePhotoModel(activeId, objectCode, engineer, file, location)
                 _lastAiPhotoQuality.value = aiOrchestrator.execute<PhotoQualityResult>(
                     PhotoQualityPayload(
@@ -231,7 +254,14 @@ class PhotoViewModel @Inject constructor(
             withContext(Dispatchers.IO) {
                 uris.forEach { uri ->
                     runCatching {
-                        val file = photoPipelineService.importFromGallery(context, activeId, objectCode, engineer, uri)
+                        val file = photoPipelineService.importFromGallery(
+                            context = context,
+                            projectId = activeId,
+                            objectCode = objectCode,
+                            engineer = engineer,
+                            sourceUri = uri,
+                            folderType = resolveCaptureFolderType(objectCode)
+                        )
                         savePhotoModel(activeId, objectCode, engineer, file, location)
                     }
                 }
@@ -278,5 +308,51 @@ class PhotoViewModel @Inject constructor(
             matchingTimeOffsetMs = 0L
         )
         photoRepository.add(model)
+    }
+
+    private suspend fun saveVideoModel(
+        projectId: String,
+        objectCode: String,
+        engineer: String,
+        file: File,
+        location: com.mapsupervision.domain.model.PhotoLocationSnapshot,
+        durationMs: Long
+    ) {
+        val thumb = photoPipelineService.createThumbnail(projectId, file)
+        val capturedAt = System.currentTimeMillis()
+        val isRoute = (gisRepository.searchRoutes(projectId, "") as? AppResult.Success)?.data.orEmpty().any { it.code == objectCode }
+        val matchedNode = if (!isRoute) objectCode else null
+        val matchedRoute = if (isRoute) objectCode else null
+        val model = SitePhoto(
+            id = java.util.UUID.randomUUID().toString(),
+            projectId = projectId,
+            objectCode = objectCode,
+            tagCodesCsv = objectCode,
+            matchedNodeCode = matchedNode,
+            matchedRouteCode = matchedRoute,
+            filePath = file.absolutePath,
+            thumbnailPath = thumb.absolutePath,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            locationAccuracyM = location.accuracyM,
+            isGpsMocked = location.isMock,
+            locationStatus = location.status,
+            engineer = engineer,
+            capturedAtEpochMs = capturedAt,
+            matchedAtEpochMs = capturedAt,
+            matchingTimeOffsetMs = 0L,
+            mediaType = com.mapsupervision.domain.model.MediaType.VIDEO,
+            mimeType = "video/mp4",
+            durationMs = durationMs
+        )
+        photoRepository.add(model)
+    }
+
+    private fun resolveCaptureFolderType(objectCode: String): CaptureFolderType {
+        val normalized = objectCode.trim()
+        return when {
+            normalized.isNotBlank() && activeRouteCodesCache.contains(normalized) -> CaptureFolderType.ROUTE
+            else -> CaptureFolderType.NODE
+        }
     }
 }

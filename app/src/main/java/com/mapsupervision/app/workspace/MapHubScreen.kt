@@ -113,6 +113,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.net.Uri
@@ -120,6 +121,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.gis.maplibre.MapBridgeInstaller
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -181,6 +183,7 @@ fun MapHubScreen(
     onResolveDuplicateProject: (Uri, Boolean, Boolean) -> Unit = { _, _, _ -> },
     onDismissDuplicateDialog: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     val defaultPalette = remember { listOf("#f97316", "#22c55e", "#06b6d4", "#a855f7", "#ef4444", "#f59e0b", "#3b82f6") }
     val extendedColorPalette = remember {
         listOf(
@@ -217,6 +220,11 @@ fun MapHubScreen(
     val surfaceColor = colors.surface
     val onSurfaceColor = colors.onSurface
     val onPrimaryColor = colors.onPrimary
+    LaunchedEffect(context) {
+        if (GisMapBridgeRegistry.bridge == null) {
+            MapBridgeInstaller.install(context.applicationContext)
+        }
+    }
     LaunchedEffect(
         designNodes.size,
         designNodes.firstOrNull()?.id,
@@ -712,6 +720,7 @@ fun MapHubScreen(
                             DropdownMenu(expanded = showLayerMenu, onDismissRequest = { showLayerMenu = false }) {
                                 DropdownMenuItem(text = { Text("Đường phố") }, onClick = { onMapBaseMapChanged(MapLayerType.STREET); showLayerMenu = false })
                                 DropdownMenuItem(text = { Text("Vệ tinh") }, onClick = { onMapBaseMapChanged(MapLayerType.SATELLITE); showLayerMenu = false })
+                                DropdownMenuItem(text = { Text("Vệ tinh + tên đường") }, onClick = { onMapBaseMapChanged(MapLayerType.SATELLITE_LABELS); showLayerMenu = false })
                                 DropdownMenuItem(text = { Text("Nền tối") }, onClick = { onMapBaseMapChanged(MapLayerType.DARK); showLayerMenu = false })
                             }
                         }

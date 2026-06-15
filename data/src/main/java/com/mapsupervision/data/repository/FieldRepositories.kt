@@ -7,18 +7,22 @@ import com.mapsupervision.data.db.dao.DailyLogDao
 import com.mapsupervision.data.db.dao.MaterialProgressDao
 import com.mapsupervision.data.db.dao.NodeProgressDao
 import com.mapsupervision.data.db.dao.SitePhotoDao
+import com.mapsupervision.data.db.dao.WorkPlanDao
 import com.mapsupervision.data.db.entity.DailyLogEntity
 import com.mapsupervision.data.db.entity.MaterialProgressEntity
 import com.mapsupervision.data.db.entity.NodeProgressEntity
 import com.mapsupervision.data.db.entity.SitePhotoEntity
+import com.mapsupervision.data.db.entity.WorkPlanEntity
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.MaterialProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
+import com.mapsupervision.domain.model.WorkPlan
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.MaterialProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
+import com.mapsupervision.domain.repository.WorkPlanRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -109,7 +113,10 @@ class PhotoRepositoryImpl @Inject constructor(
         engineer,
         capturedAtEpochMs,
         matchedAtEpochMs,
-        matchingTimeOffsetMs
+        matchingTimeOffsetMs,
+        mediaType,
+        mimeType,
+        durationMs
     )
     private fun SitePhotoEntity.toDomain() = SitePhoto(
         id,
@@ -128,7 +135,10 @@ class PhotoRepositoryImpl @Inject constructor(
         engineer,
         capturedAtEpochMs,
         matchedAtEpochMs,
-        matchingTimeOffsetMs
+        matchingTimeOffsetMs,
+        mediaType,
+        mimeType,
+        durationMs
     )
 }
 
@@ -215,4 +225,30 @@ class MaterialProgressRepositoryImpl @Inject constructor(
 
     private suspend fun dao(projectId: String): MaterialProgressDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.materialProgressDao() ?: dao
+}
+
+class WorkPlanRepositoryImpl @Inject constructor(
+    private val dao: WorkPlanDao,
+    private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider
+) : WorkPlanRepository {
+    override suspend fun add(workPlan: WorkPlan): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
+        dao(workPlan.projectId).insert(WorkPlanEntity.fromDomain(workPlan))
+    }.fold(
+        onSuccess = { AppResult.Success(Unit) },
+        onFailure = { AppResult.Error(DatabaseException("Failed to add work plan", it)) }
+    ) }
+
+    override suspend fun byProject(projectId: String): AppResult<List<WorkPlan>> = withContext(Dispatchers.IO) { runCatching {
+        dao(projectId).byProject(projectId).map { it.toDomain() }
+    }.fold(
+        onSuccess = { AppResult.Success(it) },
+        onFailure = { AppResult.Error(DatabaseException("Failed to list work plans", it)) }
+    ) }
+
+    override fun observeByProject(projectId: String): Flow<List<WorkPlan>> = flow {
+        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+    }
+
+    private suspend fun dao(projectId: String): WorkPlanDao =
+        projectScopedDatabaseProvider.databaseFor(projectId)?.workPlanDao() ?: dao
 }

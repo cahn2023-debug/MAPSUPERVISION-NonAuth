@@ -36,6 +36,11 @@ import com.mapsupervision.data.db.entity.WorkCategoryEntity
 
 import java.util.UUID
 
+import com.mapsupervision.data.db.entity.AiActionLogEntity
+import com.mapsupervision.data.db.dao.AiActionLogDao
+import com.mapsupervision.data.db.entity.WorkPlanEntity
+import com.mapsupervision.data.db.dao.WorkPlanDao
+
 @Database(
     entities = [
         ProjectEntity::class,
@@ -51,9 +56,11 @@ import java.util.UUID
         WorkCategoryEntity::class,
         AiDecisionCacheEntity::class,
         ChatHistoryEntity::class,
-        ReportDraftEntity::class
+        ReportDraftEntity::class,
+        AiActionLogEntity::class,
+        WorkPlanEntity::class
     ],
-    version = 24,
+    version = 27,
     exportSchema = true
 )
 @TypeConverters(DbTypeConverters::class)
@@ -72,6 +79,8 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
     abstract fun aiDecisionCacheDao(): AiDecisionCacheDao
     abstract fun chatHistoryDao(): ChatHistoryDao
     abstract fun reportDraftDao(): ReportDraftDao
+    abstract fun aiActionLogDao(): AiActionLogDao
+    abstract fun workPlanDao(): WorkPlanDao
 
     companion object {
         val MIGRATION_8_9 = object : Migration(8, 9) {
@@ -1379,6 +1388,57 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `material_progress` ADD COLUMN `unit` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `ai_action_log` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `rawInput` TEXT NOT NULL,
+                        `actionType` TEXT NOT NULL,
+                        `draftJson` TEXT NOT NULL,
+                        `confidence` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_action_log_projectId` ON `ai_action_log` (`projectId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_ai_action_log_projectId_timestamp` ON `ai_action_log` (`projectId`, `timestamp`)")
+            }
+        }
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `work_plan` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `plannedDateEpochDay` INTEGER NOT NULL,
+                        `nodeCode` TEXT,
+                        `routeCode` TEXT,
+                        `taskId` TEXT,
+                        `sourceRawInput` TEXT NOT NULL,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_work_plan_projectId_plannedDateEpochDay` ON `work_plan` (`projectId`, `plannedDateEpochDay`)")
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `mediaType` TEXT NOT NULL DEFAULT 'IMAGE'")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `mimeType` TEXT NOT NULL DEFAULT 'image/jpeg'")
+                db.execSQL("ALTER TABLE `site_photos` ADD COLUMN `durationMs` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

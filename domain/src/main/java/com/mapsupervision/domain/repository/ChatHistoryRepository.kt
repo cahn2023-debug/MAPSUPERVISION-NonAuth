@@ -9,4 +9,5 @@ interface ChatHistoryRepository {
     suspend fun listByProject(projectId: String): AppResult<List<ChatHistoryMessage>>
     suspend fun listRecentByProject(projectId: String, limit: Int): AppResult<List<ChatHistoryMessage>>
     fun observeByProject(projectId: String): Flow<List<ChatHistoryMessage>>
+    suspend fun clearByProject(projectId: String): AppResult<Unit>
 }

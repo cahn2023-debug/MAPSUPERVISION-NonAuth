@@ -2,41 +2,42 @@ package com.mapsupervision.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PrimaryPeach = Color(0xFFFFC174)
-val OnPrimary = Color(0xFF472A00)
-val PrimaryContainer = Color(0xFFF59E0B)
-val OnPrimaryContainer = Color(0xFF613B00)
+val PrimaryPeach = Color(0xFFFFB074)
+val OnPrimary = Color(0xFF3D1F00)
+val PrimaryContainer = Color(0xFFFF8F00)
+val OnPrimaryContainer = Color(0xFF512B00)
 
-val SecondaryMint = Color(0xFF4EDEA3)
-val OnSecondary = Color(0xFF003824)
-val SecondaryContainer = Color(0xFF00A572)
-val OnSecondaryContainer = Color(0xFF00311F)
+val SecondaryMint = Color(0xFF00FFCC)
+val OnSecondary = Color(0xFF003D2E)
+val SecondaryContainer = Color(0xFF00B28C)
+val OnSecondaryContainer = Color(0xFF003328)
 
-val TertiaryCyan = Color(0xFF8ED5FF)
-val OnTertiary = Color(0xFF00354A)
-val TertiaryContainer = Color(0xFF38BDF8)
-val OnTertiaryContainer = Color(0xFF004965)
+val TertiaryCyan = Color(0xFF00E5FF)
+val OnTertiary = Color(0xFF00363D)
+val TertiaryContainer = Color(0xFF00B4D8)
+val OnTertiaryContainer = Color(0xFF03045E)
 
-val BackgroundDark = Color(0xFF0B1326)
-val OnBackground = Color(0xFFDAE2FD)
+val BackgroundDark = Color(0xFF060814) // Deep OLED Black
+val OnBackground = Color(0xFFE2E6F3)
 
-val SurfaceDark = Color(0xFF0B1326)
-val OnSurface = Color(0xFFDAE2FD)
-val SurfaceVariantDark = Color(0xFF2D3449)
-val OnSurfaceVariant = Color(0xFFD8C3AD)
+val SurfaceDark = Color(0xFF0E1225) // Card base on background
+val OnSurface = Color(0xFFE2E6F3)
+val SurfaceVariantDark = Color(0xFF1B223C) // Secondary panels / active states
+val OnSurfaceVariant = Color(0xFFBAC3E2)
 
-val OutlineColor = Color(0xFFA08E7A)
-val OutlineVariantColor = Color(0xFF534434)
+val OutlineColor = Color(0xFF4C567A) // Reflective border/divider lines
+val OutlineVariantColor = Color(0xFF262D4A)
 
 val ErrorColor = Color(0xFFFFB4AB)
 val OnErrorColor = Color(0xFF690005)
 val ErrorContainerColor = Color(0xFF93000A)
 val OnErrorContainerColor = Color(0xFFFFDAD6)
 
-val SuccessColor = Color(0xFF3B82F6)
-val MapAccentColor = Color(0xFFF5A623)
-val WarningColor = Color(0xFFF58220)
-val WarningSoftColor = Color(0x29F58220)
-val InfoColor = Color(0xFF60A5FA)
+val SuccessColor = Color(0xFF10B981) // Neon Success Mint
+val MapAccentColor = Color(0xFFFF9F1C)
+val WarningColor = Color(0xFFF59E0B)
+val WarningSoftColor = Color(0x24F59E0B)
+val InfoColor = Color(0xFF06B6D4) // Bright Neon Cyan Info
 val DangerColor = Color(0xFFEF4444)
-val DangerSoftColor = Color(0x29EF4444)
+val DangerSoftColor = Color(0x24EF4444)
+

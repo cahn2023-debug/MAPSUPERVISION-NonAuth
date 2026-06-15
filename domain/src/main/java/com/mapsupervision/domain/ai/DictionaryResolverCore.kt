@@ -32,7 +32,20 @@ class DictionaryResolverCore(private val snapshot: DictionarySnapshot) {
     }
 
     private val normalizedRoutes = snapshot.routes.map { route ->
-        route to listOf(route.code, route.startNodeCode, route.endNodeCode, route.contractor)
+        val startNode = snapshot.nodes.firstOrNull { it.code == route.startNodeCode }
+        val endNode = snapshot.nodes.firstOrNull { it.code == route.endNodeCode }
+        val naturalAliases = mutableListOf<String>()
+        if (startNode != null && endNode != null) {
+            val sLabel = startNode.mapNumberLabel
+            val eLabel = endNode.mapNumberLabel
+            if (sLabel.isNotBlank() && eLabel.isNotBlank()) {
+                naturalAliases += "$sLabel - $eLabel"
+                naturalAliases += "$sLabel-$eLabel"
+                naturalAliases += "$eLabel - $sLabel"
+                naturalAliases += "$eLabel-$sLabel"
+            }
+        }
+        route to (listOf(route.code, route.startNodeCode, route.endNodeCode, route.contractor) + naturalAliases)
             .filter { it.isNotBlank() }
             .map { normalize(it) }
     }
@@ -47,8 +60,8 @@ class DictionaryResolverCore(private val snapshot: DictionarySnapshot) {
         val key = normalize(raw)
         if (key.isBlank()) return null
         nodeIndex[key]?.let { return DictionaryMatch(it, 100, "exact") }
-        snapshot.nodes.firstOrNull { normalize(it.mapNumberLabel) == key }?.let { return DictionaryMatch(it, 90, "map_label") }
-        snapshot.nodes.firstOrNull { normalize(it.contractor) == key }?.let { return DictionaryMatch(it, 60, "contractor") }
+        snapshot.nodes.firstOrNull { normalize(it.mapNumberLabel) == key || normalize(it.mapNumberLabel).contains(key) || key.contains(normalize(it.mapNumberLabel)) }?.let { return DictionaryMatch(it, 90, "map_label") }
+        snapshot.nodes.firstOrNull { normalize(it.contractor) == key || normalize(it.contractor).contains(key) || key.contains(normalize(it.contractor)) }?.let { return DictionaryMatch(it, 60, "contractor") }
         snapshot.nodes.firstOrNull { normalize(it.code).contains(key) || key.contains(normalize(it.code)) }?.let {
             return DictionaryMatch(it, 70, "partial_code")
         }
@@ -59,10 +72,22 @@ class DictionaryResolverCore(private val snapshot: DictionarySnapshot) {
         val key = normalize(raw)
         if (key.isBlank()) return null
         routeIndex[key]?.let { return DictionaryMatch(it, 100, "exact") }
-        snapshot.routes.firstOrNull {
-            normalize(it.startNodeCode).contains(key) ||
-                normalize(it.endNodeCode).contains(key) ||
-                normalize(it.contractor) == key
+        
+        snapshot.routes.firstOrNull { route ->
+            val startNode = snapshot.nodes.firstOrNull { it.code == route.startNodeCode }
+            val endNode = snapshot.nodes.firstOrNull { it.code == route.endNodeCode }
+            val matchNatural = if (startNode != null && endNode != null) {
+                val sLabel = normalize(startNode.mapNumberLabel)
+                val eLabel = normalize(endNode.mapNumberLabel)
+                (sLabel.isNotBlank() && eLabel.isNotBlank() &&
+                        (key.contains(sLabel) && key.contains(eLabel)))
+            } else false
+
+            matchNatural ||
+                normalize(route.code).contains(key) || key.contains(normalize(route.code)) ||
+                normalize(route.startNodeCode).contains(key) || key.contains(normalize(route.startNodeCode)) ||
+                normalize(route.endNodeCode).contains(key) || key.contains(normalize(route.endNodeCode)) ||
+                normalize(route.contractor) == key || key.contains(normalize(route.contractor))
         }?.let { return DictionaryMatch(it, 65, "route_reference") }
         return null
     }

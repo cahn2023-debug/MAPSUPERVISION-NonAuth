@@ -33,6 +33,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.material.icons.outlined.PlayCircle
+import com.mapsupervision.domain.model.MediaType
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkspaceRefreshContainer(
@@ -48,6 +51,13 @@ fun WorkspaceRefreshContainer(
     ) {
         content()
     }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
 }
 
 @Composable
@@ -99,6 +109,26 @@ fun SitePhotoThumb(
         ) {
             Text(ts, color = theme.onSurface, fontSize = 9.sp)
         }
+
+        if (photo.mediaType == MediaType.VIDEO) {
+            Icon(
+                Icons.Outlined.PlayCircle,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(28.dp)
+            )
+            val durationText = formatDuration(photo.durationMs)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .background(theme.scrim.copy(alpha = 0.68f))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Text(durationText, color = Color.White, fontSize = 9.sp)
+            }
+        }
     }
 }
 
@@ -124,3 +154,62 @@ fun WorkspaceEmptyState(
         )
     }
 }
+
+// Neon Cyber Gradients
+val NeonCyberOrangeGradient = androidx.compose.ui.graphics.Brush.linearGradient(
+    colors = listOf(
+        Color(0xFFFFB074), // PrimaryPeach
+        Color(0xFFFF8F00)  // PrimaryContainer
+    )
+)
+
+val NeonCyberCyanGradient = androidx.compose.ui.graphics.Brush.linearGradient(
+    colors = listOf(
+        Color(0xFF00FFCC), // SecondaryMint
+        Color(0xFF00E5FF)  // TertiaryCyan
+    )
+)
+
+@Composable
+fun GlassmorphicCard(
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.foundation.shape.CornerBasedShape = RoundedCornerShape(12.dp),
+    borderAlpha: Float = 0.15f,
+    backgroundAlpha: Float = 0.5f, // Glass trans
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val theme = MaterialTheme.colorScheme
+    val borderBrush = androidx.compose.ui.graphics.Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = borderAlpha),
+            Color.White.copy(alpha = borderAlpha * 0.3f),
+            theme.primary.copy(alpha = borderAlpha)
+        )
+    )
+    val cardBgColor = theme.surfaceVariant.copy(alpha = backgroundAlpha)
+
+    if (onClick != null) {
+        androidx.compose.material3.Card(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = cardBgColor),
+            border = androidx.compose.foundation.BorderStroke(1.dp, borderBrush),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            content()
+        }
+    } else {
+        androidx.compose.material3.Card(
+            modifier = modifier,
+            shape = shape,
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = cardBgColor),
+            border = androidx.compose.foundation.BorderStroke(1.dp, borderBrush),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            content()
+        }
+    }
+}
+

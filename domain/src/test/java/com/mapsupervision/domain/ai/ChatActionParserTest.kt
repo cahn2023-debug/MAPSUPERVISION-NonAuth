@@ -239,4 +239,47 @@ class ChatActionParserTest {
         assertNull(result2.pendingAction)
         assertTrue(result2.answer.contains("cung cấp thêm: trạm/node"))
     }
+
+    @Test
+    fun `parses Vietnamese percentage and xong keywords`() {
+        val context = "node_codes=N14"
+        val result1 = ChatActionParser.parse(
+            message = "nút 14 xong kéo cáp 80%",
+            normalizationContext = context
+        )
+        assertNotNull(result1.pendingAction)
+        assertEquals(ChatActionType.UPDATE_CONSTRUCTION_PROGRESS, result1.pendingAction?.type)
+        assertEquals("N14", result1.pendingAction?.constructionProgress?.nodeCode)
+        assertEquals(80f, result1.pendingAction?.constructionProgress?.actual)
+
+        val result2 = ChatActionParser.parse(
+            message = "nút 14 hoàn thành",
+            normalizationContext = context
+        )
+        assertNotNull(result2.pendingAction)
+        assertEquals(ChatActionType.UPDATE_CONSTRUCTION_PROGRESS, result2.pendingAction?.type)
+        assertEquals(100f, result2.pendingAction?.constructionProgress?.actual)
+    }
+
+    @Test
+    fun `parses generate summary action`() {
+        val result = ChatActionParser.parse("tổng hợp theo nhà thầu tuần này")
+        assertNotNull(result.pendingAction)
+        assertEquals(ChatActionType.GENERATE_SUMMARY, result.pendingAction?.type)
+        assertEquals("contractor", result.pendingAction?.summaryRequest?.scope)
+        assertEquals("contractor", result.pendingAction?.summaryRequest?.groupBy)
+        assertNotNull(result.pendingAction?.summaryRequest?.dateFromEpochDay)
+    }
+
+    @Test
+    fun `parses node code with Vietnamese node labels`() {
+        val context = "node_codes=HG01"
+        val result = ChatActionParser.parse(
+            message = "ghi nhật ký hôm qua hố ga HG01 công việc xây lắp",
+            normalizationContext = context
+        )
+        assertNotNull(result.pendingAction)
+        assertEquals(ChatActionType.ADD_DAILY_LOG, result.pendingAction?.type)
+        assertEquals("HG01", result.pendingAction?.dailyLog?.nodeCode)
+    }
 }

@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 @HiltViewModel
 class GisViewModel @Inject constructor(
     private val activeProjectRepository: ActiveProjectRepository,
@@ -32,12 +34,12 @@ class GisViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            activeProjectRepository.activeProjectId.collectLatest {
+            activeProjectRepository.activeProjectId.debounce(250).collectLatest {
                 search("")
             }
         }
         viewModelScope.launch {
-            projectSyncRepository.events.collectLatest { event ->
+            projectSyncRepository.events.debounce(250).collectLatest { event ->
                 val activeProjectId = activeProjectRepository.activeProjectId.value
                 if (event.projectId == null || event.projectId == activeProjectId) {
                     search("")

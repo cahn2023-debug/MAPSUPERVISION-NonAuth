@@ -59,12 +59,12 @@ class NaturalChatPipelineTest {
             work_categories=Be tong mong:m3
         """.trimIndent()
 
-        // High confidence, complete fields -> AUTO_SAVE
+        // High confidence, complete fields -> REQUIRE_CONFIRMATION (as all write actions now require confirmation)
         val resultAuto = ChatActionParser.parse(
             message = "cap nhat tien do node N01_HG planned 100 actual 80",
             normalizationContext = context
         )
-        assertEquals(WriteDisposition.AUTO_SAVE, resultAuto.writeDisposition)
+        assertEquals(WriteDisposition.REQUIRE_CONFIRMATION, resultAuto.writeDisposition)
         assertTrue(resultAuto.confidence!!.isDataComplete)
 
         // Medium confidence or missing fields -> REJECT (since required planned/actual values are missing)

@@ -16,10 +16,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Path
 import com.mapsupervision.core.logging.AppLogger
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 enum class GisLabelField { CODE, CONTRACTOR, COORDINATE }
 
-enum class MapLayerType { STREET, SATELLITE, DARK }
+enum class MapLayerType { STREET, SATELLITE, SATELLITE_LABELS, DARK }
 
 /**
  * Public GIS rendering contract.
@@ -65,7 +68,14 @@ interface GisMapBridge {
  * rendering backend for all GIS screens.
  */
 object GisMapBridgeRegistry {
-    var bridge: GisMapBridge? = null
+    private val _bridge = MutableStateFlow<GisMapBridge?>(null)
+    val bridgeState: StateFlow<GisMapBridge?> = _bridge.asStateFlow()
+
+    var bridge: GisMapBridge?
+        get() = _bridge.value
+        set(value) {
+            _bridge.value = value
+        }
 }
 
 @Composable
@@ -97,7 +107,7 @@ fun GisScreen(
         )
     }
 
-    val bridge = GisMapBridgeRegistry.bridge
+    val bridge = GisMapBridgeRegistry.bridgeState.collectAsState().value
 
     if (bridge != null) {
         bridge.Render(

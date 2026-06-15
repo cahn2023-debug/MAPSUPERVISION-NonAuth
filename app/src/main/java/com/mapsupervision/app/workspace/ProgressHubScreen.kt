@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.app.ui.theme.SecondaryMint
+import com.mapsupervision.app.ui.theme.PrimaryPeach
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -356,7 +358,7 @@ fun ProgressHubScreen(
             if (screenUiState.isProgressSubTab) {
                 // ========================== PROGRESS VIEW ==========================
                 item {
-                    Card( modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    GlassmorphicCard( modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
                     ) {
                         val statusColor = if (dashboardState.delayedCount > 0) orangeColor else successColor
                         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
@@ -395,18 +397,18 @@ fun ProgressHubScreen(
                                     Text("${String.format("%.1f", avgPlanned)}%", color = secondaryTextColor, fontSize = 14.sp)
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator( progress = { planPercent }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)), color = darkBlueColor, trackColor = MaterialTheme.colorScheme.surface
+                                LinearProgressIndicator( progress = { planPercent }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)), color = SecondaryMint, trackColor = MaterialTheme.colorScheme.surface
                                 )
                                 
                                 Spacer(modifier = Modifier.height(12.dp))
                                 
                                 // Actual
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Hoàn thành thực tế", color = darkOrangeColor, fontSize = 14.sp)
-                                    Text("${String.format("%.1f", avgActual)}%", color = darkOrangeColor, fontSize = 14.sp)
+                                    Text("Hoàn thành thực tế", color = PrimaryPeach, fontSize = 14.sp)
+                                    Text("${String.format("%.1f", avgActual)}%", color = PrimaryPeach, fontSize = 14.sp)
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                LinearProgressIndicator( progress = { actualPercent }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)), color = orangeColor, trackColor = MaterialTheme.colorScheme.surface
+                                LinearProgressIndicator( progress = { actualPercent }, modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)), color = PrimaryPeach, trackColor = MaterialTheme.colorScheme.surface
                                 )
                             }
                         }
@@ -419,7 +421,7 @@ fun ProgressHubScreen(
                 }
 
                 item {
-                    Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()
+                    GlassmorphicCard( shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text( "CRITICAL PATH VARIANCES (ĐỘ LỆCH TIẾN ĐỘ)", fontWeight = FontWeight.Bold, color = primaryTextColor, fontSize = 12.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(bottom = 12.dp)

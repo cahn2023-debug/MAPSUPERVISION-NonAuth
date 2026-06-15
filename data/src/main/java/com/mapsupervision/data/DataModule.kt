@@ -38,6 +38,7 @@ import com.mapsupervision.domain.repository.NoteRepository
 import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
 import com.mapsupervision.data.db.dao.ReportDraftDao
+import com.mapsupervision.data.db.dao.WorkPlanDao
 import com.mapsupervision.data.repository.ReportDraftRepositoryImpl
 import com.mapsupervision.domain.repository.ReportDraftRepository
 import com.mapsupervision.domain.service.WeatherService
@@ -81,9 +82,18 @@ object DataModule {
                 MapSupervisionDatabase.MIGRATION_20_21,
                 MapSupervisionDatabase.MIGRATION_21_22,
                 MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24
+                MapSupervisionDatabase.MIGRATION_23_24,
+                MapSupervisionDatabase.MIGRATION_24_25,
+                MapSupervisionDatabase.MIGRATION_25_26,
+                MapSupervisionDatabase.MIGRATION_26_27
             )
             .build()
+
+    @Provides
+    fun provideWorkPlanDao(db: MapSupervisionDatabase): WorkPlanDao = db.workPlanDao()
+
+    @Provides
+    fun provideAiActionLogDao(db: MapSupervisionDatabase): com.mapsupervision.data.db.dao.AiActionLogDao = db.aiActionLogDao()
 
     @Provides
     fun provideProjectDao(db: MapSupervisionDatabase): ProjectDao = db.projectDao()
@@ -180,5 +190,11 @@ abstract class DataBindModule {
     abstract fun bindChatHistoryRepository(impl: ChatHistoryRepositoryImpl): ChatHistoryRepository
 
     @Binds
+    abstract fun bindAiActionLogRepository(impl: com.mapsupervision.data.repository.AiActionLogRepositoryImpl): com.mapsupervision.domain.repository.AiActionLogRepository
+
+    @Binds
     abstract fun bindReportDraftRepository(impl: ReportDraftRepositoryImpl): ReportDraftRepository
+
+    @Binds
+    abstract fun bindWorkPlanRepository(impl: com.mapsupervision.data.repository.WorkPlanRepositoryImpl): com.mapsupervision.domain.repository.WorkPlanRepository
 }

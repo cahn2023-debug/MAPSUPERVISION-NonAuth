@@ -20,6 +20,13 @@ class DbTypeConverters {
         value?.let(PhotoLocationStatus::valueOf) ?: PhotoLocationStatus.MISSING
 
     @TypeConverter
+    fun fromMediaType(value: com.mapsupervision.domain.model.MediaType?): String? = value?.name
+
+    @TypeConverter
+    fun toMediaType(value: String?): com.mapsupervision.domain.model.MediaType =
+        value?.let(com.mapsupervision.domain.model.MediaType::valueOf) ?: com.mapsupervision.domain.model.MediaType.IMAGE
+
+    @TypeConverter
     fun fromCoordinatesList(value: List<Pair<Double, Double>>?): String? {
         if (value == null) return null
         return value.joinToString(";") { "${it.first},${it.second}" }

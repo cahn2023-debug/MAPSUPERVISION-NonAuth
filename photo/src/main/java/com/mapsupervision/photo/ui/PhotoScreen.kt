@@ -1,4 +1,4 @@
-﻿package com.mapsupervision.photo.ui
+package com.mapsupervision.photo.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -10,6 +10,15 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoRecordEvent
+import androidx.camera.video.FileOutputOptions
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Quality
+import androidx.camera.extensions.ExtensionsManager
+import androidx.camera.extensions.ExtensionMode
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -73,6 +82,11 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                 ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasAudioPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -83,6 +97,9 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
         hasLocationPermission = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
+    val audioPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> hasAudioPermission = granted }
 
     val galleryLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
@@ -109,7 +126,11 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
         } else {
             CameraXCaptureView(
                 createCaptureFile = { viewModel.createCaptureFile(objectCode) },
-                onCaptured = { file -> viewModel.registerCapturedPhoto(file, objectCode, engineer) }
+                onCaptured = { file -> viewModel.registerCapturedPhoto(file, objectCode, engineer) },
+                createCaptureVideoFile = { viewModel.createCaptureVideoFile(objectCode) },
+                onVideoCaptured = { file, duration -> viewModel.registerCapturedVideo(file, duration, objectCode, engineer) },
+                hasAudioPermission = hasAudioPermission,
+                requestAudioPermission = { audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
             )
         }
 
@@ -272,10 +293,15 @@ private fun MatchBadge(photo: com.mapsupervision.domain.model.SitePhoto) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CameraXCaptureView(
     createCaptureFile: () -> File?,
-    onCaptured: (File) -> Unit
+    onCaptured: (File) -> Unit,
+    createCaptureVideoFile: () -> File?,
+    onVideoCaptured: (File, Long) -> Unit,
+    hasAudioPermission: Boolean,
+    requestAudioPermission: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -286,7 +312,51 @@ private fun CameraXCaptureView(
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
     }
+    val recorder = remember {
+        Recorder.Builder()
+            .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+            .build()
+    }
+    val videoCapture = remember { VideoCapture.withOutput(recorder) }
+
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var extensionsManager by remember { mutableStateOf<ExtensionsManager?>(null) }
+    var activeExtensionMode by remember { mutableStateOf(ExtensionMode.NONE) }
+    var previousExtensionMode by remember { mutableStateOf(ExtensionMode.NONE) }
+
+    var isRecording by remember { mutableStateOf(false) }
+    var isPaused by remember { mutableStateOf(false) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    var recordingStartTime by remember { mutableStateOf(0L) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+
     var targetRotation by remember { mutableStateOf(Surface.ROTATION_0) }
+
+    val cameraProviderFuture = remember(context) { ProcessCameraProvider.getInstance(context) }
+    DisposableEffect(lifecycleOwner) {
+        val executor = ContextCompat.getMainExecutor(context)
+        val listener = Runnable {
+            runCatching {
+                cameraProvider = cameraProviderFuture.get()
+            }
+        }
+        cameraProviderFuture.addListener(listener, executor)
+        onDispose {
+            runCatching {
+                cameraProvider?.unbindAll()
+            }
+        }
+    }
+
+    LaunchedEffect(cameraProvider) {
+        val provider = cameraProvider ?: return@LaunchedEffect
+        val managerFuture = ExtensionsManager.getInstanceAsync(context, provider)
+        managerFuture.addListener({
+            runCatching {
+                extensionsManager = managerFuture.get()
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
 
     DisposableEffect(context, previewView, preview, imageCapture) {
         targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
@@ -315,23 +385,41 @@ private fun CameraXCaptureView(
         onDispose { orientationListener.disable() }
     }
 
-    DisposableEffect(lifecycleOwner, preview, imageCapture) {
-        val providerFuture = ProcessCameraProvider.getInstance(context)
-        val executor = ContextCompat.getMainExecutor(context)
-        val runnable = Runnable {
-            val cameraProvider = providerFuture.get()
-            preview.surfaceProvider = previewView.surfaceProvider
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            cameraProvider.unbindAll()
-            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageCapture)
-        }
-        providerFuture.addListener(runnable, executor)
-
-        onDispose {
-            runCatching {
-                val provider = ProcessCameraProvider.getInstance(context).get()
-                provider.unbindAll()
+    val cameraSelector = remember(activeExtensionMode, isRecording, extensionsManager) {
+        val baseSelector = CameraSelector.DEFAULT_BACK_CAMERA
+        if (isRecording || extensionsManager == null || activeExtensionMode == ExtensionMode.NONE) {
+            baseSelector
+        } else {
+            if (extensionsManager!!.isExtensionAvailable(baseSelector, activeExtensionMode)) {
+                extensionsManager!!.getExtensionEnabledCameraSelector(baseSelector, activeExtensionMode)
+            } else {
+                baseSelector
             }
+        }
+    }
+
+    LaunchedEffect(cameraProvider, cameraSelector, isRecording) {
+        val provider = cameraProvider ?: return@LaunchedEffect
+        provider.unbindAll()
+        preview.surfaceProvider = previewView.surfaceProvider
+        try {
+            if (isRecording) {
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    videoCapture
+                )
+            } else {
+                provider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    imageCapture
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -340,23 +428,165 @@ private fun CameraXCaptureView(
             factory = { previewView },
             modifier = Modifier.fillMaxWidth().height(220.dp)
         )
-        Button(onClick = {
-            val file = createCaptureFile() ?: return@Button
-            val output = ImageCapture.OutputFileOptions.Builder(file).build()
-            imageCapture.targetRotation = targetRotation
-            imageCapture.takePicture(
-                output,
-                ContextCompat.getMainExecutor(context),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                        onCaptured(file)
-                    }
 
-                    override fun onError(exception: ImageCaptureException) = Unit
-                }
+        // Extension Selection Row
+        Text("Chế độ Camera (Extensions):", style = MaterialTheme.typography.titleSmall)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            val modes = listOf(
+                "Thường" to ExtensionMode.NONE,
+                "HDR" to ExtensionMode.HDR,
+                "Đêm" to ExtensionMode.NIGHT,
+                "Chân dung" to ExtensionMode.BOKEH,
+                "Làm mịn" to ExtensionMode.FACE_RETOUCH
             )
-        }) {
-            Text("Chup anh")
+            modes.forEach { (name, mode) ->
+                val isSupported = if (extensionsManager != null) {
+                    extensionsManager!!.isExtensionAvailable(CameraSelector.DEFAULT_BACK_CAMERA, mode) || mode == ExtensionMode.NONE
+                } else {
+                    mode == ExtensionMode.NONE
+                }
+                FilterChip(
+                    selected = activeExtensionMode == mode,
+                    onClick = {
+                        if (isSupported) {
+                            activeExtensionMode = mode
+                        }
+                    },
+                    label = { Text(name) },
+                    enabled = isSupported && !isRecording,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        }
+
+        // Action controls
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (!isRecording) {
+                // Button 1: Chụp ảnh
+                Button(
+                    onClick = {
+                        val file = createCaptureFile() ?: return@Button
+                        val output = ImageCapture.OutputFileOptions.Builder(file).build()
+                        imageCapture.targetRotation = targetRotation
+                        imageCapture.takePicture(
+                            output,
+                            ContextCompat.getMainExecutor(context),
+                            object : ImageCapture.OnImageSavedCallback {
+                                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                    onCaptured(file)
+                                }
+
+                                override fun onError(exception: ImageCaptureException) {
+                                    exception.printStackTrace()
+                                }
+                            }
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Chụp ảnh")
+                }
+
+                // Button 2: Quay video
+                Button(
+                    onClick = {
+                        if (!hasAudioPermission) {
+                            requestAudioPermission()
+                            return@Button
+                        }
+                        val file = createCaptureVideoFile() ?: return@Button
+                        recordingFile = file
+                        val outputOptions = FileOutputOptions.Builder(file).build()
+                        var pending = recorder.prepareRecording(context, outputOptions)
+                        if (hasAudioPermission) {
+                            pending = pending.withAudioEnabled()
+                        }
+                        // Save current extension mode, then reset to NONE for recording compatibility
+                        previousExtensionMode = activeExtensionMode
+                        activeExtensionMode = ExtensionMode.NONE
+
+                        recordingStartTime = System.currentTimeMillis()
+                        val recording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
+                            when (event) {
+                                is VideoRecordEvent.Start -> {
+                                    isRecording = true
+                                    isPaused = false
+                                }
+                                is VideoRecordEvent.Pause -> {
+                                    isPaused = true
+                                }
+                                is VideoRecordEvent.Resume -> {
+                                    isPaused = false
+                                }
+                                is VideoRecordEvent.Finalize -> {
+                                    isRecording = false
+                                    isPaused = false
+                                    activeRecording = null
+                                    val duration = System.currentTimeMillis() - recordingStartTime
+                                    if (event.hasError()) {
+                                        recordingFile?.delete()
+                                    } else {
+                                        recordingFile?.let { onVideoCaptured(it, duration) }
+                                    }
+                                    recordingFile = null
+                                    // Restore previous extension mode
+                                    activeExtensionMode = previousExtensionMode
+                                }
+                            }
+                        }
+                        activeRecording = recording
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Quay video")
+                }
+            } else {
+                // Recording active controls
+                Button(
+                    onClick = {
+                        activeRecording?.stop()
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Dừng quay")
+                }
+
+                if (!isPaused) {
+                    Button(
+                        onClick = {
+                            activeRecording?.pause()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Tạm dừng")
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            activeRecording?.resume()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary
+                        )
+                    ) {
+                        Text("Tiếp tục")
+                    }
+                }
+            }
         }
     }
 }

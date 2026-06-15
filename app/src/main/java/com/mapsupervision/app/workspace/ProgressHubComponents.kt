@@ -34,6 +34,9 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.mapsupervision.app.ui.theme.SecondaryMint
+import com.mapsupervision.app.ui.theme.PrimaryPeach
+import com.mapsupervision.app.ui.theme.SuccessColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,11 +54,9 @@ fun InfrastructureItem(
     isNew: Boolean = false,
     onClick: () -> Unit = {}
 ) {
-    Card(
+    GlassmorphicCard(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(modifier = Modifier.fillMaxHeight().width(4.dp).background(borderColor))
@@ -83,9 +84,9 @@ fun InfrastructureItem(
                             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                         }
                         if (isWarning) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFC05621), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                         } else {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF3B82F6), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessColor, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -98,17 +99,17 @@ fun InfrastructureItem(
                     LinearProgressIndicator(
                         progress = { planProgress },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                        color = planColor,
+                        color = SecondaryMint,
                         trackColor = MaterialTheme.colorScheme.surface
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("ACTUAL", color = Color(0xFFC05621), fontSize = 10.sp, modifier = Modifier.width(50.dp))
+                    Text("ACTUAL", color = PrimaryPeach, fontSize = 10.sp, modifier = Modifier.width(50.dp))
                     LinearProgressIndicator(
                         progress = { actualProgress },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                        color = actualColor,
+                        color = PrimaryPeach,
                         trackColor = MaterialTheme.colorScheme.surface
                     )
                 }
@@ -192,12 +193,9 @@ fun SummaryStatsRow(
 
 @Composable
 fun StatCard(label: String, value: String, valueColor: Color, modifier: Modifier = Modifier) {
-    Card(
+    GlassmorphicCard(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        shape = RoundedCornerShape(8.dp)
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
