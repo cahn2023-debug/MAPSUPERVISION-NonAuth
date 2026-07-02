@@ -37,7 +37,7 @@ class WorkspaceMediaStorageSpecTest {
                 contractor = "",
                 latitude = 10.0,
                 longitude = 106.0,
-                materialSummary = ""
+                workVolumeSummary = ""
             )
         )
         val routes = listOf(
@@ -56,3 +56,4 @@ class WorkspaceMediaStorageSpecTest {
         assertEquals("ROUTE-01", normalizeMediaObjectCode("ROUTE-01", emptyList(), routes))
     }
 }
+

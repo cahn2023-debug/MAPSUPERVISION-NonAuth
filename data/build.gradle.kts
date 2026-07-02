@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -12,7 +14,7 @@ import java.io.FileInputStream
 
 android {
     namespace = "com.mapsupervision.data"
-    compileSdk = 35
+    compileSdk = 36
 
     val envFile = rootProject.file(".env")
     val envProperties = Properties()
@@ -29,7 +31,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures {
         buildConfig = true
     }
@@ -44,7 +50,9 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
     implementation(project(":storage-core"))
-    implementation(project(":storage-import"))
+    implementation(project(":ai-core"))
+    implementation(project(":ai-prompt"))
+    implementation(project(":ai-rag"))
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -57,7 +65,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.2")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
     // AI
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     
@@ -66,9 +74,10 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.2.0")
     
     // TensorFlow Lite
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.5.0")
+    implementation("com.google.mediapipe:tasks-text:0.10.32")
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.test.core)
@@ -76,4 +85,10 @@ dependencies {
     
     // MediaPipe LLM - Commented out as it's not yet publicly available in standard Maven repositories
     // implementation("com.google.mediapipe:llm-inference:0.10.7")
+}
+
+tasks.withType<Test> {
+    testLogging {
+        showStandardStreams = true
+    }
 }

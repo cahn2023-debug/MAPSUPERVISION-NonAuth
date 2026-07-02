@@ -11,7 +11,7 @@ package com.mapsupervision.domain.model
  * @property latitude Vĩ độ GPS của nút trên bản đồ.
  * @property longitude Kinh độ GPS của nút trên bản đồ.
  * @property mapNumberLabel Nhãn hiển thị bản số hiệu trên bản đồ GIS trực quan.
- * @property materialSummary Tóm tắt số lượng vật tư kỹ thuật phân bổ tại nút giao.
+ * @property workVolumeSummary Tóm tắt khối lượng công việc phân bổ tại nút giao.
  * @property importedFileId Mã tệp tin quy hoạch gốc (KML/KMZ) đã nhập nút này vào hệ thống (nếu có).
  */
 data class GisNode(
@@ -22,7 +22,10 @@ data class GisNode(
     val latitude: Double,
     val longitude: Double,
     val mapNumberLabel: String = "",
-    val materialSummary: String = "",
-    val importedFileId: String? = null
+    val workVolumeSummary: String = "",
+    val importedFileId: String? = null,
+    val updatedAtEpochMs: Long = 0L,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
 

@@ -18,7 +18,11 @@ import com.mapsupervision.data.db.entity.SitePhotoEntity
 import com.mapsupervision.data.db.entity.TaskEntity
 import com.mapsupervision.data.db.entity.WorkCategoryEntity
 import com.mapsupervision.data.db.entity.ReportDraftEntity
+import com.mapsupervision.data.db.entity.MaterialHandoverEntity
+import com.mapsupervision.data.db.entity.MaterialDeclarationEntity
+import com.mapsupervision.data.db.entity.WorkPlanEntity
 import com.mapsupervision.domain.model.ProjectStorageMode
+import com.mapsupervision.storage.ProjectStorageManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -36,11 +40,13 @@ import kotlinx.coroutines.sync.withLock
 @Singleton
 class ProjectScopedDatabaseProvider @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val sharedDatabase: MapSupervisionDatabase
+    private val sharedDatabase: MapSupervisionDatabase,
+    private val storageManager: ProjectStorageManager
 ) {
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val holders = LinkedHashMap<String, DatabaseHolder>()
+    private val hydrationJobs = LinkedHashMap<String, Job>()
     private val idleTimeoutMs = 5 * 60 * 1000L
     @Volatile
     private var cleanupJob: Job? = null
@@ -58,18 +64,14 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     }
 
     private suspend fun openProjectDb(project: ProjectEntity): MapSupervisionDatabase = mutex.withLock {
-        val dbPath = if (project.projectDbPath.contains("/Download/MapSupervision/Projects/")) {
-            val privateBase = File(context.filesDir, "MapSupervision")
-            File(privateBase, "Projects/${project.slug}/db/project.sqlite").absolutePath
-        } else {
-            project.projectDbPath
-        }
+        val resolvedProject = resolveProjectDbPath(project)
+        val dbPath = resolvedProject.projectDbPath
 
         val existing = holders[dbPath]
         if (existing != null) {
             existing.lastAccessEpochMs = System.currentTimeMillis()
             ensureCleanupSchedulerLocked()
-            ensureProjectRow(project, existing.database, "holder")
+            prepareOpenedProjectDatabase(resolvedProject, dbPath, existing.database, "holder")
             return existing.database
         }
 
@@ -85,82 +87,59 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                     db.execSQL("PRAGMA temp_store = MEMORY")
                 }
             })
-            .addMigrations(
-                MapSupervisionDatabase.MIGRATION_8_9,
-                MapSupervisionDatabase.MIGRATION_9_10,
-                MapSupervisionDatabase.MIGRATION_10_11,
-                MapSupervisionDatabase.MIGRATION_11_12,
-                MapSupervisionDatabase.MIGRATION_12_13,
-                MapSupervisionDatabase.MIGRATION_13_14,
-                MapSupervisionDatabase.MIGRATION_14_15,
-                MapSupervisionDatabase.MIGRATION_15_16,
-                MapSupervisionDatabase.MIGRATION_16_17,
-                MapSupervisionDatabase.MIGRATION_17_18,
-                MapSupervisionDatabase.MIGRATION_18_19,
-                MapSupervisionDatabase.MIGRATION_19_20,
-                MapSupervisionDatabase.MIGRATION_20_21,
-                MapSupervisionDatabase.MIGRATION_21_22,
-                MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24,
-                MapSupervisionDatabase.MIGRATION_24_25,
-                MapSupervisionDatabase.MIGRATION_25_26,
-                MapSupervisionDatabase.MIGRATION_26_27
-            )
+            .addMigrations(*MapSupervisionDatabase.ALL_MIGRATIONS)
             .build()
         AppLogger.d("project.db.open path=${dbFile.absolutePath}")
-        ensureLegacyHydrated(project, database)
         holders[dbPath] = DatabaseHolder(database)
         ensureCleanupSchedulerLocked()
+        prepareOpenedProjectDatabase(resolvedProject, dbPath, database, "open")
         database
     }
 
-    private suspend fun ensureLegacyHydrated(
-        project: ProjectEntity,
-        projectDatabase: MapSupervisionDatabase
-    ) {
-        val scopedHasData = hasAnyProjectRows(projectDatabase, project.id)
-        val sharedHasData = hasAnyProjectRows(sharedDatabase, project.id)
-        AppLogger.d(
-            "project.db.seed.detect projectId=${project.id} " +
-                "sharedHasData=$sharedHasData scopedHasData=$scopedHasData"
-        )
-        ensureProjectRow(project, projectDatabase, "open")
-        if (scopedHasData) {
-            AppLogger.d("project.db.seed.skip projectId=${project.id} reason=scoped_not_empty")
-            return
-        }
-        if (!sharedHasData) {
-            AppLogger.d("project.db.seed.skip projectId=${project.id} reason=shared_empty")
-            return
+    private suspend fun resolveProjectDbPath(project: ProjectEntity): ProjectEntity {
+        val scopedDbFile = storageManager.scopedProjectDbFile(project.slug)
+        val scopedDbPath = scopedDbFile.absolutePath
+        if (project.projectDbPath == scopedDbPath) {
+            return project
         }
 
-        AppLogger.d("project.db.seed.start projectId=${project.id}")
-        val payload = sharedPayload(project.id) ?: run {
-            AppLogger.d("project.db.seed.skip projectId=${project.id} reason=shared_payload_empty")
-            return
+        val legacyDbFile = project.projectDbPath.takeIf { it.isNotBlank() }?.let(::File)
+        if ((!scopedDbFile.exists() || scopedDbFile.length() == 0L) &&
+            legacyDbFile != null &&
+            legacyDbFile.exists() &&
+            legacyDbFile.absolutePath != scopedDbPath
+        ) {
+            scopedDbFile.parentFile?.mkdirs()
+            legacyDbFile.copyTo(scopedDbFile, overwrite = true)
         }
-        projectDatabase.withTransaction {
-            projectDatabase.projectDao().upsert(project)
-            if (payload.importedFiles.isNotEmpty()) projectDatabase.importedFileDao().upsertAll(payload.importedFiles)
-            if (payload.nodes.isNotEmpty()) projectDatabase.gisNodeDao().upsertAll(payload.nodes)
-            if (payload.routes.isNotEmpty()) projectDatabase.gisRouteDao().upsertAll(payload.routes)
-            for (entity in payload.nodeProgress) projectDatabase.nodeProgressDao().upsert(entity)
-            for (entity in payload.materialProgress) projectDatabase.materialProgressDao().upsert(entity)
-            for (entity in payload.dailyLogs) projectDatabase.dailyLogDao().upsert(entity)
-            for (entity in payload.notes) projectDatabase.noteDao().insert(entity)
-            for (entity in payload.tasks) projectDatabase.taskDao().upsert(entity)
-            for (entity in payload.sitePhotos) projectDatabase.sitePhotoDao().upsert(entity)
-            for (entity in payload.workCategories) projectDatabase.workCategoryDao().upsert(entity)
-            for (entity in payload.reportDrafts) projectDatabase.reportDraftDao().upsert(entity)
+
+        sharedDatabase.projectDao().updateProjectDbPath(project.id, scopedDbPath)
+        return project.copy(projectDbPath = scopedDbPath)
+    }
+
+    private suspend fun prepareOpenedProjectDatabase(
+        project: ProjectEntity,
+        dbPath: String,
+        database: MapSupervisionDatabase,
+        source: String
+    ) {
+        ensureProjectRow(project, database, source)
+        if (shouldUseLegacyBridge(project, database)) {
+            runLegacyBridge(project, dbPath, database)
+        } else {
+            AppLogger.d("project.db.bridge_skip projectId=${project.id} reason=cutover_complete")
         }
-        AppLogger.d(
-            "project.db.seed.complete projectId=${project.id} " +
-                "nodes=${payload.nodes.size} routes=${payload.routes.size} " +
-                "files=${payload.importedFiles.size} nodeProgress=${payload.nodeProgress.size} " +
-                "materialProgress=${payload.materialProgress.size} dailyLogs=${payload.dailyLogs.size} " +
-                "notes=${payload.notes.size} tasks=${payload.tasks.size} " +
-                "sitePhotos=${payload.sitePhotos.size} workCategories=${payload.workCategories.size} reportDrafts=${payload.reportDrafts.size}"
-        )
+    }
+
+    private suspend fun runLegacyBridge(
+        project: ProjectEntity,
+        dbPath: String,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        ensureCoreHydrated(project, projectDatabase)
+        syncSharedFromScoped(project, projectDatabase)
+        hydrateMaterialTables(project, projectDatabase)
+        scheduleAuxHydration(project, dbPath, projectDatabase)
     }
 
     private suspend fun ensureProjectRow(
@@ -176,71 +155,263 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         }
     }
 
-    private suspend fun sharedPayload(projectId: String): LegacyProjectPayload? {
-        val importedFiles = sharedDatabase.importedFileDao().byProject(projectId)
-        val nodes = sharedDatabase.gisNodeDao().byProject(projectId)
-        val routes = sharedDatabase.gisRouteDao().byProject(projectId)
-        val nodeProgress = sharedDatabase.nodeProgressDao().byProject(projectId)
-        val materialProgress = sharedDatabase.materialProgressDao().byProject(projectId)
-        val dailyLogs = sharedDatabase.dailyLogDao().byProject(projectId)
-        val notes = sharedDatabase.noteDao().byProject(projectId)
-        val tasks = sharedDatabase.taskDao().byProject(projectId)
-        val sitePhotos = sharedDatabase.sitePhotoDao().byProject(projectId)
-        val workCategories = sharedDatabase.workCategoryDao().byProject(projectId)
-        val reportDrafts = sharedDatabase.reportDraftDao().byProject(projectId)
-        if (
-            importedFiles.isEmpty() &&
-            nodes.isEmpty() &&
-            routes.isEmpty() &&
-            nodeProgress.isEmpty() &&
-            materialProgress.isEmpty() &&
-            dailyLogs.isEmpty() &&
-            notes.isEmpty() &&
-            tasks.isEmpty() &&
-            sitePhotos.isEmpty() &&
-            workCategories.isEmpty() &&
-            reportDrafts.isEmpty()
-        ) {
-            return null
+    private fun isTableEmpty(
+        database: MapSupervisionDatabase,
+        projectId: String,
+        table: String
+    ): Boolean {
+        val query = SimpleSQLiteQuery("SELECT EXISTS(SELECT 1 FROM `$table` WHERE `projectId` = ? LIMIT 1)", arrayOf(projectId))
+        return database.openHelper.readableDatabase.query(query).use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getInt(0) == 0
+            } else {
+                true
+            }
         }
-        return LegacyProjectPayload(
-            importedFiles = importedFiles,
-            nodes = nodes,
-            routes = routes,
-            nodeProgress = nodeProgress,
-            materialProgress = materialProgress,
-            dailyLogs = dailyLogs,
-            notes = notes,
-            tasks = tasks,
-            sitePhotos = sitePhotos,
-            workCategories = workCategories,
-            reportDrafts = reportDrafts
-        )
     }
 
-    private fun hasAnyProjectRows(database: MapSupervisionDatabase, projectId: String): Boolean {
-        val query = SimpleSQLiteQuery(
-            """
-            SELECT
-                EXISTS(SELECT 1 FROM `imported_files` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `gis_node` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `gis_route` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `node_progress` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `material_progress` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `daily_log` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `note` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `task` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `site_photos` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `work_categories` WHERE `projectId` = ? LIMIT 1) OR
-                EXISTS(SELECT 1 FROM `report_draft` WHERE `projectId` = ? LIMIT 1)
-            """.trimIndent(),
-            arrayOf(
-                projectId, projectId, projectId, projectId, projectId,
-                projectId, projectId, projectId, projectId, projectId, projectId
-            )
-        )
-        return database.openHelper.readableDatabase.query(query).use { cursor ->
-            cursor.moveToFirst() && cursor.getInt(0) != 0
+    private suspend fun ensureCoreHydrated(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        ensureProjectRow(project, projectDatabase, "open")
+        val projectId = project.id
+
+        projectDatabase.withTransaction {
+            projectDatabase.projectDao().upsert(project)
+
+            if (isTableEmpty(projectDatabase, projectId, "imported_files")) {
+                val list = sharedDatabase.importedFileDao().byProject(projectId)
+                if (list.isNotEmpty()) projectDatabase.importedFileDao().upsertAll(list)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "gis_node")) {
+                val list = sharedDatabase.gisNodeDao().byProject(projectId)
+                if (list.isNotEmpty()) projectDatabase.gisNodeDao().upsertAll(list)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "gis_route")) {
+                val list = sharedDatabase.gisRouteDao().byProject(projectId)
+                if (list.isNotEmpty()) projectDatabase.gisRouteDao().upsertAll(list)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "node_progress")) {
+                val list = sharedDatabase.nodeProgressDao().byProject(projectId)
+                for (entity in list) projectDatabase.nodeProgressDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "work_volume_progress")) {
+                val list = sharedDatabase.workVolumeProgressDao().byProject(projectId)
+                for (entity in list) projectDatabase.workVolumeProgressDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "daily_log")) {
+                val list = sharedDatabase.dailyLogDao().byProject(projectId)
+                for (entity in list) projectDatabase.dailyLogDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "work_categories")) {
+                val list = sharedDatabase.workCategoryDao().byProject(projectId)
+                for (entity in list) projectDatabase.workCategoryDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "work_plan")) {
+                val list = sharedDatabase.workPlanDao().byProject(projectId)
+                for (entity in list) projectDatabase.workPlanDao().insert(entity)
+            }
+        }
+    }
+
+    private suspend fun syncSharedFromScoped(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        val projectId = project.id
+        sharedDatabase.withTransaction {
+            val p = projectDatabase.projectDao().get(project.id) ?: project
+            if (sharedDatabase.projectDao().get(p.id) == null) {
+                sharedDatabase.projectDao().upsert(p)
+            }
+
+            // Core tables
+            if (isTableEmpty(sharedDatabase, projectId, "imported_files")) {
+                val list = projectDatabase.importedFileDao().byProject(projectId)
+                if (list.isNotEmpty()) sharedDatabase.importedFileDao().upsertAll(list)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "gis_node")) {
+                val list = projectDatabase.gisNodeDao().byProject(projectId)
+                if (list.isNotEmpty()) sharedDatabase.gisNodeDao().upsertAll(list)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "gis_route")) {
+                val list = projectDatabase.gisRouteDao().byProject(projectId)
+                if (list.isNotEmpty()) sharedDatabase.gisRouteDao().upsertAll(list)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "node_progress")) {
+                val list = projectDatabase.nodeProgressDao().byProject(projectId)
+                for (entity in list) sharedDatabase.nodeProgressDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "work_volume_progress")) {
+                val list = projectDatabase.workVolumeProgressDao().byProject(projectId)
+                for (entity in list) sharedDatabase.workVolumeProgressDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "daily_log")) {
+                val list = projectDatabase.dailyLogDao().byProject(projectId)
+                for (entity in list) sharedDatabase.dailyLogDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "work_categories")) {
+                val list = projectDatabase.workCategoryDao().byProject(projectId)
+                for (entity in list) sharedDatabase.workCategoryDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "work_plan")) {
+                val list = projectDatabase.workPlanDao().byProject(projectId)
+                for (entity in list) sharedDatabase.workPlanDao().insert(entity)
+            }
+
+            // Aux tables
+            if (isTableEmpty(sharedDatabase, projectId, "note")) {
+                val list = projectDatabase.noteDao().byProject(projectId)
+                for (entity in list) sharedDatabase.noteDao().insert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "task")) {
+                val list = projectDatabase.taskDao().byProject(projectId)
+                for (entity in list) sharedDatabase.taskDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "site_photos")) {
+                val list = projectDatabase.sitePhotoDao().byProject(projectId)
+                for (entity in list) sharedDatabase.sitePhotoDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "report_draft")) {
+                val list = projectDatabase.reportDraftDao().byProject(projectId)
+                for (entity in list) sharedDatabase.reportDraftDao().upsert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "material_declaration")) {
+                val list = projectDatabase.materialDeclarationDao().getByProject(projectId)
+                for (entity in list) sharedDatabase.materialDeclarationDao().insert(entity)
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "material_handover")) {
+                val list = projectDatabase.materialHandoverDao().byProject(projectId)
+                for (entity in list) sharedDatabase.materialHandoverDao().upsert(entity)
+            }
+        }
+    }
+
+    private suspend fun scheduleAuxHydration(
+        project: ProjectEntity,
+        dbPath: String,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        val existingJob = hydrationJobs[dbPath]
+        if (existingJob?.isActive == true) return
+        if (existingJob != null) {
+            hydrationJobs.remove(dbPath)
+        }
+
+        val needsHydration = AUX_TABLES.any { table ->
+            isTableEmpty(projectDatabase, project.id, table) && !isTableEmpty(sharedDatabase, project.id, table)
+        }
+        if (!needsHydration) {
+            AppLogger.d("project.db.seed.aux_skip projectId=${project.id} reason=all_tables_hydrated")
+            return
+        }
+
+        AppLogger.d("project.db.seed.aux_schedule projectId=${project.id}")
+        val job = scope.launch {
+            try {
+                delay(100L)
+                hydrateAuxiliaryTables(project, projectDatabase)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                mutex.withLock {
+                    if (hydrationJobs[dbPath] === coroutineContext[Job]) {
+                        hydrationJobs.remove(dbPath)
+                    }
+                }
+            }
+        }
+        hydrationJobs[dbPath] = job
+    }
+
+    private suspend fun hydrateAuxiliaryTables(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        val projectId = project.id
+        AppLogger.d("project.db.seed.aux_start projectId=${projectId}")
+        projectDatabase.withTransaction {
+            if (isTableEmpty(projectDatabase, projectId, "note")) {
+                val list = sharedDatabase.noteDao().byProject(projectId)
+                for (entity in list) projectDatabase.noteDao().insert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "task")) {
+                val list = sharedDatabase.taskDao().byProject(projectId)
+                for (entity in list) projectDatabase.taskDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "site_photos")) {
+                val list = sharedDatabase.sitePhotoDao().byProject(projectId)
+                for (entity in list) projectDatabase.sitePhotoDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "report_draft")) {
+                val list = sharedDatabase.reportDraftDao().byProject(projectId)
+                for (entity in list) projectDatabase.reportDraftDao().upsert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "material_declaration")) {
+                val list = sharedDatabase.materialDeclarationDao().getByProject(projectId)
+                for (entity in list) projectDatabase.materialDeclarationDao().insert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "material_handover")) {
+                val list = sharedDatabase.materialHandoverDao().byProject(projectId)
+                for (entity in list) projectDatabase.materialHandoverDao().upsert(entity)
+            }
+        }
+    }
+
+    private suspend fun hydrateMaterialTables(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ) {
+        val projectId = project.id
+        projectDatabase.withTransaction {
+            if (isTableEmpty(projectDatabase, projectId, "material_declaration")) {
+                val list = sharedDatabase.materialDeclarationDao().getByProject(projectId)
+                for (entity in list) projectDatabase.materialDeclarationDao().insert(entity)
+            }
+            if (isTableEmpty(projectDatabase, projectId, "material_handover")) {
+                val list = sharedDatabase.materialHandoverDao().byProject(projectId)
+                for (entity in list) projectDatabase.materialHandoverDao().upsert(entity)
+            }
+        }
+    }
+
+    private suspend fun shouldUseLegacyBridge(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ): Boolean {
+        if (!isCutoverComplete(project, projectDatabase)) {
+            return true
+        }
+        return false
+    }
+
+    private suspend fun isCutoverComplete(
+        project: ProjectEntity,
+        projectDatabase: MapSupervisionDatabase
+    ): Boolean {
+        if (projectDatabase.projectDao().get(project.id) == null) {
+            return false
+        }
+        val sharedCounts = countRows(sharedDatabase, project.id, CUTOVER_TABLES)
+        val scopedCounts = countRows(projectDatabase, project.id, CUTOVER_TABLES)
+        return CUTOVER_TABLES.all { table -> sharedCounts[table] == scopedCounts[table] }
+    }
+
+    private fun countRows(
+        database: MapSupervisionDatabase,
+        projectId: String,
+        tables: List<String>
+    ): Map<String, Int> {
+        return tables.associateWith { table ->
+            val sql = if (table == "projects") {
+                "SELECT COUNT(*) FROM `$table` WHERE `id` = ?"
+            } else {
+                "SELECT COUNT(*) FROM `$table` WHERE `projectId` = ?"
+            }
+            database.openHelper.readableDatabase.query(SimpleSQLiteQuery(sql, arrayOf(projectId))).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
         }
     }
 
@@ -286,22 +457,57 @@ class ProjectScopedDatabaseProvider @Inject constructor(
 
     internal suspend fun runIdleCleanupForTest(nowEpochMs: Long): Boolean = closeIdleDatabases(nowEpochMs)
 
+    internal suspend fun isCutoverCompleteForTest(projectId: String): Boolean {
+        val project = sharedDatabase.projectDao().get(projectId) ?: return false
+        val database = databaseFor(projectId) ?: return false
+        return isCutoverComplete(project, database)
+    }
+
     private class DatabaseHolder(
         val database: MapSupervisionDatabase,
         var lastAccessEpochMs: Long = System.currentTimeMillis()
     )
 
-    private data class LegacyProjectPayload(
+    private data class CoreProjectPayload(
         val importedFiles: List<ImportedFileEntity>,
         val nodes: List<GisNodeEntity>,
         val routes: List<GisRouteEntity>,
         val nodeProgress: List<NodeProgressEntity>,
-        val materialProgress: List<MaterialProgressEntity>,
+        val workVolumeProgress: List<MaterialProgressEntity>,
         val dailyLogs: List<DailyLogEntity>,
+        val workCategories: List<WorkCategoryEntity>,
+        val workPlans: List<WorkPlanEntity>
+    )
+
+    private data class AuxProjectPayload(
         val notes: List<NoteEntity>,
         val tasks: List<TaskEntity>,
         val sitePhotos: List<SitePhotoEntity>,
-        val workCategories: List<WorkCategoryEntity>,
-        val reportDrafts: List<ReportDraftEntity>
+        val reportDrafts: List<ReportDraftEntity>,
+        val materialHandovers: List<MaterialHandoverEntity>,
+        val materialDeclarations: List<MaterialDeclarationEntity>
     )
 }
+
+private val CORE_TABLES = listOf(
+    "imported_files",
+    "gis_node",
+    "gis_route",
+    "node_progress",
+    "work_volume_progress",
+    "daily_log",
+    "work_categories",
+    "work_plan"
+)
+
+private val AUX_TABLES = listOf(
+    "note",
+    "task",
+    "site_photos",
+    "report_draft",
+    "material_declaration",
+    "material_handover"
+)
+
+private val CUTOVER_TABLES = listOf("projects") + CORE_TABLES + AUX_TABLES
+

@@ -9,6 +9,7 @@ data class LocalLlmRequest(
     val prompt: String,
     val contextSummary: String = "",
     val normalizationContext: String = "",
+    val retrievedContext: String = "",
     val currentTab: String = "ai",
     val selectedNodeCode: String? = null,
     val selectedRouteCode: String? = null,

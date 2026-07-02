@@ -7,9 +7,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.mapsupervision.domain.model.resolveEpochDay
+
+enum class ProgressHubSubTab {
+    PROGRESS,
+    PLAN,
+    DIARY
+}
 
 data class ProgressHubScreenUiState(
-    val isProgressSubTab: Boolean = true,
+    val subTab: ProgressHubSubTab = ProgressHubSubTab.PROGRESS,
     val groupMode: String = "Nhà thầu",
     val filterMode: String = "All",
     val selectedNodeCodeForProgress: String? = null,
@@ -40,7 +47,24 @@ data class ProgressHubScreenUiState(
     val progressSheetActualInput: String = "",
     val progressSheetValidationError: String = "",
     val progressSheetNote: String = "",
-    val editingDailyLogId: String? = null
+    val editingDailyLogId: String? = null,
+    val isCalendarSyncEnabled: Boolean = false,
+    val systemEvents: List<com.mapsupervision.app.sync.SystemEvent> = emptyList(),
+
+    // Plan form state properties
+    val selectedPlanWorkName: String = "",
+    val planUnitInput: String = "",
+    val planQuantityInput: String = "",
+    val planNoteInput: String = "",
+    val selectedPlanNodeCodes: List<String> = emptyList(),
+    val selectedPlanRouteCodes: List<String> = emptyList(),
+    val planNodeDropdownExpanded: Boolean = false,
+    val planRouteDropdownExpanded: Boolean = false,
+    val planWorkDropdownExpanded: Boolean = false,
+    val showAddPlanWorkDialog: Boolean = false,
+    val newPlanWorkName: String = "",
+    val newPlanWorkUnit: String = "",
+    val planFormError: String = ""
 )
 
 @HiltViewModel
@@ -63,8 +87,8 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
     )
     val uiState: StateFlow<ProgressHubScreenUiState> = _uiState.asStateFlow()
 
-    fun setProgressTab(isProgressSubTab: Boolean) = updateState {
-        it.copy(isProgressSubTab = isProgressSubTab)
+    fun setSubTab(subTab: ProgressHubSubTab) = updateState {
+        it.copy(subTab = subTab)
     }
 
     fun updateGroupMode(groupMode: String) = updateState {
@@ -216,15 +240,113 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         it.copy(progressSheetNote = note)
     }
 
-    fun startEditingDailyLog(log: com.mapsupervision.domain.model.DailyLog) {
+    // Plan form states & actions
+    fun updateSelectedPlanWorkName(name: String) = updateState {
+        it.copy(selectedPlanWorkName = name, planFormError = "")
+    }
+
+    fun updatePlanUnitInput(unit: String) = updateState {
+        it.copy(planUnitInput = unit)
+    }
+
+    fun updatePlanQuantityInput(qty: String) = updateState {
+        it.copy(planQuantityInput = qty)
+    }
+
+    fun updatePlanNoteInput(note: String) = updateState {
+        it.copy(planNoteInput = note)
+    }
+
+    fun addSelectedPlanNodeCode(code: String) = updateState {
+        if (it.selectedPlanNodeCodes.contains(code)) it else it.copy(selectedPlanNodeCodes = it.selectedPlanNodeCodes + code)
+    }
+
+    fun removeSelectedPlanNodeCode(code: String) = updateState {
+        it.copy(selectedPlanNodeCodes = it.selectedPlanNodeCodes - code)
+    }
+
+    fun addSelectedPlanRouteCode(code: String) = updateState {
+        if (it.selectedPlanRouteCodes.contains(code)) it else it.copy(selectedPlanRouteCodes = it.selectedPlanRouteCodes + code)
+    }
+
+    fun removeSelectedPlanRouteCode(code: String) = updateState {
+        it.copy(selectedPlanRouteCodes = it.selectedPlanRouteCodes - code)
+    }
+
+    fun setPlanNodeDropdownExpanded(expanded: Boolean) = updateState {
+        it.copy(planNodeDropdownExpanded = expanded)
+    }
+
+    fun setPlanRouteDropdownExpanded(expanded: Boolean) = updateState {
+        it.copy(planRouteDropdownExpanded = expanded)
+    }
+
+    fun setPlanWorkDropdownExpanded(expanded: Boolean) = updateState {
+        it.copy(planWorkDropdownExpanded = expanded)
+    }
+
+    fun setShowAddPlanWorkDialog(show: Boolean) = updateState {
+        it.copy(showAddPlanWorkDialog = show)
+    }
+
+    fun updateNewPlanWorkName(name: String) = updateState {
+        it.copy(newPlanWorkName = name)
+    }
+
+    fun updateNewPlanWorkUnit(unit: String) = updateState {
+        it.copy(newPlanWorkUnit = unit)
+    }
+
+    fun updatePlanFormError(error: String) = updateState {
+        it.copy(planFormError = error)
+    }
+
+    fun selectPlanWorkTemplate(name: String, unit: String) = updateState {
+        it.copy(
+            selectedPlanWorkName = name,
+            planUnitInput = unit,
+            planWorkDropdownExpanded = false,
+            planFormError = ""
+        )
+    }
+
+    fun resetPlanForm() = updateState {
+        it.copy(
+            selectedPlanWorkName = "",
+            planUnitInput = "",
+            planQuantityInput = "",
+            planNoteInput = "",
+            selectedPlanNodeCodes = emptyList(),
+            selectedPlanRouteCodes = emptyList(),
+            planNodeDropdownExpanded = false,
+            planRouteDropdownExpanded = false,
+            planWorkDropdownExpanded = false,
+            planFormError = ""
+        )
+    }
+
+    fun startEditingDailyLog(log: com.mapsupervision.domain.model.DailyLog, initialActualProgress: String = "") {
         val selectedWeather = when (log.weather) {
             "Nắng", "Mưa", "Nhiều mây", "Giông bão" -> log.weather
             else -> "Nắng"
         }
+        val epochDay = log.resolveEpochDay()
+        val localDate = java.time.LocalDate.ofEpochDay(epochDay)
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.YEAR, localDate.year)
+            set(java.util.Calendar.MONTH, localDate.monthValue - 1)
+            set(java.util.Calendar.DAY_OF_MONTH, localDate.dayOfMonth)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val localMidnight = cal.timeInMillis
         updateState {
             it.copy(
                 editingDailyLogId = log.id,
-                selectedDateMillis = log.dateEpochDay * 24L * 60L * 60L * 1000L,
+                subTab = ProgressHubSubTab.DIARY,
+                selectedDateMillis = localMidnight,
                 selectedNodeCodeForLog = log.nodeCode,
                 selectedRouteCodeForLog = log.routeCode,
                 weatherSelected = selectedWeather,
@@ -236,6 +358,7 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
                 volumeInput = if (log.volume > 0.0) log.volume.toString() else "",
                 unitInput = log.unit,
                 selectedCategoryName = log.categoryName,
+                actualProgressInput = initialActualProgress,
                 logFormError = "",
                 routeDropdownExpanded = false,
                 nodeDropdownExpanded = false,
@@ -263,6 +386,14 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
                 logFormError = ""
             )
         }
+    }
+
+    fun setCalendarSyncEnabled(enabled: Boolean) = updateState {
+        it.copy(isCalendarSyncEnabled = enabled)
+    }
+
+    fun updateSystemEvents(events: List<com.mapsupervision.app.sync.SystemEvent>) = updateState {
+        it.copy(systemEvents = events)
     }
 
     private fun updateState(transform: (ProgressHubScreenUiState) -> ProgressHubScreenUiState) {

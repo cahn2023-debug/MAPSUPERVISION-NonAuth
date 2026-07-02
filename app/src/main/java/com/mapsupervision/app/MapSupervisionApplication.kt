@@ -49,6 +49,9 @@ class MapSupervisionApplication : Application(), ImageLoaderFactory, Configurati
             .bitmapConfig(if (isLowRam) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888)
             .allowHardware(true)
             .crossfade(true)
+            .components {
+                add(coil.decode.VideoFrameDecoder.Factory())
+            }
             .build()
     }
 

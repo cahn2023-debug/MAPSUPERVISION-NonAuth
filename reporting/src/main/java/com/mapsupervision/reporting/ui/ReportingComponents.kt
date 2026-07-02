@@ -6,8 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -20,6 +23,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -56,15 +61,19 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import coil.compose.rememberAsyncImagePainter
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.ai.core.ReportDraftResult
 import com.mapsupervision.domain.model.SitePhoto
+import com.mapsupervision.domain.util.PhotoMatchEvaluation
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun PhotoGrid(photos: List<SitePhoto>) {
+fun PhotoGrid(
+    photos: List<SitePhoto>,
+    evaluationFor: (SitePhoto) -> PhotoMatchEvaluation
+) {
     var fullscreenPhoto by remember { mutableStateOf<SitePhoto?>(null) }
 
     // 3-column grid, fixed height per row
@@ -78,6 +87,7 @@ fun PhotoGrid(photos: List<SitePhoto>) {
                 rowPhotos.forEach { photo ->
                     PhotoThumb(
                         photo = photo,
+                        evaluation = evaluationFor(photo),
                         modifier = Modifier.weight(1f),
                         onClick = { fullscreenPhoto = photo }
                     )
@@ -96,7 +106,12 @@ fun PhotoGrid(photos: List<SitePhoto>) {
 }
 
 @Composable
-fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun PhotoThumb(
+    photo: SitePhoto,
+    evaluation: PhotoMatchEvaluation,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     val thumbFile = remember(photo) { File(photo.thumbnailPath.ifBlank { photo.filePath }) }
     Box(
         modifier = modifier
@@ -128,7 +143,7 @@ fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> U
             )
         }
         MatchStatusBadge(
-            photo = photo,
+            evaluation = evaluation,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(4.dp)
@@ -147,8 +162,8 @@ fun PhotoThumb(photo: SitePhoto, modifier: Modifier = Modifier, onClick: () -> U
 }
 
 @Composable
-private fun MatchStatusBadge(photo: SitePhoto, modifier: Modifier = Modifier) {
-    val isMatched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+private fun MatchStatusBadge(evaluation: PhotoMatchEvaluation, modifier: Modifier = Modifier) {
+    val isMatched = evaluation.isMatched
     val text = if (isMatched) "Khớp" else "Lệch"
     val background = if (isMatched) Color(0xCC16A34A) else Color(0xCCDC2626)
     Box(
@@ -168,7 +183,10 @@ fun PhotoFullscreenDialog(photo: SitePhoto, onDismiss: () -> Unit) {
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Box(
             modifier = Modifier
@@ -180,68 +198,89 @@ fun PhotoFullscreenDialog(photo: SitePhoto, onDismiss: () -> Unit) {
                     onClick = onDismiss
                 )
         ) {
-            val painter = rememberAsyncImagePainter(imageFile)
-            Image(
-                painter = painter,
-                contentDescription = photo.objectCode,
-                contentScale = ContentScale.Fit,
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxSize()
-            )
-
-            val painterState = painter.state
-            if (painterState is coil.compose.AsyncImagePainter.State.Error ||
-                painterState is coil.compose.AsyncImagePainter.State.Empty) {
-                Icon(
-                    Icons.Outlined.Image,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.align(Alignment.Center).size(36.dp)
-                )
-            }
-
-            // Info overlay at bottom
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .background(Color(0xCC000000))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text("Đối tượng: ${photo.objectCode}", color = Color.White, fontWeight = FontWeight.Bold)
-                val ts = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(photo.capturedAtEpochMs))
-                Text("Thời gian: $ts", color = Color.White, fontSize = 12.sp)
-                if (photo.latitude != null && photo.longitude != null) {
-                    Text("Tọa độ: ${"%.6f".format(photo.latitude)}, ${"%.6f".format(photo.longitude)}", color = Color.White, fontSize = 12.sp)
-                }
-                // Share button
-                Button(
-                    onClick = {
-                        if (imageFile.exists()) {
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                imageFile
-                            )
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/jpeg"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Chia sẻ ảnh"))
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                val imageMaxHeight = this@BoxWithConstraints.maxHeight * 0.72f
+                val contentScroll = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 8.dp)
+                        .verticalScroll(contentScroll)
                 ) {
-                    Text("Chia sẻ ảnh")
+                    val painter = rememberAsyncImagePainter(imageFile)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = imageMaxHeight)
+                    ) {
+                        Image(
+                            painter = painter,
+                            contentDescription = photo.objectCode,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        val painterState = painter.state
+                        if (painterState is coil.compose.AsyncImagePainter.State.Error ||
+                            painterState is coil.compose.AsyncImagePainter.State.Empty) {
+                            Icon(
+                                Icons.Outlined.Image,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.align(Alignment.Center).size(36.dp)
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xCC000000))
+                            .navigationBarsPadding()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text("Đối tượng: ${photo.objectCode}", color = Color.White, fontWeight = FontWeight.Bold)
+                        val ts = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.US).format(Date(photo.capturedAtEpochMs))
+                        Text("Thời gian: $ts", color = Color.White, fontSize = 12.sp)
+                        if (photo.latitude != null && photo.longitude != null) {
+                            Text("Tọa độ: ${"%.6f".format(photo.latitude)}, ${"%.6f".format(photo.longitude)}", color = Color.White, fontSize = 12.sp)
+                        }
+                        // Share button
+                        Button(
+                            onClick = {
+                                if (imageFile.exists()) {
+                                    val uri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        imageFile
+                                    )
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "image/jpeg"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Chia sẻ ảnh"))
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Chia sẻ ảnh")
+                        }
+                    }
                 }
             }
 
             // Close button
             IconButton(
                 onClick = onDismiss,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
             ) {
                 Icon(Icons.Outlined.Close, contentDescription = "Đóng", tint = Color.White)
             }
@@ -367,7 +406,7 @@ fun MaterialReportTable(
         ) {
             itemsIndexed(
                 items = rows,
-                key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+                key = { index, row -> "${row.workName}_${index}_${row.isTotal}" }
             ) { index, row ->
                 val isLast = index == rows.lastIndex
                 Row(
@@ -379,7 +418,7 @@ fun MaterialReportTable(
                     val sttText = if (row.isTotal) "" else (index + 1).toString()
                     GridCell(sttText, 0.09f, isTotal = row.isTotal, alignment = Alignment.Center)
                     Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
-                    GridCell(row.materialName, 0.44f, isTotal = row.isTotal)
+                    GridCell(row.workName, 0.44f, isTotal = row.isTotal)
                     Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
                     GridCell(row.totalPlannedQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
                     Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
@@ -428,7 +467,7 @@ fun AiSummaryDetailTable(
         ) {
             itemsIndexed(
                 items = rows,
-                key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+                key = { index, row -> "${row.workName}_${index}_${row.isTotal}" }
             ) { index, row ->
                 Row(
                     modifier = Modifier
@@ -436,7 +475,7 @@ fun AiSummaryDetailTable(
                         .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AiSummaryDetailCell(row.materialName, 0.38f, isTotal = row.isTotal)
+                    AiSummaryDetailCell(row.workName, 0.38f, isTotal = row.isTotal)
                     AiSummaryDetailCell(row.nodeCount.toString(), 0.12f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
                     AiSummaryDetailCell(row.routeCount.toString(), 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
                     AiSummaryDetailCell(
@@ -586,15 +625,14 @@ private fun ProjectSituationCard(
     draft: ReportDraftResult?
 ) {
     val contractorEvaluation = draft?.executiveSummary?.ifBlank { null }
-        ?: "Ch?a c? d? li?u ?? ??nh gi? ti?n ?? nh? th?u."
+        ?: "Chưa có dữ liệu để đánh giá tiến độ nhà thầu."
     val blockers = draft?.riskSection?.ifBlank { null }
-        ?: "Ch?a ghi nh?n kh? kh?n, v??ng m?c n?i b?t."
+        ?: "Chưa ghi nhận khó khăn, vướng mắc nổi bật."
     val recommendations = draft?.recommendedActions
         ?.filter { it.isNotBlank() }
-        ?.joinToString("
-")
+        ?.joinToString("\n")
         ?.ifBlank { null }
-        ?: "Ch?a c? khuy?n ngh? c? th?."
+        ?: "Chưa có khuyến nghị cụ thể."
 
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0F172A)),
@@ -688,3 +726,4 @@ fun SummaryTextBlock(title: String, content: String) {
         }
     }
 }
+

@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -8,14 +10,18 @@ plugins {
 
 android {
     namespace = "com.mapsupervision.photo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig { minSdk = 24 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures { compose = true }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -25,7 +31,7 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
-    implementation(project(":data"))
+    implementation(project(":ai-core"))
     implementation(project(":storage-core"))
 
     implementation("androidx.core:core-ktx:1.13.1")
@@ -38,12 +44,12 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    implementation("androidx.camera:camera-core:1.4.0")
-    implementation("androidx.camera:camera-camera2:1.4.0")
-    implementation("androidx.camera:camera-lifecycle:1.4.0")
-    implementation("androidx.camera:camera-view:1.4.0")
-    implementation("androidx.camera:camera-video:1.4.0")
-    implementation("androidx.camera:camera-extensions:1.4.0")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.video)
+    implementation(libs.androidx.camera.extensions)
     implementation("androidx.media3:media3-common:1.7.1")
     implementation("androidx.media3:media3-effect:1.7.1")
     implementation("androidx.media3:media3-transformer:1.7.1")
@@ -55,4 +61,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -27,7 +27,7 @@ class DocxReportGenerator @Inject constructor() {
         context: Context,
         projectId: String,
         summaryLines: List<String>,
-        materialRows: List<MaterialReportRow>,
+        workVolumeRows: List<MaterialReportRow>,
         photos: List<SitePhoto>,
         dailyLogs: List<DailyLog>
     ): File {
@@ -68,7 +68,7 @@ class DocxReportGenerator @Inject constructor() {
 
             // 5. Write word/document.xml
             zos.putNextEntry(ZipEntry("word/document.xml"))
-            zos.write(buildDocumentXml(projectId, summaryLines, materialRows, photos, dailyLogs).toByteArray(Charsets.UTF_8))
+            zos.write(buildDocumentXml(projectId, summaryLines, workVolumeRows, photos, dailyLogs).toByteArray(Charsets.UTF_8))
             zos.closeEntry()
         }
 
@@ -148,7 +148,7 @@ class DocxReportGenerator @Inject constructor() {
     private fun buildDocumentXml(
         projectId: String,
         summaryLines: List<String>,
-        materialRows: List<MaterialReportRow>,
+        workVolumeRows: List<MaterialReportRow>,
         photos: List<SitePhoto>,
         dailyLogs: List<DailyLog>
     ): String {
@@ -238,17 +238,17 @@ class DocxReportGenerator @Inject constructor() {
         <w:gridCol w:w="1000"/>
       </w:tblGrid>
       <w:tr>
-        <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Nội dung vật tư</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Nội dung công việc</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>KL Thiết kế</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>KL Thi công</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>%</w:t></w:r></w:p></w:tc>
       </w:tr>""")
 
         // Materials Table Rows
-        materialRows.forEach { row ->
+        workVolumeRows.forEach { row ->
             sb.append("""
       <w:tr>
-        <w:tc><w:p><w:r><w:rPr>${if (row.isTotal) "<w:b/>" else ""}</w:rPr><w:t>${escapeXml(row.materialName)}</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:rPr>${if (row.isTotal) "<w:b/>" else ""}</w:rPr><w:t>${escapeXml(row.workName)}</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr>${if (row.isTotal) "<w:b/>" else ""}</w:rPr><w:t>${row.totalPlannedQty.toInt()}</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr>${if (row.isTotal) "<w:b/>" else ""}</w:rPr><w:t>${row.totalActualQty.toInt()}</w:t></w:r></w:p></w:tc>
         <w:tc><w:p><w:r><w:rPr>${if (row.isTotal) "<w:b/>" else ""}</w:rPr><w:t>${row.completionPercent.toInt()}%</w:t></w:r></w:p></w:tc>
@@ -410,3 +410,4 @@ class DocxReportGenerator @Inject constructor() {
             .replace("'", "&apos;")
     }
 }
+

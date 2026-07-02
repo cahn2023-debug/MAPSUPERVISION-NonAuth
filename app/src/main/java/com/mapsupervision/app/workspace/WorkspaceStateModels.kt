@@ -5,21 +5,25 @@ import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.WorkCategory
+import com.mapsupervision.domain.model.MaterialHandover
+import com.mapsupervision.domain.model.MaterialDeclaration
+import com.mapsupervision.domain.model.WorkPlan
 import com.mapsupervision.gis.ui.GisLabelField
-import com.mapsupervision.storage.importer.ExcelClassificationMode
-import com.mapsupervision.storage.importer.NonExcelFieldCandidateSet
+import com.mapsupervision.domain.model.ExcelClassificationMode
+import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
 
 enum class WorkspaceTab {
     MAP,
     PROGRESS,
     DATA,
-    REPORTS
+    REPORTS,
+    MATERIALS
 }
 
 enum class WorkspaceLayoutMode {
@@ -39,17 +43,45 @@ data class WorkspaceDataState(
     val projectPhotos: List<SitePhoto> = emptyList(),
     val pendingCaptureNodeCode: String? = null,
     val photoSaveCount: Int = 0,
-    val materialRows: List<MaterialProgress> = emptyList(),
-    val materialProgress: Map<String, String> = emptyMap(),
+    val workVolumeRows: List<WorkVolumeProgress> = emptyList(),
+    val workVolumeProgress: Map<String, String> = emptyMap(),
     val dailyLogs: List<DailyLog> = emptyList(),
     val workCategories: List<WorkCategory> = emptyList(),
     val selectedObjectNotes: List<Note> = emptyList(),
     val selectedObjectTasks: List<Task> = emptyList(),
+    val materialHandovers: List<MaterialHandover> = emptyList(),
+    val materialDeclarations: List<MaterialDeclaration> = emptyList(),
+    val workPlans: List<WorkPlan> = emptyList(),
     val aiNoteSummary: String = "",
     val aiTaskSuggestions: List<String> = emptyList(),
     val isAiLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val lastRefreshedAtEpochMs: Long = 0L
+)
+
+enum class SharedMediaTargetKind {
+    NODE,
+    ROUTE
+}
+
+data class IncomingSharePayload(
+    val id: String,
+    val uris: List<Uri>,
+    val mimeType: String? = null,
+    val receivedAtEpochMs: Long = System.currentTimeMillis()
+)
+
+data class SharedMediaDraft(
+    val selectedProjectId: String? = null,
+    val targetKind: SharedMediaTargetKind = SharedMediaTargetKind.NODE,
+    val targetCode: String = "",
+    val searchQuery: String = "",
+    val removedUriStrings: Set<String> = emptySet()
+)
+
+data class PendingSharedImport(
+    val payload: IncomingSharePayload,
+    val draft: SharedMediaDraft = SharedMediaDraft()
 )
 
 data class WorkspaceUiState(
@@ -68,7 +100,10 @@ sealed interface WorkspaceAction {
     data class SelectTab(val tab: WorkspaceTab) : WorkspaceAction
     data class UpdateLayoutMode(val mode: WorkspaceLayoutMode) : WorkspaceAction
     data class ShowReportPreview(val nodeCode: String?) : WorkspaceAction
+    data class SetPendingSharedImport(val pendingSharedImport: PendingSharedImport?) : WorkspaceAction
+    data class UpdatePendingSharedImport(val pendingSharedImport: PendingSharedImport) : WorkspaceAction
     data object DismissReportPreview : WorkspaceAction
+    data object ClearPendingSharedImport : WorkspaceAction
 }
 
 internal data class Quadruple<A, B, C, D>(
@@ -83,9 +118,11 @@ internal data class WorkspaceRefreshSnapshot(
     val nodes: List<GisNode>,
     val routes: List<GisRoute>,
     val progress: List<NodeProgress>,
-    val materialRows: List<MaterialProgress>,
+    val workVolumeRows: List<WorkVolumeProgress>,
     val dailyLogs: List<DailyLog>,
-    val workCategories: List<WorkCategory>
+    val workCategories: List<WorkCategory>,
+    val materialHandovers: List<MaterialHandover>,
+    val materialDeclarations: List<MaterialDeclaration>
 )
 
 private val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")
@@ -569,6 +606,7 @@ data class WorkspaceState(
     val constructionProgress: List<NodeProgress> = emptyList(),
     val dashboard: DashboardState = DashboardState(),
     val mapUi: MapUiState = MapUiState(),
+    val pendingSharedImport: PendingSharedImport? = null,
     val photoFilterNodeCode: String? = null,
     val selectedNodePhotos: List<SitePhoto> = emptyList(),
     val projectPhotos: List<SitePhoto> = emptyList(),
@@ -579,12 +617,15 @@ data class WorkspaceState(
     val importMappingUi: ImportMappingUiState = ImportMappingUiState(),
     val aiOpsActions: List<String> = emptyList(),
     val aiOpsPriority: Int = 0,
-    val materialRows: List<MaterialProgress> = emptyList(),
-    val materialProgress: Map<String, String> = emptyMap(),
+    val workVolumeRows: List<WorkVolumeProgress> = emptyList(),
+    val workVolumeProgress: Map<String, String> = emptyMap(),
     val dailyLogs: List<DailyLog> = emptyList(),
     val workCategories: List<WorkCategory> = emptyList(),
     val selectedObjectNotes: List<Note> = emptyList(),
     val selectedObjectTasks: List<Task> = emptyList(),
+    val materialHandovers: List<MaterialHandover> = emptyList(),
+    val materialDeclarations: List<MaterialDeclaration> = emptyList(),
+    val workPlans: List<WorkPlan> = emptyList(),
     val aiNoteSummary: String = "",
     val aiTaskSuggestions: List<String> = emptyList(),
     val isAiLoading: Boolean = false,
@@ -603,12 +644,15 @@ data class WorkspaceState(
         projectPhotos = projectPhotos,
         pendingCaptureNodeCode = pendingCaptureNodeCode,
         photoSaveCount = photoSaveCount,
-        materialRows = materialRows,
-        materialProgress = materialProgress,
+        workVolumeRows = workVolumeRows,
+        workVolumeProgress = workVolumeProgress,
         dailyLogs = dailyLogs,
         workCategories = workCategories,
         selectedObjectNotes = selectedObjectNotes,
         selectedObjectTasks = selectedObjectTasks,
+        materialHandovers = materialHandovers,
+        materialDeclarations = materialDeclarations,
+        workPlans = workPlans,
         aiNoteSummary = aiNoteSummary,
         aiTaskSuggestions = aiTaskSuggestions,
         isAiLoading = isAiLoading,
@@ -669,7 +713,7 @@ data class ExcelParserUiState(
     val showNumberOnMap: Boolean = true,
     val colorByContractorOnMap: Boolean = true,
     val classificationMode: ExcelClassificationMode = ExcelClassificationMode.AUTO,
-    val itemColumnsCsv: String = "",
+    val workVolumeColumnsCsv: String = "",
     val suggestedItemColumns: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val message: String = "",
@@ -698,14 +742,14 @@ data class ImportMappingUiState(
     val contractorField: String = "",
     val mapNumberField: String = "",
     val objectTypeField: String = "",
-    val itemFieldsCsv: String = "",
+    val workVolumeFieldsCsv: String = "",
     val routeLengthField: String = "",
     val confirmedPositionField: Boolean = false,
     val confirmedCoordinateField: Boolean = false,
     val confirmedContractorField: Boolean = false,
     val confirmedMapNumberField: Boolean = false,
     val confirmedObjectTypeField: Boolean = false,
-    val confirmedItemFields: Boolean = false,
+    val confirmedWorkVolumeFields: Boolean = false,
     val confirmedRouteLengthField: Boolean = false,
     val showMappingDialog: Boolean = false,
     val isLoading: Boolean = false,
@@ -726,6 +770,7 @@ data class MapUiState(
     val filterContractor: String? = null,
     val filterMaterialType: String? = null,
     val contractorColors: Map<String, String> = emptyMap(), // contractor name -> hex color
+    val hiddenContractors: Set<String> = emptySet(),
     val searchQuery: String = "",
     val message: String = "",
     val routeNote: String = ""
@@ -743,3 +788,6 @@ fun dedupeImportedFilesById(files: List<ImportedFile>): List<ImportedFile> {
     return files.filter { seenIds.add(it.id) }
 }
 
+fun isContractorHidden(mapUi: MapUiState, contractor: String): Boolean {
+    return mapUi.hiddenContractors.contains(contractor)
+}

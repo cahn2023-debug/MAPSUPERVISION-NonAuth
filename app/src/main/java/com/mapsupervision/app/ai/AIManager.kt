@@ -33,7 +33,7 @@ class AIManager @Inject constructor(
      * Determines whether the command is simple enough to process instantly without loading LLM.
      */
     fun isSimpleCommand(prompt: String): Boolean {
-        val normalized = com.mapsupervision.domain.ai.ChatDictionaryResolver.normalize(prompt)
+        val normalized = com.mapsupervision.ai.prompt.ChatDictionaryResolver.normalize(prompt)
         val wordCount = normalized.split("\\s+".toRegex()).size
         if (wordCount <= 4) return true
 

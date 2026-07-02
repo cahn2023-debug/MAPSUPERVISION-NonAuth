@@ -1,5 +1,6 @@
 package com.mapsupervision.photo.ui
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.pm.PackageManager
 import android.view.OrientationEventListener
@@ -57,6 +58,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.mapsupervision.domain.model.joinCsvList
+import com.mapsupervision.domain.model.resolvedTagCodes
 import java.io.File
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -165,8 +168,8 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
             )
         }
 
-        val matchedPhotos = photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }
-        val unmatchedPhotos = photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }
+        val matchedPhotos = photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.resolvedTagCodes.isNotEmpty() }
+        val unmatchedPhotos = photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.resolvedTagCodes.isNotEmpty() }
         val visiblePhotos = when (statusFilter) {
             "MATCHED" -> matchedPhotos
             "UNMATCHED" -> unmatchedPhotos
@@ -182,7 +185,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                     matchedPhotos.take(10).forEach { photo ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             MatchBadge(photo = photo)
-                            Text("${photo.objectCode} | tag=${photo.tagCodesCsv.ifBlank { "-" }} | offset=${photo.matchingTimeOffsetMs / 60000}m", style = MaterialTheme.typography.bodySmall)
+                            Text("${photo.objectCode} | tag=${joinCsvList(photo.resolvedTagCodes).ifBlank { "-" }} | offset=${photo.matchingTimeOffsetMs / 60000}m", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -216,7 +219,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                             MatchBadge(photo = photo)
                             Text("${photo.objectCode} | ${photo.filePath}", style = MaterialTheme.typography.bodySmall)
                         }
-                        Text("tag=${photo.tagCodesCsv.ifBlank { "-" }} | offset=${photo.matchingTimeOffsetMs / 60000}m", style = MaterialTheme.typography.bodySmall)
+                        Text("tag=${joinCsvList(photo.resolvedTagCodes).ifBlank { "-" }} | offset=${photo.matchingTimeOffsetMs / 60000}m", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -235,7 +238,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                     Text("Chọn node/tuyến", style = MaterialTheme.typography.titleSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         availableTagOptions.forEach { tag ->
-                            val selected = selectedPhoto.tagCodesCsv.split(',').map { it.trim() }.any { it == tag }
+                            val selected = selectedPhoto.resolvedTagCodes.any { it == tag }
                             FilterChip(
                                 selected = selected,
                                 onClick = { viewModel.toggleSelectedPhotoTag(tag) },
@@ -248,7 +251,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                         }
                     }
                     Text(
-                        text = "Đã chọn: " + (selectedPhoto.tagCodesCsv.ifBlank { "Chưa chọn" }),
+                        text = "Đã chọn: " + (joinCsvList(selectedPhoto.resolvedTagCodes).ifBlank { "Chưa chọn" }),
                         style = MaterialTheme.typography.bodySmall
                     )
                     OutlinedTextField(
@@ -279,7 +282,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
 
 @Composable
 private fun MatchBadge(photo: com.mapsupervision.domain.model.SitePhoto) {
-    val isMatched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
+    val isMatched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.resolvedTagCodes.isNotEmpty()
     val text = if (isMatched) "Đã khớp" else "Chưa khớp"
     val bg = if (isMatched) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
     val fg = if (isMatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -294,6 +297,7 @@ private fun MatchBadge(photo: com.mapsupervision.domain.model.SitePhoto) {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
+@SuppressLint("MissingPermission")
 @Composable
 private fun CameraXCaptureView(
     createCaptureFile: () -> File?,

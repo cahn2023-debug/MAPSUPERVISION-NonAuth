@@ -17,11 +17,11 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.mapsupervision.app.MainActivity
-import com.mapsupervision.data.mediapipe.GemmaDownloadFailure
-import com.mapsupervision.data.mediapipe.GemmaDownloadState
-import com.mapsupervision.data.mediapipe.GemmaDownloadStateStore
-import com.mapsupervision.data.mediapipe.GemmaModelDownloader
-import com.mapsupervision.data.mediapipe.GemmaModelManager
+import com.mapsupervision.ai.model.mediapipe.GemmaDownloadFailure
+import com.mapsupervision.ai.model.mediapipe.GemmaDownloadState
+import com.mapsupervision.ai.model.mediapipe.GemmaDownloadStateStore
+import com.mapsupervision.ai.model.mediapipe.GemmaModelDownloader
+import com.mapsupervision.ai.model.mediapipe.GemmaModelManager
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException

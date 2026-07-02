@@ -1,10 +1,8 @@
 package com.mapsupervision.domain.service
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.net.Uri
 import com.mapsupervision.domain.model.CaptureStamp
 import com.mapsupervision.domain.model.CameraAspectRatio
+import com.mapsupervision.domain.model.ProjectStorageRef
 import java.io.File
 
 enum class CaptureFolderType {
@@ -14,37 +12,46 @@ enum class CaptureFolderType {
 
 interface IPhotoPipelineService {
     fun createCaptureOutputFile(
-        projectId: String,
-        objectCode: String,
-        folderType: CaptureFolderType = CaptureFolderType.NODE
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
+        objectCode: String
     ): File
 
     fun createCaptureVideoOutputFile(
-        projectId: String,
-        objectCode: String,
-        folderType: CaptureFolderType = CaptureFolderType.NODE
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
+        objectCode: String
     ): File
 
     fun importFromGallery(
-        context: Context,
-        projectId: String,
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
         objectCode: String,
-        engineer: String,
-        sourceUri: Uri,
-        folderType: CaptureFolderType = CaptureFolderType.NODE
+        sourceUri: String
     ): File
-    fun createThumbnail(projectId: String, sourceFile: File): File
+
+    fun createThumbnail(storageRef: ProjectStorageRef, sourceFile: File): File
 
     fun applyStamp(
         file: File,
         stamp: CaptureStamp,
         ratio: CameraAspectRatio,
-        tileBitmap: Bitmap? = null
+        tileBitmap: Any? = null // Platform specific Bitmap (e.g. android.graphics.Bitmap)
     )
 
     suspend fun exportVideoStamp(
         file: File,
         stamp: CaptureStamp,
-        tileBitmap: Bitmap? = null
+        tileBitmap: Any? = null // Platform specific Bitmap (e.g. android.graphics.Bitmap)
     )
 }
+

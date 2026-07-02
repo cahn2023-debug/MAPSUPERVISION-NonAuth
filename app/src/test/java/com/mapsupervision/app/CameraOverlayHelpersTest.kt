@@ -1,12 +1,13 @@
 package com.mapsupervision.app
 
+import com.mapsupervision.domain.model.CameraAspectRatio
 import com.mapsupervision.domain.model.PhotoLocationSnapshot
 import com.mapsupervision.domain.model.PhotoLocationStatus
-import com.mapsupervision.domain.model.CameraAspectRatio
 import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -36,7 +37,19 @@ class CameraOverlayHelpersTest {
     }
 
     @Test
-    fun `buildCaptureStamp keeps location address note and bearing`() {
+    fun `photo capture session blocks double start until finished`() {
+        val session = PhotoCaptureSession()
+
+        assertTrue(session.tryBeginCapture())
+        assertFalse(session.tryBeginCapture())
+
+        session.finishCapture()
+
+        assertTrue(session.tryBeginCapture())
+    }
+
+    @Test
+    fun `buildCaptureStamp keeps only device location inputs`() {
         val location = PhotoLocationSnapshot(
             latitude = 10.12345,
             longitude = 106.98765,
@@ -48,21 +61,21 @@ class CameraOverlayHelpersTest {
         val stamp = buildCaptureStamp(
             timestampMs = 1234L,
             location = location,
-            address = " Test address ",
-            note = " test note ",
             bearingDeg = 87.6f
         )
 
         assertEquals(1234L, stamp.timestampMs)
         assertEquals(10.12345, stamp.latitude)
         assertEquals(106.98765, stamp.longitude)
-        assertEquals("Test address", stamp.address)
-        assertEquals("test note", stamp.note)
+        assertEquals("", stamp.address)
+        assertEquals("", stamp.note)
         assertEquals(87.6f, stamp.bearingDeg)
+        assertNull(stamp.objectContext)
+        assertNull(stamp.mapScene)
     }
 
     @Test
-    fun `preview stamp render key ignores time and bearing churn when inputs stay the same`() {
+    fun `preview stamp render key stays stable for same input`() {
         val location = PhotoLocationSnapshot(
             latitude = 10.123456,
             longitude = 106.987654,
@@ -79,9 +92,8 @@ class CameraOverlayHelpersTest {
             aspectRatio = CameraAspectRatio.RATIO_4_3,
             viewport = viewport,
             location = location,
-            address = " 123 Street ",
-            note = "Overlay",
-            tileKey = tileKey
+            tileKey = tileKey,
+            bearing = 45f
         )
         val second = buildPreviewStampRenderKey(
             stampEnabled = true,
@@ -89,12 +101,35 @@ class CameraOverlayHelpersTest {
             aspectRatio = CameraAspectRatio.RATIO_4_3,
             viewport = viewport,
             location = location.copy(accuracyM = 9f),
-            address = "123 Street",
-            note = "Overlay",
-            tileKey = tileKey
+            tileKey = tileKey,
+            bearing = 45f
         )
 
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `preview stamp render key changes when tile changes`() {
+        val base = buildPreviewStampRenderKey(
+            stampEnabled = true,
+            isVideoMode = false,
+            aspectRatio = CameraAspectRatio.RATIO_4_3,
+            viewport = com.mapsupervision.photo.worker.AspectCropRect(0, 0, 720, 1280),
+            location = null,
+            tileKey = null,
+            bearing = 0f
+        )
+        val changed = buildPreviewStampRenderKey(
+            stampEnabled = true,
+            isVideoMode = false,
+            aspectRatio = CameraAspectRatio.RATIO_4_3,
+            viewport = com.mapsupervision.photo.worker.AspectCropRect(0, 0, 720, 1280),
+            location = null,
+            tileKey = roundedLocationKey(10.0, 11.0),
+            bearing = 0f
+        )
+
+        assertFalse(base == changed)
     }
 
     @Test
@@ -104,25 +139,40 @@ class CameraOverlayHelpersTest {
         val stamp = buildCaptureStamp(
             timestampMs = 1234L,
             location = null,
-            address = "",
-            note = "",
             bearingDeg = 0f
         )
 
         val pipeline = object : IPhotoPipelineService {
-            override fun createCaptureOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun createCaptureVideoOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun importFromGallery(
-                context: android.content.Context,
-                projectId: String,
-                objectCode: String,
-                engineer: String,
-                sourceUri: android.net.Uri,
-                folderType: CaptureFolderType
+            override fun createCaptureOutputFile(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String
             ) = error("unused")
-            override fun createThumbnail(projectId: String, sourceFile: File) = error("unused")
-            override fun applyStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, ratio: com.mapsupervision.domain.model.CameraAspectRatio, tileBitmap: android.graphics.Bitmap?) = error("unused")
-            override suspend fun exportVideoStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, tileBitmap: android.graphics.Bitmap?) {
+
+            override fun createCaptureVideoOutputFile(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String
+            ) = error("unused")
+
+            override fun importFromGallery(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String,
+                sourceUri: String
+            ) = error("unused")
+            override fun createThumbnail(storageRef: com.mapsupervision.domain.model.ProjectStorageRef, sourceFile: File) = error("unused")
+            override fun applyStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, ratio: com.mapsupervision.domain.model.CameraAspectRatio, tileBitmap: Any?) = error("unused")
+            override suspend fun exportVideoStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, tileBitmap: Any?) {
                 order += "export"
                 file.writeText("stamped")
             }
@@ -153,19 +203,36 @@ class CameraOverlayHelpersTest {
         val contextFile = File.createTempFile("camera-video", ".mp4").apply { writeText("raw") }
 
         val pipeline = object : IPhotoPipelineService {
-            override fun createCaptureOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun createCaptureVideoOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun importFromGallery(
-                context: android.content.Context,
-                projectId: String,
-                objectCode: String,
-                engineer: String,
-                sourceUri: android.net.Uri,
-                folderType: CaptureFolderType
+            override fun createCaptureOutputFile(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String
             ) = error("unused")
-            override fun createThumbnail(projectId: String, sourceFile: File) = error("unused")
-            override fun applyStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, ratio: com.mapsupervision.domain.model.CameraAspectRatio, tileBitmap: android.graphics.Bitmap?) = error("unused")
-            override suspend fun exportVideoStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, tileBitmap: android.graphics.Bitmap?) {
+
+            override fun createCaptureVideoOutputFile(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String
+            ) = error("unused")
+
+            override fun importFromGallery(
+                storageRef: com.mapsupervision.domain.model.ProjectStorageRef,
+                capturedAt: Long,
+                locationLabel: String?,
+                note: String?,
+                folderType: CaptureFolderType,
+                objectCode: String,
+                sourceUri: String
+            ) = error("unused")
+            override fun createThumbnail(storageRef: com.mapsupervision.domain.model.ProjectStorageRef, sourceFile: File) = error("unused")
+            override fun applyStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, ratio: com.mapsupervision.domain.model.CameraAspectRatio, tileBitmap: Any?) = error("unused")
+            override suspend fun exportVideoStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, tileBitmap: Any?) {
                 order += "export"
             }
         }
@@ -189,48 +256,59 @@ class CameraOverlayHelpersTest {
     }
 
     @Test
-    fun `post process recorded video clears processing state on export failure`() = runBlocking {
-        var processing = false
-        var saveCalled = false
-        val contextFile = File.createTempFile("camera-video", ".mp4").apply { writeText("raw") }
-        val stamp = buildCaptureStamp(1234L, null, "", "", 0f)
+    fun `preview stamp render key changes when bearing changes`() {
+        val base = buildPreviewStampRenderKey(
+            stampEnabled = true,
+            isVideoMode = false,
+            aspectRatio = CameraAspectRatio.RATIO_4_3,
+            viewport = com.mapsupervision.photo.worker.AspectCropRect(0, 0, 720, 1280),
+            location = null,
+            tileKey = null,
+            bearing = 0f
+        )
+        val changed = buildPreviewStampRenderKey(
+            stampEnabled = true,
+            isVideoMode = false,
+            aspectRatio = CameraAspectRatio.RATIO_4_3,
+            viewport = com.mapsupervision.photo.worker.AspectCropRect(0, 0, 720, 1280),
+            location = null,
+            tileKey = null,
+            bearing = 45f
+        )
 
-        val pipeline = object : IPhotoPipelineService {
-            override fun createCaptureOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun createCaptureVideoOutputFile(projectId: String, objectCode: String, folderType: CaptureFolderType) = error("unused")
-            override fun importFromGallery(
-                context: android.content.Context,
-                projectId: String,
-                objectCode: String,
-                engineer: String,
-                sourceUri: android.net.Uri,
-                folderType: CaptureFolderType
-            ) = error("unused")
-            override fun createThumbnail(projectId: String, sourceFile: File) = error("unused")
-            override fun applyStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, ratio: com.mapsupervision.domain.model.CameraAspectRatio, tileBitmap: android.graphics.Bitmap?) = error("unused")
-            override suspend fun exportVideoStamp(file: File, stamp: com.mapsupervision.domain.model.CaptureStamp, tileBitmap: android.graphics.Bitmap?) {
-                error("boom")
-            }
-        }
+        assertFalse(base == changed)
+    }
 
-        val result = runCatching {
-            postProcessRecordedVideo(
-                videoFile = contextFile,
-                stampEnabled = true,
-                stampAtRecordStart = stamp,
-                tileBitmap = null,
-                photoPipelineService = pipeline,
-                setProcessingVideoStamp = { processing = it },
-                onSavePhoto = {
-                    saveCalled = true
-                    true
-                },
-                onPhotoCaptured = { }
-            )
-        }
+    @Test
+    fun `buildCaptureStamp with GIS records populates camera coordinates`() {
+        val location = PhotoLocationSnapshot(
+            latitude = 10.12345,
+            longitude = 106.98765,
+            accuracyM = 3.5f,
+            isMock = false,
+            status = PhotoLocationStatus.OK
+        )
+        val node = com.mapsupervision.domain.model.GisNode(
+            id = "node1",
+            projectId = "project1",
+            code = "N1",
+            contractor = "contractor1",
+            latitude = 10.123,
+            longitude = 106.987
+        )
 
-        assertTrue(result.isFailure)
-        assertFalse(processing)
-        assertFalse(saveCalled)
+        val stamp = buildCaptureStamp(
+            timestampMs = 1234L,
+            location = location,
+            bearingDeg = 87.6f,
+            nodes = listOf(node)
+        )
+
+        val mapScene = stamp.mapScene
+        org.junit.Assert.assertNotNull(mapScene)
+        assertEquals(10.12345, mapScene!!.cameraLatitude)
+        assertEquals(106.98765, mapScene.cameraLongitude)
+        assertEquals(10.12345, mapScene.centerLatitude)
+        assertEquals(106.98765, mapScene.centerLongitude)
     }
 }

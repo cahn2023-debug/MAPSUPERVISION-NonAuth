@@ -15,14 +15,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 @Singleton
-class PhotoLocationProvider @Inject constructor(
+open class PhotoLocationProvider @Inject constructor(
     @ApplicationContext context: Context
 ) : IPhotoLocationProvider {
     private val fusedClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
     @SuppressLint("MissingPermission")
-    override suspend fun lastKnownLocation(): PhotoLocationSnapshot = suspendCancellableCoroutine { cont ->
+    open override suspend fun lastKnownLocation(): PhotoLocationSnapshot = suspendCancellableCoroutine { cont ->
         fusedClient.lastLocation
             .addOnSuccessListener { location ->
                 if (location == null) {

@@ -1,19 +1,19 @@
 package com.mapsupervision.app.workspace
 
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.WorkCategory
 import java.text.Normalizer
 
 internal fun resolveWorkTemplateUnit(
     name: String,
     workCategories: List<WorkCategory>,
-    materialRows: List<MaterialProgress>
+    workVolumeRows: List<WorkVolumeProgress>
 ): String {
     if (name.isBlank()) return ""
 
     val exactUnit = firstNonBlankUnit(
         name,
-        workCategories.map { it.name to it.unit } + materialRows.map { it.materialName to it.unit }
+        workCategories.map { it.name to it.unit } + workVolumeRows.map { it.workName to it.unit }
     )
     if (exactUnit.isNotBlank()) return exactUnit
 
@@ -21,14 +21,14 @@ internal fun resolveWorkTemplateUnit(
     for (alias in aliases) {
         val aliasUnit = firstNonBlankUnit(
             alias,
-            workCategories.map { it.name to it.unit } + materialRows.map { it.materialName to it.unit }
+            workCategories.map { it.name to it.unit } + workVolumeRows.map { it.workName to it.unit }
         )
         if (aliasUnit.isNotBlank()) return aliasUnit
     }
 
     val normalizedName = normalizeTemplateName(name)
     val fuzzyMatch = (workCategories.asSequence().map { it.name to it.unit } +
-        materialRows.asSequence().map { it.materialName to it.unit })
+        workVolumeRows.asSequence().map { it.workName to it.unit })
         .firstOrNull { (candidateName, candidateUnit) ->
             candidateUnit.isNotBlank() && normalizeTemplateName(candidateName).let { candidateNormalized ->
                 candidateNormalized == normalizedName ||
@@ -76,3 +76,4 @@ private fun normalizeTemplateName(value: String): String {
         .trim()
         .replace(Regex("\\s+"), " ")
 }
+

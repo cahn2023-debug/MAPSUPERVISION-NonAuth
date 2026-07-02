@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -17,7 +18,7 @@ val localProperties = Properties().apply {
 
 android {
     namespace = "com.mapsupervision.app"
-    compileSdk = 35
+    compileSdk = 36
 
 
 
@@ -65,14 +66,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = "17" }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures {
         compose = true
     }
 
     lint {
-        abortOnError = false
-        checkReleaseBuilds = false
+        abortOnError = true
+        checkReleaseBuilds = true
     }
 
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
@@ -88,6 +93,11 @@ dependencies {
     implementation(project(":timeline"))
     implementation(project(":reporting"))
     implementation(project(":storage-core"))
+    implementation(project(":ai-core"))
+    implementation(project(":ai-agent"))
+    implementation(project(":ai-model"))
+    implementation(project(":ai-rag"))
+    implementation(project(":ai-prompt"))
 
     implementation(project(":gis-maplibre"))
 
@@ -123,6 +133,7 @@ dependencies {
 
     // Coil for image loading
     implementation(libs.coil.compose)
+    implementation(libs.coil.video)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -130,6 +141,14 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.work.runtime.ktx)
 
+    // Glance Widgets
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+
     implementation(libs.timber)
     testImplementation(libs.junit)
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

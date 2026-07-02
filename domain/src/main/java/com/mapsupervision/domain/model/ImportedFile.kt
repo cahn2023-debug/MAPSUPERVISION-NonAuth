@@ -19,6 +19,8 @@ data class ImportedFile(
     val fileType: String,
     val storedPath: String,
     val summary: String,
-    val importedAtEpochMs: Long
+    val importedAtEpochMs: Long,
+    val updatedAtEpochMs: Long = importedAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
-

@@ -1,10 +1,10 @@
 package com.mapsupervision.reporting.ui
 
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.ai.core.ReportDraftResult
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
 import java.text.SimpleDateFormat
@@ -14,7 +14,7 @@ import java.util.Locale
 internal data class ReportExportContent(
     val targetId: String,
     val lines: List<String>,
-    val materialRows: List<MaterialReportRow>,
+    val workVolumeRows: List<MaterialReportRow>,
     val photos: List<SitePhoto>,
     val dailyLogLines: List<String>
 )
@@ -28,7 +28,7 @@ internal fun buildReportExportContent(
     filterContractor = filterContractor,
     photos = snapshot.photos,
     progress = snapshot.progress,
-    materialRowsRaw = snapshot.materialRowsRaw,
+    workVolumeRowsRaw = snapshot.workVolumeRowsRaw,
     nodes = snapshot.nodes,
     routes = snapshot.routes,
     dailyLogs = snapshot.dailyLogs,
@@ -40,13 +40,13 @@ internal fun buildReportExportContent(
     filterContractor: String? = null,
     photos: List<SitePhoto>,
     progress: List<NodeProgress>,
-    materialRowsRaw: List<MaterialProgress>,
+    workVolumeRowsRaw: List<WorkVolumeProgress>,
     nodes: List<GisNode>,
     routes: List<GisRoute>,
     dailyLogs: List<DailyLog>,
     activeDraft: ReportDraftResult
 ): ReportExportContent {
-    val materialRows = buildMaterialReportRows(nodes, routes, materialRowsRaw, filterContractor)
+    val workVolumeRows = buildMaterialReportRows(nodes, routes, workVolumeRowsRaw, filterContractor)
     val dailyLogLines = buildDailyLogSummary(dailyLogs)
     val delayed = progress.count { it.delayed }
     val avg = if (progress.isEmpty()) 0f else progress.map { it.actual }.average().toFloat()
@@ -66,7 +66,7 @@ internal fun buildReportExportContent(
     return ReportExportContent(
         targetId = targetId,
         lines = lines,
-        materialRows = materialRows,
+        workVolumeRows = workVolumeRows,
         photos = photos,
         dailyLogLines = dailyLogLines
     )
@@ -75,7 +75,7 @@ internal fun buildReportExportContent(
 internal fun buildMaterialReportRows(
     nodes: List<GisNode>,
     routes: List<GisRoute>,
-    rows: List<MaterialProgress>,
+    rows: List<WorkVolumeProgress>,
     filterContractor: String? = null
 ): List<MaterialReportRow> {
     val normalizedContractor = filterContractor?.trim()?.takeIf { it.isNotBlank() }
@@ -104,13 +104,13 @@ internal fun buildMaterialReportRows(
         val nodeCode = node.code.ifBlank { node.id }.trim()
         if (nodeCode.isBlank()) return@forEach
 
-        val parsedSummary = parseMaterialSummary(node.materialSummary)
+        val parsedSummary = parseworkVolumeSummary(node.workVolumeSummary)
         val summaryTotals = parsedSummary.groupingBy { it.first.trim() }.fold(0f) { acc, value -> acc + value.second }
-        val summaryMaterialNames = summaryTotals.keys
+        val summaryworkNames = summaryTotals.keys
 
         val nodeRows = rows.filter { row ->
-            val rowMaterialName = row.materialName.trim()
-            if (rowMaterialName.isBlank() || rowMaterialName.equals("routeLength", ignoreCase = true)) {
+            val rowworkName = row.workName.trim()
+            if (rowworkName.isBlank() || rowworkName.equals("routeLength", ignoreCase = true)) {
                 return@filter false
             }
             val rowNodeCode = nodesById[row.nodeCode]?.code
@@ -119,29 +119,29 @@ internal fun buildMaterialReportRows(
             rowNodeCode.isNotBlank() && rowNodeCode.equals(nodeCode, ignoreCase = true)
         }
 
-        val rowTotalsByMaterial = nodeRows.groupBy { it.materialName.trim() }
-        val materialNames = (summaryMaterialNames + rowTotalsByMaterial.keys)
+        val rowTotalsByMaterial = nodeRows.groupBy { it.workName.trim() }
+        val workNames = (summaryworkNames + rowTotalsByMaterial.keys)
             .filter { it.isNotBlank() && !it.equals("routeLength", ignoreCase = true) }
             .distinct()
 
-        materialNames.forEach { materialName ->
-            val accumulator = totalsByMaterial.getOrPut(materialName) { MaterialAccumulator() }
-            val plannedQty = summaryTotals[materialName]
-                ?: rowTotalsByMaterial[materialName].orEmpty().sumOf { it.plannedQty.toDouble() }.toFloat()
-            val actualQty = rowTotalsByMaterial[materialName].orEmpty().sumOf { it.actualQty.toDouble() }.toFloat()
+        workNames.forEach { workName ->
+            val accumulator = totalsByMaterial.getOrPut(workName) { MaterialAccumulator() }
+            val plannedQty = summaryTotals[workName]
+                ?: rowTotalsByMaterial[workName].orEmpty().sumOf { it.plannedQty.toDouble() }.toFloat()
+            val actualQty = rowTotalsByMaterial[workName].orEmpty().sumOf { it.actualQty.toDouble() }.toFloat()
             accumulator.plannedQty += plannedQty
             accumulator.actualQty += actualQty
             accumulator.nodeCodes.add(nodeCode)
         }
     }
 
-    val allMaterialNames = totalsByMaterial.keys.sortedWith(String.CASE_INSENSITIVE_ORDER)
-    if (allMaterialNames.isEmpty()) return emptyList()
+    val allworkNames = totalsByMaterial.keys.sortedWith(String.CASE_INSENSITIVE_ORDER)
+    if (allworkNames.isEmpty()) return emptyList()
 
-    val materialRows = allMaterialNames.map { materialName ->
-        val accumulator = totalsByMaterial[materialName] ?: MaterialAccumulator()
+    val workVolumeRows = allworkNames.map { workName ->
+        val accumulator = totalsByMaterial[workName] ?: MaterialAccumulator()
         MaterialReportRow(
-            materialName = materialName,
+            workName = workName,
             nodeCount = accumulator.nodeCodes.size,
             routeCount = countRoutesForNodes(filteredRoutes, accumulator.nodeCodes),
             totalPlannedQty = accumulator.plannedQty,
@@ -150,11 +150,11 @@ internal fun buildMaterialReportRows(
         )
     }
 
-    val plannedTotal = materialRows.sumOf { it.totalPlannedQty.toDouble() }.toFloat()
-    val actualTotal = materialRows.sumOf { it.totalActualQty.toDouble() }.toFloat()
+    val plannedTotal = workVolumeRows.sumOf { it.totalPlannedQty.toDouble() }.toFloat()
+    val actualTotal = workVolumeRows.sumOf { it.totalActualQty.toDouble() }.toFloat()
     val totalNodeCodes = totalsByMaterial.values.flatMap { it.nodeCodes }.toSet()
     val totalRow = MaterialReportRow(
-        materialName = "Tổng",
+        workName = "Tổng",
         nodeCount = totalNodeCodes.size,
         routeCount = countRoutesForNodes(filteredRoutes, totalNodeCodes),
         totalPlannedQty = plannedTotal,
@@ -162,7 +162,7 @@ internal fun buildMaterialReportRows(
         completionPercent = if (plannedTotal <= 0f) 0f else (actualTotal / plannedTotal) * 100f,
         isTotal = true
     )
-    return materialRows + totalRow
+    return workVolumeRows + totalRow
 }
 
 internal fun buildDailyLogSummary(logs: List<DailyLog>): List<String> {
@@ -174,7 +174,7 @@ internal fun buildDailyLogSummary(logs: List<DailyLog>): List<String> {
     }
 }
 
-private fun parseMaterialSummary(summary: String): List<Pair<String, Float>> {
+private fun parseworkVolumeSummary(summary: String): List<Pair<String, Float>> {
     return summary.lineSequence().mapNotNull { line ->
         val trimmed = line.trim()
         if (!trimmed.contains(":")) return@mapNotNull null
@@ -194,3 +194,5 @@ private fun countRoutesForNodes(routes: List<GisRoute>, nodeCodes: Set<String>):
         route.startNodeCode in nodeCodes || route.endNodeCode in nodeCodes
     }
 }
+
+

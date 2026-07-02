@@ -172,7 +172,7 @@ fun DashboardHubScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Khối lượng vật tư / thiết bị",
+                            "Khối lượng công việc",
                             color = textColor,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
@@ -354,7 +354,7 @@ fun DashboardHubScreen(
                         textColor = textColor
                     )
                     SummaryRow(
-                        label = "Tỷ lệ hoàn thành vật tư",
+                        label = "Tỷ lệ hoàn thành công việc",
                         value = "${String.format("%.1f", d.materialCompletionPercent)}%",
                         valueColor = if (d.materialCompletionPercent >= 80f) green else orange,
                         secondaryText = secondaryText,

@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -8,14 +10,18 @@ plugins {
 
 android {
     namespace = "com.mapsupervision.project"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig { minSdk = 24 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures { compose = true }
 }
 
@@ -23,7 +29,6 @@ dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
     implementation(project(":storage-core"))
-    implementation(project(":storage-import"))
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
@@ -36,4 +41,6 @@ dependencies {
 
     implementation("com.google.dagger:hilt-android:2.57.2")
     ksp("com.google.dagger:hilt-compiler:2.57.2")
+
+    testImplementation("junit:junit:4.13.2")
 }

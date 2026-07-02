@@ -31,7 +31,7 @@ fun DataHubRoute(
     onUpdateMapVisualOptions: (Boolean?, Boolean?) -> Unit,
     onParseExcelToDesign: () -> Unit,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onUpdateMaterialProgress: (String, String, String) -> Unit,
+    onUpdateWorkVolumeProgress: (String, String, String) -> Unit,
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
     onDeleteImportedFile: (String) -> Unit,
@@ -81,7 +81,7 @@ fun DataHubRoute(
         onUpdateMapVisualOptions = onUpdateMapVisualOptions,
         onParseExcelToDesign = onParseExcelToDesign,
         onAddConstruction = onAddConstruction,
-        onUpdateMaterialProgress = onUpdateMaterialProgress,
+        onUpdateWorkVolumeProgress = onUpdateWorkVolumeProgress,
         onOpenNodeOnMap = onOpenNodeOnMap,
         onOpenRouteOnMap = onOpenRouteOnMap,
         onDeleteImportedFile = onDeleteImportedFile,
@@ -100,3 +100,4 @@ fun DataHubRoute(
         onRefresh = onRefresh
     )
 }
+

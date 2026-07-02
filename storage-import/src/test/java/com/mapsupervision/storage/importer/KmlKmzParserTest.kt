@@ -3,6 +3,7 @@ package com.mapsupervision.storage.importer
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import com.mapsupervision.domain.model.NonExcelImportMapping
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,7 +30,7 @@ class KmlKmzParserTest {
         assertEquals(0, result.routes.size)
         assertTrue(result.summary.contains("KML parsed"))
         assertEquals("P1", result.nodes[0].mapNumberLabel)
-        assertTrue(result.nodes[0].materialSummary.contains("Test description"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("Test description"))
     }
 
     @Test
@@ -148,10 +149,10 @@ class KmlKmzParserTest {
 
         assertEquals(1, result.nodes.size)
         assertEquals("TestPoint", result.nodes[0].mapNumberLabel)
-        assertTrue(result.nodes[0].materialSummary.contains("Point with extended data"))
-        assertTrue(result.nodes[0].materialSummary.contains("ExtendedData"))
-        assertTrue(result.nodes[0].materialSummary.contains("type: Camera"))
-        assertTrue(result.nodes[0].materialSummary.contains("status: Active"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("Point with extended data"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("ExtendedData"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("type: Camera"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("status: Active"))
     }
 
     @Test
@@ -271,7 +272,7 @@ class KmlKmzParserTest {
         val result = parseKmlContent(kml.byteInputStream(), "simple.kml", "test-project")
 
         assertEquals(1, result.nodes.size)
-        assertTrue(result.nodes[0].materialSummary.contains("layer: Cable"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("layer: Cable"))
     }
 
     @Test
@@ -289,8 +290,8 @@ class KmlKmzParserTest {
         val result = parseKmlContent(kml.byteInputStream(), "html.kml", "test-project")
 
         assertEquals(1, result.nodes.size)
-        assertTrue(result.nodes[0].materialSummary.contains("Bold text here"))
-        assertTrue(!result.nodes[0].materialSummary.contains("<b>"))
+        assertTrue(result.nodes[0].workVolumeSummary.contains("Bold text here"))
+        assertTrue(!result.nodes[0].workVolumeSummary.contains("<b>"))
     }
 
     @Test
@@ -436,3 +437,4 @@ class KmlKmzParserTest {
         assertEquals(0, result.nodes.size)
     }
 }
+

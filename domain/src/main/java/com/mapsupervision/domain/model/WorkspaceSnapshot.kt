@@ -6,8 +6,13 @@ data class WorkspaceSnapshot(
     val designNodes: List<GisNode> = emptyList(),
     val designRoutes: List<GisRoute> = emptyList(),
     val constructionProgress: List<NodeProgress> = emptyList(),
-    val materialRows: List<MaterialProgress> = emptyList(),
+    val workVolumeRows: List<WorkVolumeProgress> = emptyList(),
     val dailyLogs: List<DailyLog> = emptyList(),
     val workCategories: List<WorkCategory> = emptyList(),
-    val sitePhotos: List<SitePhoto> = emptyList()
+    val sitePhotos: List<SitePhoto> = emptyList(),
+    val materialHandovers: List<MaterialHandover> = emptyList(),
+    val materialDeclarations: List<MaterialDeclaration> = emptyList(),
+    val workPlans: List<WorkPlan> = emptyList()
 )
+
+

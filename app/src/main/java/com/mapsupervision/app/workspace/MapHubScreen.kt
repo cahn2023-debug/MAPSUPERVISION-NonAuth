@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.LocationSearching
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material.icons.outlined.ZoomOutMap
 import androidx.compose.material.icons.automirrored.outlined.Assignment
@@ -156,6 +157,7 @@ fun MapHubScreen(
     onFilterContractorChanged: (String?) -> Unit,
     onFilterMaterialTypeChanged: (String?) -> Unit = {},
     onContractorColorChanged: (String, String) -> Unit,
+    onToggleContractorVisibility: (String, Boolean) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onUpdateMaterialProgress: (String, String, String) -> Unit,
     onViewPhotos: () -> Unit,
@@ -181,7 +183,8 @@ fun MapHubScreen(
     onExportProject: (com.mapsupervision.domain.model.Project) -> Unit = {},
     onImportProject: (Uri) -> Unit = {},
     onResolveDuplicateProject: (Uri, Boolean, Boolean) -> Unit = { _, _, _ -> },
-    onDismissDuplicateDialog: () -> Unit = {}
+    onDismissDuplicateDialog: () -> Unit = {},
+    onUpdateProjectStoragePath: (String, String) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val defaultPalette = remember { listOf("#f97316", "#22c55e", "#06b6d4", "#a855f7", "#ef4444", "#f59e0b", "#3b82f6") }
@@ -207,6 +210,19 @@ fun MapHubScreen(
     var notesAndTasksObjectCode by remember { mutableStateOf("") }
     var searchExpanded by remember { mutableStateOf(false) }
     var showPhotoPopup by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var selectedProjectForSettings by remember { mutableStateOf<com.mapsupervision.domain.model.Project?>(null) }
+    var editedStoragePath by remember { mutableStateOf("") }
+    val storageFolderPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val pickedPath = getPathFromTreeUri(uri)
+            if (!pickedPath.isNullOrBlank()) {
+                editedStoragePath = pickedPath
+            }
+        }
+    }
 
     val colors = MaterialTheme.colorScheme
     val extendedColors = MaterialTheme.extendedColors
@@ -385,6 +401,17 @@ fun MapHubScreen(
                                             IconButton(onClick = { onCloneProject(p.id, "${p.name} - Copy") }) {
                                                 Icon(Icons.Outlined.ContentCopy, contentDescription = "Clone", tint = if (isActive) onPrimaryColor else secondaryTextColor)
                                             }
+                                            IconButton(onClick = {
+                                                selectedProjectForSettings = p
+                                                editedStoragePath = p.projectDbPath.substringBeforeLast("/db/")
+                                                showSettingsDialog = true
+                                            }) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Settings,
+                                                    contentDescription = "Cài đặt dự án",
+                                                    tint = if (isActive) onPrimaryColor else secondaryTextColor
+                                                )
+                                            }
                                             if (!isActive) {
                                                 IconButton(onClick = { onDeleteProject(p.id) }) {
                                                     Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = dangerColor)
@@ -524,6 +551,52 @@ fun MapHubScreen(
                                                             .size(6.dp)
                                                             .background(swatchColor, CircleShape)
                                                     )
+                                                }
+
+                                                val isHidden = mapUi.hiddenContractors.contains(contractor)
+
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) {
+                                                        onToggleContractorVisibility(contractor, false)
+                                                    }
+                                                ) {
+                                                    Checkbox(
+                                                        checked = !isHidden,
+                                                        onCheckedChange = null,
+                                                        colors = CheckboxDefaults.colors(
+                                                            checkedColor = orangeColor,
+                                                            uncheckedColor = secondaryTextColor
+                                                        ),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Hiện", style = MaterialTheme.typography.bodySmall, color = textColor)
+                                                }
+
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) {
+                                                        onToggleContractorVisibility(contractor, true)
+                                                    }
+                                                ) {
+                                                    Checkbox(
+                                                        checked = isHidden,
+                                                        onCheckedChange = null,
+                                                        colors = CheckboxDefaults.colors(
+                                                            checkedColor = orangeColor,
+                                                            uncheckedColor = secondaryTextColor
+                                                        ),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Ẩn", style = MaterialTheme.typography.bodySmall, color = textColor)
                                                 }
                                             }
                                         },
@@ -923,7 +996,11 @@ fun MapHubScreen(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("TỌA ĐỘ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                Text("${selectedNode.latitude}, ${selectedNode.longitude}", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                                Text(
+                                    "Tọa độ: %.6f, %.6f".format(selectedNode.latitude, selectedNode.longitude),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp
+                                )
                             }
                         }
 
@@ -1085,6 +1162,70 @@ fun MapHubScreen(
             )
         }
 
+        if (showSettingsDialog && selectedProjectForSettings != null) {
+            val project = selectedProjectForSettings!!
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                title = { Text("Cài đặt lưu trữ", fontWeight = FontWeight.Bold, color = textColor) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Nhập đường dẫn thư mục lưu trữ cho dự án '${project.name}'. Hệ thống sẽ di chuyển toàn bộ cơ sở dữ liệu và file đa phương tiện của dự án này sang vị trí mới.",
+                            color = secondaryTextColor,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = editedStoragePath,
+                                onValueChange = { editedStoragePath = it },
+                                label = { Text("Đường dẫn lưu trữ", color = secondaryTextColor) },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                shape = MaterialTheme.shapes.medium,
+                                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = textColor,
+                                    unfocusedTextColor = textColor,
+                                    focusedBorderColor = orangeColor,
+                                    unfocusedBorderColor = secondaryTextColor,
+                                    cursorColor = orangeColor
+                                )
+                            )
+                            OutlinedButton(
+                                onClick = { storageFolderPickerLauncher.launch(null) },
+                                shape = MaterialTheme.shapes.medium
+                            ) {
+                                Text("Chọn thư mục")
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (editedStoragePath.isNotBlank()) {
+                                onUpdateProjectStoragePath(project.id, editedStoragePath)
+                                showSettingsDialog = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = onPrimaryColor)
+                    ) {
+                        Text("Lưu", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = { showSettingsDialog = false },
+                        border = BorderStroke(1.dp, dividerColor),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = secondaryTextColor)
+                    ) {
+                        Text("Hủy")
+                    }
+                },
+                containerColor = cardBgColor
+            )
+        }
+
         // Photo viewer popup
         if (showPhotoPopup) {
             NodePhotoViewerDialog(
@@ -1098,3 +1239,19 @@ fun MapHubScreen(
     }
 }
 
+private fun getPathFromTreeUri(uri: android.net.Uri): String? {
+    return try {
+        val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+        val split = docId.split(":")
+        val volumeId = split.firstOrNull().orEmpty()
+        val relativePath = split.getOrNull(1).orEmpty()
+
+        if (volumeId.equals("primary", ignoreCase = true)) {
+            android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + relativePath
+        } else {
+            "/storage/$volumeId/$relativePath"
+        }
+    } catch (_: Exception) {
+        uri.path
+    }
+}

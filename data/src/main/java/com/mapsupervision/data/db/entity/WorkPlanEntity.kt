@@ -14,10 +14,24 @@ import com.mapsupervision.domain.model.WorkPlan
             parentColumns = ["id"],
             childColumns = ["projectId"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["nodeId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisRouteEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["routeId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
-        Index(value = ["projectId", "plannedDateEpochDay"])
+        Index(value = ["projectId", "plannedDateEpochDay"]),
+        Index("nodeId"),
+        Index("routeId")
     ]
 )
 data class WorkPlanEntity(
@@ -30,7 +44,12 @@ data class WorkPlanEntity(
     val routeCode: String?,
     val taskId: String?,
     val sourceRawInput: String,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val quantity: Double,
+    val unit: String,
+    val batchGroupId: String,
+    val nodeId: String? = null,
+    val routeId: String? = null
 ) {
     fun toDomain() = WorkPlan(
         id = id,
@@ -40,9 +59,14 @@ data class WorkPlanEntity(
         plannedDateEpochDay = plannedDateEpochDay,
         nodeCode = nodeCode,
         routeCode = routeCode,
+        nodeId = nodeId,
+        routeId = routeId,
         taskId = taskId,
         sourceRawInput = sourceRawInput,
-        createdAtEpochMs = createdAtEpochMs
+        createdAtEpochMs = createdAtEpochMs,
+        quantity = quantity,
+        unit = unit,
+        batchGroupId = batchGroupId
     )
 
     companion object {
@@ -54,9 +78,14 @@ data class WorkPlanEntity(
             plannedDateEpochDay = domain.plannedDateEpochDay,
             nodeCode = domain.nodeCode,
             routeCode = domain.routeCode,
+            nodeId = domain.nodeId,
+            routeId = domain.routeId,
             taskId = domain.taskId,
             sourceRawInput = domain.sourceRawInput,
-            createdAtEpochMs = domain.createdAtEpochMs
+            createdAtEpochMs = domain.createdAtEpochMs,
+            quantity = domain.quantity,
+            unit = domain.unit,
+            batchGroupId = domain.batchGroupId
         )
     }
 }

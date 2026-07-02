@@ -23,14 +23,14 @@ import com.mapsupervision.domain.ai.TaskRecommendationPayload
 import com.mapsupervision.domain.ai.TaskRecommendationResult
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ImportedFileRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectRepository
@@ -81,7 +81,7 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
         )
         runCatching {
             withContext(Dispatchers.IO) { 
-                val preview = importService.inspectExcel(uri, sheetName)
+                val preview = importService.inspectExcel(uri.toString(), sheetName)
                 
                 var pos = preview.suggestedMapping?.positionColumn ?: preview.headers.firstOrNull().orEmpty()
                 var lat = preview.suggestedMapping?.latitudeColumn.orEmpty()
@@ -184,7 +184,7 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
                     objectTypeColumn = suggestedObjectType,
                     useTwoColumnCoordinates = suggestedLat.isNotBlank() && suggestedLon.isNotBlank(),
                     showMappingDialog = true,
-                    itemColumnsCsv = suggestedItems.joinToString(","),
+                    workVolumeColumnsCsv = suggestedItems.joinToString(","),
                     suggestedItemColumns = suggestedItems,
                     message = " cột. Đã dùng AI gợi ý. Chọn mapping rồi bấm Parse Excel.",
                     sheets = preview.sheets,
@@ -225,7 +225,7 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
             )
         )
         runCatching {
-            withContext(Dispatchers.IO) { importService.inspectNonExcelFields(uri) }
+            withContext(Dispatchers.IO) { importService.inspectNonExcelFields(uri.toString()) }
         }.onSuccess { preview ->
             var suggestedPosition = preview.candidates.positionOptions.firstOrNull().orEmpty()
             var suggestedCoordinate = preview.candidates.coordinateOptions.firstOrNull().orEmpty()
@@ -289,7 +289,7 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     contractorField = suggestedContractor,
                     mapNumberField = suggestedMapNumber,
                     objectTypeField = suggestedObjectType,
-                    itemFieldsCsv = suggestedItems.joinToString(","),
+                    workVolumeFieldsCsv = suggestedItems.joinToString(","),
                     routeLengthField = suggestedRouteLength,
                     confirmedPositionField = suggestedPosition.isNotBlank(),
                     confirmedCoordinateField = suggestedCoordinate.isNotBlank(),
@@ -299,7 +299,7 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     confirmedContractorField = false,
                     confirmedMapNumberField = false,
                     confirmedObjectTypeField = false,
-                    confirmedItemFields = false,
+                    confirmedWorkVolumeFields = false,
                     confirmedRouteLengthField = false,
                     showMappingDialog = true,
                     isLoading = false,
@@ -329,14 +329,14 @@ fun WorkspaceViewModel.updateImportMappingUi(
     contractorField: String? = null,
     mapNumberField: String? = null,
     objectTypeField: String? = null,
-    itemFieldsCsv: String? = null,
+    workVolumeFieldsCsv: String? = null,
     routeLengthField: String? = null,
     confirmedPositionField: Boolean? = null,
     confirmedCoordinateField: Boolean? = null,
     confirmedContractorField: Boolean? = null,
     confirmedMapNumberField: Boolean? = null,
     confirmedObjectTypeField: Boolean? = null,
-    confirmedItemFields: Boolean? = null,
+    confirmedWorkVolumeFields: Boolean? = null,
     confirmedRouteLengthField: Boolean? = null
 ) {
     updateImportMappingUiIfChanged { ui ->
@@ -346,14 +346,14 @@ fun WorkspaceViewModel.updateImportMappingUi(
             contractorField = contractorField ?: ui.contractorField,
             mapNumberField = mapNumberField ?: ui.mapNumberField,
             objectTypeField = objectTypeField ?: ui.objectTypeField,
-            itemFieldsCsv = itemFieldsCsv ?: ui.itemFieldsCsv,
+            workVolumeFieldsCsv = workVolumeFieldsCsv ?: ui.workVolumeFieldsCsv,
             routeLengthField = routeLengthField ?: ui.routeLengthField,
             confirmedPositionField = confirmedPositionField ?: ui.confirmedPositionField,
             confirmedCoordinateField = confirmedCoordinateField ?: ui.confirmedCoordinateField,
             confirmedContractorField = confirmedContractorField ?: ui.confirmedContractorField,
             confirmedMapNumberField = confirmedMapNumberField ?: ui.confirmedMapNumberField,
             confirmedObjectTypeField = confirmedObjectTypeField ?: ui.confirmedObjectTypeField,
-            confirmedItemFields = confirmedItemFields ?: ui.confirmedItemFields,
+            confirmedWorkVolumeFields = confirmedWorkVolumeFields ?: ui.confirmedWorkVolumeFields,
             confirmedRouteLengthField = confirmedRouteLengthField ?: ui.confirmedRouteLengthField
         )
     }
@@ -393,14 +393,14 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
             withContext(Dispatchers.IO) {
                 importService.importNonExcelWithMapping(
                     projectId = projectId,
-                    uri = uri,
+                    uri = uri.toString(),
                     mapping = NonExcelImportMapping(
                         positionField = ui.positionField,
                         coordinateField = ui.coordinateField.ifBlank { null },
                         contractorField = ui.contractorField.ifBlank { null },
                         mapNumberField = ui.mapNumberField.ifBlank { null },
                         objectTypeField = ui.objectTypeField.ifBlank { null },
-                        itemFields = parseItemColumnsCsv(ui.itemFieldsCsv),
+                        itemFields = parseworkVolumeColumnsCsv(ui.workVolumeFieldsCsv),
                         routeLengthField = ui.routeLengthField.ifBlank { null }
                     ),
                     confirmed = ConfirmedFieldFlags(
@@ -409,7 +409,7 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                         contractorField = ui.confirmedContractorField,
                         mapNumberField = ui.confirmedMapNumberField,
                         objectTypeField = ui.confirmedObjectTypeField,
-                        itemFields = ui.confirmedItemFields,
+                        itemFields = ui.confirmedWorkVolumeFields,
                         routeLengthField = ui.confirmedRouteLengthField
                     )
                 )
@@ -529,7 +529,7 @@ fun WorkspaceViewModel.updateExcelMapping(
     contractorColumn: String? = null,
     mapNumberColumn: String? = null,
     objectTypeColumn: String? = null,
-    itemColumnsCsv: String? = null
+    workVolumeColumnsCsv: String? = null
 ) {
     updateExcelParserUiIfChanged { ui ->
         ui.copy(
@@ -540,7 +540,7 @@ fun WorkspaceViewModel.updateExcelMapping(
             contractorColumn = contractorColumn ?: ui.contractorColumn,
             mapNumberColumn = mapNumberColumn ?: ui.mapNumberColumn,
             objectTypeColumn = objectTypeColumn ?: ui.objectTypeColumn,
-            itemColumnsCsv = itemColumnsCsv ?: ui.itemColumnsCsv
+            workVolumeColumnsCsv = workVolumeColumnsCsv ?: ui.workVolumeColumnsCsv
         )
     }
 }
@@ -593,7 +593,7 @@ fun WorkspaceViewModel.parseExcelToDesign() {
             withContext(Dispatchers.IO) {
                 importService.importExcelWithMapping(
                     projectId = projectId,
-                    uri = uri,
+                    uri = uri.toString(),
                     mapping = ExcelColumnMapping(
                         positionColumn = ui.positionColumn,
                         coordinateColumn = if (ui.useTwoColumnCoordinates) null else ui.coordinateColumn.ifBlank { null },
@@ -603,7 +603,7 @@ fun WorkspaceViewModel.parseExcelToDesign() {
                         mapNumberColumn = ui.mapNumberColumn.ifBlank { null },
                         objectTypeColumn = ui.objectTypeColumn.ifBlank { null },
                         classificationMode = ui.classificationMode,
-                        itemColumns = parseItemColumnsCsv(ui.itemColumnsCsv)
+                        itemColumns = parseworkVolumeColumnsCsv(ui.workVolumeColumnsCsv)
                     ),
                     sheetName = ui.selectedSheet.takeIf { it.isNotBlank() }
                 )
@@ -815,7 +815,7 @@ internal fun WorkspaceViewModel.deduplicateWithIndexes(
     )
 }
 
-internal fun WorkspaceViewModel.parseItemColumnsCsv(csv: String): List<String> {
+internal fun WorkspaceViewModel.parseworkVolumeColumnsCsv(csv: String): List<String> {
     if (csv.isBlank()) return emptyList()
     val result = ArrayList<String>(8)
     var start = 0
@@ -1011,7 +1011,7 @@ private suspend fun WorkspaceViewModel.commitNonExcelImportDraft(
             updatedNodes,
             updatedRoutes,
             stateSnapshot.constructionProgress,
-            stateSnapshot.materialRows
+            stateSnapshot.workVolumeRows
         )
     )
     updateFilteredMapData()
@@ -1171,7 +1171,7 @@ private suspend fun WorkspaceViewModel.commitExcelImportDraft(
             updatedNodes,
             updatedRoutes,
             stateSnapshot.constructionProgress,
-            stateSnapshot.materialRows
+            stateSnapshot.workVolumeRows
         )
     )
     updateFilteredMapData()
@@ -1180,4 +1180,5 @@ private suspend fun WorkspaceViewModel.commitExcelImportDraft(
     }
     markProjectChanged(projectId, if (existingFileId != null) "design_import_remapped" else "design_import_completed")
 }
+
 

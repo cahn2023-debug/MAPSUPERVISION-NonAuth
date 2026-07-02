@@ -13,37 +13,62 @@ import com.mapsupervision.domain.model.Note
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["objectNodeId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisRouteEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["objectRouteId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["projectId", "createdAtEpochMs"]),
-        Index(value = ["projectId", "objectCode", "createdAtEpochMs"]),
-        Index("objectCode")
+        Index("objectNodeId"),
+        Index("objectRouteId")
     ]
 )
 data class NoteEntity(
     @PrimaryKey val id: String,
     val projectId: String,
-    val objectCode: String,
     val content: String,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val objectNodeId: String? = null,
+    val objectRouteId: String? = null,
+    val updatedAtEpochMs: Long = createdAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 ) {
     fun toDomain() = Note(
         id = id,
         projectId = projectId,
-        objectCode = objectCode,
+        objectCode = "",
+        objectNodeId = objectNodeId,
+        objectRouteId = objectRouteId,
         content = content,
-        createdAtEpochMs = createdAtEpochMs
+        createdAtEpochMs = createdAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
     )
 
     companion object {
         fun fromDomain(domain: Note) = NoteEntity(
             id = domain.id,
             projectId = domain.projectId,
-            objectCode = domain.objectCode,
+            objectNodeId = domain.objectNodeId,
+            objectRouteId = domain.objectRouteId,
             content = domain.content,
-            createdAtEpochMs = domain.createdAtEpochMs
+            createdAtEpochMs = domain.createdAtEpochMs,
+            updatedAtEpochMs = domain.updatedAtEpochMs,
+            isDeleted = domain.isDeleted,
+            deletedAtEpochMs = domain.deletedAtEpochMs
         )
     }
 }

@@ -12,7 +12,7 @@ import androidx.room.PrimaryKey
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
         )
     ],
     indices = [
@@ -26,5 +26,8 @@ data class ImportedFileEntity(
     val fileType: String,
     val storedPath: String,
     val summary: String,
-    val importedAtEpochMs: Long
+    val importedAtEpochMs: Long,
+    val updatedAtEpochMs: Long = importedAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )

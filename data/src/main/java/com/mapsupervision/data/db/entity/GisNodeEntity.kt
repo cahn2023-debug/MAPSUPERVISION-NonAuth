@@ -1,5 +1,6 @@
 package com.mapsupervision.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -12,7 +13,7 @@ import androidx.room.PrimaryKey
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
         ),
         ForeignKey(
             entity = ImportedFileEntity::class,
@@ -34,6 +35,11 @@ data class GisNodeEntity(
     val latitude: Double,
     val longitude: Double,
     val mapNumberLabel: String,
-    val materialSummary: String,
-    val importedFileId: String? = null
+    @ColumnInfo(name = "workVolumeSummary")
+    val workVolumeSummary: String,
+    val importedFileId: String? = null,
+    val updatedAtEpochMs: Long = 0L,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
+

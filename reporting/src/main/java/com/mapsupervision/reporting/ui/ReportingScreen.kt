@@ -1,4 +1,4 @@
-﻿package com.mapsupervision.reporting.ui
+package com.mapsupervision.reporting.ui
 
 import android.content.Intent
 import androidx.compose.foundation.Image
@@ -59,7 +59,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.domain.util.PhotoTargetKind
+import com.mapsupervision.domain.util.evaluateSitePhotoMatch
+import com.mapsupervision.ai.core.ReportDraftResult
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,7 +77,7 @@ fun ReportingScreen(
     activeProjectId: String?,
     photoFilterNodeCode: String? = null,
     photoSaveCount: Int = 0,
-    materialProgress: Map<String, String> = emptyMap(),
+    workVolumeProgress: Map<String, String> = emptyMap(),
     onClearPhotoFilter: () -> Unit = {}
 ) {
     val path by viewModel.lastReportPath.collectAsStateWithLifecycle()
@@ -115,8 +117,8 @@ fun ReportingScreen(
     }
 
     val selectedContractorFilter = selectedContractor.takeUnless { it == ALL_CONTRACTORS_LABEL }
-    val filteredMaterialRows = remember(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.materialRowsRaw, selectedContractorFilter) {
-        buildMaterialReportRows(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.materialRowsRaw, selectedContractorFilter)
+    val filteredMaterialRows = remember(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.workVolumeRowsRaw, selectedContractorFilter) {
+        buildMaterialReportRows(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.workVolumeRowsRaw, selectedContractorFilter)
     }
     val sortedMaterialRows = remember(filteredMaterialRows, sortBy, isAscending) {
         val nonTotalRows = filteredMaterialRows.filter { !it.isTotal }
@@ -124,7 +126,7 @@ fun ReportingScreen(
         val sorted = when (sortBy) {
             SortKey.NONE -> nonTotalRows
             SortKey.STT -> nonTotalRows
-            SortKey.NAME -> nonTotalRows.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.materialName })
+            SortKey.NAME -> nonTotalRows.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.workName })
             SortKey.PLANNED -> nonTotalRows.sortedBy { it.totalPlannedQty }
             SortKey.ACTUAL -> nonTotalRows.sortedBy { it.totalActualQty }
             SortKey.PERCENT -> nonTotalRows.sortedBy { it.completionPercent }
@@ -132,9 +134,17 @@ fun ReportingScreen(
         val finalSorted = if (isAscending || sortBy == SortKey.STT || sortBy == SortKey.NONE) sorted else sorted.reversed()
         if (totalRow != null) finalSorted + totalRow else finalSorted
     }
-    val matchedPhotos = remember(photos) { photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
-    val unmatchedPhotos = remember(photos) { photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
-    val routeCodes = remember(reportSnapshot.routes) { reportSnapshot.routes.map { it.code.trim() }.filter { it.isNotBlank() }.toSet() }
+    val nodesById = remember(reportSnapshot.nodes) { reportSnapshot.nodes.associateBy { it.id } }
+    val nodesByCode = remember(reportSnapshot.nodes) { reportSnapshot.nodes.associateBy { it.code } }
+    val routesById = remember(reportSnapshot.routes) { reportSnapshot.routes.associateBy { it.id } }
+    val routesByCode = remember(reportSnapshot.routes) { reportSnapshot.routes.associateBy { it.code } }
+    val photoEvaluations = remember(photos, nodesById, nodesByCode, routesById, routesByCode) {
+        photos.associateWith { photo ->
+            evaluateSitePhotoMatch(photo, nodesById, nodesByCode, routesById, routesByCode)
+        }
+    }
+    val matchedPhotos = remember(photoEvaluations) { photoEvaluations.filterValues { it.isMatched }.keys.toList() }
+    val unmatchedPhotos = remember(photoEvaluations) { photoEvaluations.filterValues { !it.isMatched }.keys.toList() }
 
     fun toggleSort(key: SortKey) {
         if (sortBy == key) {
@@ -145,7 +155,7 @@ fun ReportingScreen(
         }
     }
 
-    LaunchedEffect(activeProjectId, photoSaveCount, materialProgress) {
+    LaunchedEffect(activeProjectId, photoSaveCount, workVolumeProgress) {
         if (activeProjectId != null) {
             viewModel.refreshReportData()
         }
@@ -290,7 +300,7 @@ fun ReportingScreen(
                         )
                         if (photoFilterNodeCode != null) {
                             Text(
-                                "photoFilterNodeCode",
+                                "Đối tượng: $photoFilterNodeCode",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -351,7 +361,7 @@ fun ReportingScreen(
                     grouped.forEach { (nodeCode, nodePhotos) ->
                         item {
                             Text(
-                                "${if (routeCodes.contains(nodeCode)) "Tuyến" else "Tổ"} $nodeCode (${nodePhotos.size} ảnh, khớp ${nodePhotos.count { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }})",
+                                "${if (photoEvaluations[nodePhotos.first()]?.targetKind == PhotoTargetKind.ROUTE) "Tuyến" else "Nút"} $nodeCode (${nodePhotos.size} ảnh, khớp ${nodePhotos.count { photoEvaluations[it]?.isMatched == true }})",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
@@ -359,7 +369,10 @@ fun ReportingScreen(
                             )
                         }
                         item {
-                            PhotoGrid(photos = nodePhotos)
+                            PhotoGrid(
+                                photos = nodePhotos,
+                                evaluationFor = { photo -> photoEvaluations.getValue(photo) }
+                            )
                         }
                     }
                 }
@@ -392,7 +405,7 @@ fun ReportingScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        "${if (routeCodes.contains(nodeCode)) "Tuyến" else "Tổ"} $nodeCode",
+                                        "${if (photoEvaluations[nodePhotos.first()]?.targetKind == PhotoTargetKind.ROUTE) "Tuyến" else "Nút"} $nodeCode",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -488,8 +501,10 @@ fun ReportingScreen(
                 else viewModel.exportWord(selectedContractorFilter)
                 showPreviewDialog = false
             },
+            nodes = reportSnapshot.nodes,
+            routes = reportSnapshot.routes,
             photos = photos,
-            materialRows = filteredMaterialRows,
+            workVolumeRows = filteredMaterialRows,
             aiDraft = aiDraft
         )
 

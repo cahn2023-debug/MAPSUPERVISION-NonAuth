@@ -3,14 +3,16 @@ package com.mapsupervision.timeline.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mapsupervision.core.result.AppResult
-import com.mapsupervision.domain.ai.AiOrchestrator
-import com.mapsupervision.domain.ai.TimelineSummaryPayload
+import com.mapsupervision.ai.core.AIFacade
+import com.mapsupervision.ai.core.TimelineSummaryPayload
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.NodeProgress
+import com.mapsupervision.domain.model.TimelineSnapshot
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
+import com.mapsupervision.domain.usecase.ObserveTimelineUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -19,13 +21,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 @HiltViewModel
 class TimelineViewModel @Inject constructor(
     private val activeProjectRepository: ActiveProjectRepository,
     private val progressRepository: ProgressRepository,
     private val dailyLogRepository: DailyLogRepository,
-    private val aiOrchestrator: AiOrchestrator,
+    private val aiFacade: AIFacade,
+    private val observeTimelineUseCase: ObserveTimelineUseCase,
     private val projectSyncRepository: ProjectSyncRepository
 ) : ViewModel() {
     private val _progress = MutableStateFlow<List<NodeProgress>>(emptyList())
@@ -57,10 +61,26 @@ class TimelineViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-            _progress.value = (progressRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            _logs.value = (dailyLogRepository.byProject(projectId) as? AppResult.Success)?.data.orEmpty()
-            val ai = aiOrchestrator.execute<com.mapsupervision.domain.ai.TimelineSummaryResult>(
-                TimelineSummaryPayload(progress = _progress.value, logs = _logs.value, photoCount = 0)
+            val snapshot = observeTimelineUseCase(projectId).first()
+            _progress.value = snapshot.progress
+            _logs.value = snapshot.logs
+            val aiProgress = snapshot.progress.map {
+                com.mapsupervision.ai.core.AiNodeProgress(
+                    nodeCode = it.nodeCode,
+                    planned = it.planned,
+                    actual = it.actual
+                )
+            }
+            val aiLogs = snapshot.logs.map {
+                com.mapsupervision.ai.core.AiDailyLog(
+                    workItem = it.workItem,
+                    manpower = it.manpower,
+                    note = it.note,
+                    dateEpochDay = it.dateEpochDay
+                )
+            }
+            val ai = aiFacade.execute<com.mapsupervision.ai.core.TimelineSummaryResult>(
+                TimelineSummaryPayload(progress = aiProgress, logs = aiLogs, photoCount = snapshot.photoCount)
             )
             _aiSummary.value = ai.result.summary
             _aiHighlights.value = ai.result.issueHighlights
@@ -108,3 +128,4 @@ class TimelineViewModel @Inject constructor(
         }
     }
 }
+

@@ -24,7 +24,7 @@ class PdfReportGenerator @Inject constructor() {
         context: Context,
         projectId: String,
         summaryLines: List<String>,
-        materialRows: List<MaterialReportRow>,
+        workVolumeRows: List<MaterialReportRow>,
         photos: List<SitePhoto>,
         dailyLogLines: List<String> = emptyList()
     ): File {
@@ -93,7 +93,7 @@ class PdfReportGenerator @Inject constructor() {
         canvas.drawText("%", 510f, y, headerPaint)
         y += 18f
 
-        materialRows.forEach { row ->
+        workVolumeRows.forEach { row ->
             if (y > pageHeight - 50f) {
                 drawFooter()
                 doc.finishPage(page)
@@ -111,7 +111,7 @@ class PdfReportGenerator @Inject constructor() {
                 y += 18f
             }
             val rowPaint = if (row.isTotal) headerPaint else bodyPaint
-            canvas.drawText(row.materialName, 40f, y, rowPaint)
+            canvas.drawText(row.workName, 40f, y, rowPaint)
             canvas.drawText(row.totalPlannedQty.toInt().toString(), 300f, y, rowPaint)
             canvas.drawText(row.totalActualQty.toInt().toString(), 410f, y, rowPaint)
             canvas.drawText("${row.completionPercent.toInt()}%", 510f, y, rowPaint)
@@ -262,3 +262,4 @@ class PdfReportGenerator @Inject constructor() {
         return inSampleSize.coerceAtLeast(1)
     }
 }
+

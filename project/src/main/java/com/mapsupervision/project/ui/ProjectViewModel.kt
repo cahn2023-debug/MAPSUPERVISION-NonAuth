@@ -8,10 +8,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mapsupervision.core.result.AppResult
 import com.mapsupervision.domain.model.*
+import com.mapsupervision.domain.model.joinCsvList
+import com.mapsupervision.domain.model.parseCsvList
+import com.mapsupervision.domain.model.resolvedAppliedNodeIds
+import com.mapsupervision.domain.model.resolvedLinkedPhotoIds
+import com.mapsupervision.domain.model.resolvedTagCodes
 import com.mapsupervision.domain.repository.*
 import com.mapsupervision.storage.ProjectPackageService
 import com.mapsupervision.storage.ProjectStorageManager
-import com.mapsupervision.storage.importer.UserFileImportService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -33,7 +37,7 @@ class ProjectViewModel @Inject constructor(
     private val projectRepository: ProjectRepository,
     private val activeProjectRepository: ActiveProjectRepository,
     private val importedFileRepository: ImportedFileRepository,
-    private val userFileImportService: UserFileImportService,
+    private val importRepository: ImportRepository,
     private val projectPackageService: ProjectPackageService,
     private val storageManager: ProjectStorageManager,
     private val gisRepository: GisRepository,
@@ -43,7 +47,8 @@ class ProjectViewModel @Inject constructor(
     private val photoRepository: PhotoRepository,
     private val dailyLogRepository: DailyLogRepository,
     private val progressRepository: ProgressRepository,
-    private val projectSyncRepository: ProjectSyncRepository
+    private val projectSyncRepository: ProjectSyncRepository,
+    private val migrationService: com.mapsupervision.domain.service.ProjectStorageMigrationService
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProjectUiState())
     val uiState: StateFlow<ProjectUiState> = _uiState.asStateFlow()
@@ -75,6 +80,13 @@ class ProjectViewModel @Inject constructor(
             val current = _uiState.value
             var activeId = (activeProjectRepository.getActive() as? AppResult.Success)?.data
             val projects = (projectRepository.list(false) as? AppResult.Success)?.data.orEmpty()
+            
+            projects.forEach { project ->
+                launch {
+                    migrationService.migrateProjectIfNeeded(project)
+                }
+            }
+
             if (activeId == null && projects.isNotEmpty()) {
                 val defaultProjectId = projects.first().id
                 when (activeProjectRepository.setActive(defaultProjectId)) {
@@ -89,13 +101,13 @@ class ProjectViewModel @Inject constructor(
         }
     }
 
-    fun createProject(name: String) {
+    fun createProject(name: String, customPath: String? = null) {
         viewModelScope.launch {
             if (name.isBlank()) {
                 _uiState.value = _uiState.value.copy(message = "Tên dự án không được để trống")
                 return@launch
             }
-            val created = projectRepository.create(name)
+            val created = projectRepository.create(name, customPath)
             if (created is AppResult.Success) {
                 when (val setActive = activeProjectRepository.setActive(created.data.id)) {
                     is AppResult.Success -> {
@@ -138,6 +150,20 @@ class ProjectViewModel @Inject constructor(
         }
     }
 
+    fun updateProjectStoragePath(projectId: String, newPath: String) {
+        viewModelScope.launch {
+            when (val res = projectRepository.updateStoragePath(projectId, newPath)) {
+                is AppResult.Success -> {
+                    _uiState.value = _uiState.value.copy(message = "Đã cập nhật vị trí lưu dữ liệu")
+                }
+                is AppResult.Error -> {
+                    _uiState.value = _uiState.value.copy(message = "Không thể cập nhật vị trí: ${res.throwable.message}")
+                }
+            }
+            refresh()
+        }
+    }
+
     fun importFiles(uris: List<Uri>) {
         viewModelScope.launch {
             val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
@@ -146,7 +172,7 @@ class ProjectViewModel @Inject constructor(
             var importedCount = 0
             uris.forEach { uri ->
                 runCatching {
-                    val draft = userFileImportService.importFile(projectId, uri)
+                    val draft = importRepository.importFile(projectId, uri.toString())
                     val file = ImportedFile(
                         id = UUID.randomUUID().toString(),
                         projectId = projectId,
@@ -207,7 +233,7 @@ class ProjectViewModel @Inject constructor(
                             put("latitude", n.latitude)
                             put("longitude", n.longitude)
                             put("mapNumberLabel", n.mapNumberLabel)
-                            put("materialSummary", n.materialSummary)
+                            put("workVolumeSummary", n.workVolumeSummary)
                             put("importedFileId", n.importedFileId)
                         })
                     }
@@ -256,7 +282,7 @@ class ProjectViewModel @Inject constructor(
                             put("id", mp.id)
                             put("projectId", mp.projectId)
                             put("nodeCode", mp.nodeCode)
-                            put("materialName", mp.materialName)
+                            put("workName", mp.workName)
                             put("plannedQty", mp.plannedQty)
                             put("actualQty", mp.actualQty)
                             put("updatedAtEpochMs", mp.updatedAtEpochMs)
@@ -284,7 +310,12 @@ class ProjectViewModel @Inject constructor(
                             put("batchGroupId", dl.batchGroupId)
                             put("appliedNodeCodesCsv", dl.appliedNodeCodesCsv)
                             put("linkedPhotoIdsCsv", dl.linkedPhotoIdsCsv)
+                            put("appliedNodeIds", JSONArray(dl.resolvedAppliedNodeIds))
+                            put("linkedPhotoIds", JSONArray(dl.resolvedLinkedPhotoIds))
                             put("photoMatchOffsetMinutes", dl.photoMatchOffsetMinutes)
+                            put("updatedAtEpochMs", dl.updatedAtEpochMs)
+                            put("isDeleted", dl.isDeleted)
+                            put("deletedAtEpochMs", dl.deletedAtEpochMs ?: JSONObject.NULL)
                         })
                     }
                 })
@@ -321,6 +352,13 @@ class ProjectViewModel @Inject constructor(
                             put("capturedAtEpochMs", ph.capturedAtEpochMs)
                             put("matchedAtEpochMs", ph.matchedAtEpochMs)
                             put("matchingTimeOffsetMs", ph.matchingTimeOffsetMs)
+                            put("tagCodes", JSONArray(ph.resolvedTagCodes))
+                            put("updatedAtEpochMs", ph.updatedAtEpochMs)
+                            put("syncStatus", ph.syncStatus.name)
+                            put("remoteUrl", ph.remoteUrl ?: JSONObject.NULL)
+                            put("lastSyncAttemptEpochMs", ph.lastSyncAttemptEpochMs ?: JSONObject.NULL)
+                            put("isDeleted", ph.isDeleted)
+                            put("deletedAtEpochMs", ph.deletedAtEpochMs ?: JSONObject.NULL)
                         })
                     }
                 })
@@ -479,6 +517,7 @@ class ProjectViewModel @Inject constructor(
                     targetName = originalName
                 }
 
+                storageManager.prepareImportedProjectStorage(targetSlug, targetProjectId)
                 projectPackageService.copyImportedFilesToPrivateStorage(tempDir, targetSlug)
 
                 val projObj = Project(
@@ -513,7 +552,7 @@ class ProjectViewModel @Inject constructor(
                             latitude = obj.getDouble("latitude"),
                             longitude = obj.getDouble("longitude"),
                             mapNumberLabel = obj.getString("mapNumberLabel"),
-                            materialSummary = obj.getString("materialSummary"),
+                            workVolumeSummary = obj.optString("workVolumeSummary", obj.optString("materialSummary", "")),
                             importedFileId = mapOptionalId(obj.optString("importedFileId").takeIf { it.isNotBlank() })
                         )
                     }
@@ -578,11 +617,11 @@ class ProjectViewModel @Inject constructor(
                     for (i in 0 until matArr.length()) {
                         val obj = matArr.getJSONObject(i)
                         materialProgressRepository.upsert(
-                            MaterialProgress(
+                            WorkVolumeProgress(
                                 id = mapId(obj.getString("id")),
                                 projectId = targetProjectId,
                                 nodeCode = obj.getString("nodeCode"),
-                                materialName = obj.getString("materialName"),
+                                workName = obj.optString("workName", obj.optString("materialName", "")),
                                 plannedQty = obj.getDouble("plannedQty").toFloat(),
                                 actualQty = obj.getDouble("actualQty").toFloat(),
                                 updatedAtEpochMs = obj.optLong("updatedAtEpochMs", System.currentTimeMillis()),
@@ -608,7 +647,13 @@ class ProjectViewModel @Inject constructor(
                                 batchGroupId = obj.optString("batchGroupId", ""),
                                 appliedNodeCodesCsv = obj.optString("appliedNodeCodesCsv", ""),
                                 linkedPhotoIdsCsv = obj.optString("linkedPhotoIdsCsv", ""),
+                                appliedNodeIds = obj.optJsonStringList("appliedNodeIds"),
+                                linkedPhotoIds = obj.optJsonStringList("linkedPhotoIds"),
                                 photoMatchOffsetMinutes = obj.optInt("photoMatchOffsetMinutes", 0)
+                                ,
+                                updatedAtEpochMs = obj.optLong("updatedAtEpochMs", obj.optLong("createdAtEpochMs", System.currentTimeMillis())),
+                                isDeleted = obj.optBoolean("isDeleted", false),
+                                deletedAtEpochMs = obj.optPositiveLong("deletedAtEpochMs")
                             )
                         )
                     }
@@ -622,7 +667,7 @@ class ProjectViewModel @Inject constructor(
                         val newStoredPath = if (oldPath != null) {
                             val fileName = File(oldPath).name
                             val parentName = File(oldPath).parentFile?.name ?: "processed"
-                            File(storageManager.privateProjectRoot(targetSlug), "imports/$parentName/$fileName").absolutePath
+                            File(storageManager.projectRoot(targetSlug), "imports/$parentName/$fileName").absolutePath
                         } else ""
 
                         importedFileRepository.upsert(
@@ -645,15 +690,21 @@ class ProjectViewModel @Inject constructor(
                         val obj = photosArr.getJSONObject(i)
                         val oldFilePath = obj.optString("filePath").takeIf { it.isNotBlank() }
                         val oldThumbPath = obj.optString("thumbnailPath").takeIf { it.isNotBlank() }
+                        val objectCode = obj.getString("objectCode")
+                        val isRoute = json.optJSONArray("routes")?.let { rArr ->
+                            (0 until rArr.length()).any { rArr.getJSONObject(it).getString("code") == objectCode }
+                        } ?: false
+                        val objectFolder = if (isRoute) "Route" else "Node"
+                        val objectFolderName = storageManager.sanitizeFolderName(objectCode)
 
                         val newFilePath = if (oldFilePath != null) {
                             val fileName = File(oldFilePath).name
-                            File(storageManager.privateProjectRoot(targetSlug), "photos/Nodes/$fileName").absolutePath
+                            File(storageManager.projectRoot(targetSlug), "Media/$objectFolder/$objectFolderName/$fileName").absolutePath
                         } else ""
 
                         val newThumbPath = if (oldThumbPath != null) {
                             val fileName = File(oldThumbPath).name
-                            File(storageManager.privateProjectRoot(targetSlug), "thumbs/$fileName").absolutePath
+                            File(storageManager.projectRoot(targetSlug), "Media/$objectFolder/$objectFolderName/$fileName").absolutePath
                         } else ""
 
                         photoRepository.add(
@@ -675,7 +726,15 @@ class ProjectViewModel @Inject constructor(
                                 engineer = obj.optString("engineer", "Engineers"),
                                 capturedAtEpochMs = obj.optLong("capturedAtEpochMs", System.currentTimeMillis()),
                                 matchedAtEpochMs = obj.optLong("matchedAtEpochMs", 0L),
-                                matchingTimeOffsetMs = obj.optLong("matchingTimeOffsetMs", 0L)
+                                matchingTimeOffsetMs = obj.optLong("matchingTimeOffsetMs", 0L),
+                                tagCodes = obj.optJsonStringList("tagCodes"),
+                                updatedAtEpochMs = obj.optLong("updatedAtEpochMs", obj.optLong("capturedAtEpochMs", System.currentTimeMillis())),
+                                syncStatus = obj.optString("syncStatus").takeIf { it.isNotBlank() }?.let(SitePhotoSyncStatus::valueOf)
+                                    ?: SitePhotoSyncStatus.PENDING,
+                                remoteUrl = obj.optString("remoteUrl").takeIf { it.isNotBlank() },
+                                lastSyncAttemptEpochMs = obj.optPositiveLong("lastSyncAttemptEpochMs"),
+                                isDeleted = obj.optBoolean("isDeleted", false),
+                                deletedAtEpochMs = obj.optPositiveLong("deletedAtEpochMs")
                             )
                         )
                     }
@@ -741,3 +800,13 @@ private fun JSONObject.optNullableFloat(name: String): Float? =
 
 private fun JSONObject.optPositiveLong(name: String): Long? =
     if (!has(name) || isNull(name)) null else optLong(name).takeIf { it > 0L }
+
+private fun JSONObject.optJsonStringList(name: String): List<String> {
+    val array = optJSONArray(name) ?: return emptyList()
+    return buildList {
+        for (i in 0 until array.length()) {
+            val value = array.optString(i).trim()
+            if (value.isNotBlank()) add(value)
+        }
+    }
+}

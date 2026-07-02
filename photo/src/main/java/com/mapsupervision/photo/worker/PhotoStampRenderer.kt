@@ -21,6 +21,7 @@ import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.sin
 import kotlin.math.tan
+import android.content.Context
 import com.mapsupervision.domain.model.CameraAspectRatio
 
 data class AspectCropRect(
@@ -65,7 +66,9 @@ fun calculateAspectCropRect(
 }
 
 object PhotoStampRenderer {
-    internal const val MINIMAP_TILE_ALPHA = 128
+    const val MINIMAP_MIN_ZOOM = 18
+    const val MINIMAP_MAX_ZOOM = 18
+    internal const val MINIMAP_TILE_ALPHA = 204
 
     fun cropBitmapToAspectRatio(bitmap: Bitmap, ratio: CameraAspectRatio): Bitmap {
         val crop = calculateAspectCropRect(bitmap.width, bitmap.height, ratio)
@@ -79,6 +82,49 @@ object PhotoStampRenderer {
 
     fun loadMutableNormalizedBitmap(file: File): Bitmap? {
         val src = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        val orientation = runCatching {
+            ExifInterface(file.absolutePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        val matrix = Matrix().applyOrientationTransform(orientation)
+        val normalized = if (matrix.isIdentity) {
+            src
+        } else {
+            Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true).also {
+                if (it != src) src.recycle()
+            }
+        }
+        return normalized.copy(Bitmap.Config.ARGB_8888, true)?.also {
+            if (it != normalized) normalized.recycle()
+        }
+    }
+
+    fun loadMutableNormalizedBitmap(context: Context, file: File): Bitmap? {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val memoryClassMb = am.memoryClass
+        val maxPixels = (memoryClassMb * 1024 * 1024 / 40)
+        
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        val imageWidth = options.outWidth
+        val imageHeight = options.outHeight
+        val totalPixels = imageWidth * imageHeight
+        
+        val decodeOptions = BitmapFactory.Options().apply {
+            if (totalPixels > maxPixels) {
+                var sample = 1
+                while ((imageWidth / sample) * (imageHeight / sample) > maxPixels) {
+                    sample *= 2
+                }
+                inSampleSize = sample
+            }
+        }
+        
+        val src = BitmapFactory.decodeFile(file.absolutePath, decodeOptions) ?: return null
         val orientation = runCatching {
             ExifInterface(file.absolutePath).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION,
@@ -114,6 +160,20 @@ object PhotoStampRenderer {
         }
     }
 
+    private fun resolveStampViewport(stamp: CaptureStamp): MinimapViewport? {
+        val latitude = stamp.latitude ?: stamp.mapScene?.cameraLatitude ?: stamp.mapScene?.centerLatitude ?: return null
+        val longitude = stamp.longitude ?: stamp.mapScene?.cameraLongitude ?: stamp.mapScene?.centerLongitude ?: return null
+        return resolveMinimapViewport(
+            rect = RectF(0f, 0f, 512f, 512f),
+            latitude = latitude,
+            longitude = longitude,
+            bearingDeg = stamp.bearingDeg,
+            borderWidth = 0f,
+            outerDotRadius = 0f,
+            mapScene = stamp.mapScene
+        )
+    }
+
     fun applyStamp(
         file: File,
         stamp: CaptureStamp,
@@ -122,7 +182,8 @@ object PhotoStampRenderer {
     ) {
         var mutable = loadMutableNormalizedBitmap(file) ?: return
         mutable = cropBitmapToAspectRatio(mutable, ratio)
-        val resolvedTile = resolveStampTileBitmap(stamp, tileBitmap)
+        val viewport = resolveStampViewport(stamp)
+        val resolvedTile = resolveStampTileBitmap(stamp, tileBitmap, viewport)
         drawStamp(
             canvas = Canvas(mutable),
             frameWidth = mutable.width.toFloat(),
@@ -131,7 +192,32 @@ object PhotoStampRenderer {
             tileBitmap = resolvedTile,
             missingLocationText = "Khong co vi tri"
         )
-        if (tileBitmap == null) {
+        if (resolvedTile != null && resolvedTile !== tileBitmap) {
+            resolvedTile?.recycle()
+        }
+        writeBitmap(file, mutable, 92)
+    }
+
+    fun applyStamp(
+        context: Context,
+        file: File,
+        stamp: CaptureStamp,
+        ratio: CameraAspectRatio,
+        tileBitmap: Bitmap? = null
+    ) {
+        var mutable = loadMutableNormalizedBitmap(context, file) ?: return
+        mutable = cropBitmapToAspectRatio(mutable, ratio)
+        val viewport = resolveStampViewport(stamp)
+        val resolvedTile = resolveStampTileBitmap(stamp, tileBitmap, viewport)
+        drawStamp(
+            canvas = Canvas(mutable),
+            frameWidth = mutable.width.toFloat(),
+            frameHeight = mutable.height.toFloat(),
+            stamp = stamp,
+            tileBitmap = resolvedTile,
+            missingLocationText = "Khong co vi tri"
+        )
+        if (resolvedTile != null && resolvedTile !== tileBitmap) {
             resolvedTile?.recycle()
         }
         writeBitmap(file, mutable, 92)
@@ -144,7 +230,8 @@ object PhotoStampRenderer {
         tileBitmap: Bitmap? = null
     ): Bitmap {
         val overlay = Bitmap.createBitmap(frameWidthPx, frameHeightPx, Bitmap.Config.ARGB_8888)
-        val resolvedTile = resolveStampTileBitmap(stamp, tileBitmap)
+        val viewport = resolveStampViewport(stamp)
+        val resolvedTile = resolveStampTileBitmap(stamp, tileBitmap, viewport)
         drawStamp(
             canvas = Canvas(overlay),
             frameWidth = frameWidthPx.toFloat(),
@@ -153,7 +240,7 @@ object PhotoStampRenderer {
             tileBitmap = resolvedTile,
             missingLocationText = "Khong co vi tri"
         )
-        if (tileBitmap == null) {
+        if (resolvedTile != null && resolvedTile !== tileBitmap) {
             resolvedTile?.recycle()
         }
         return overlay
@@ -202,7 +289,8 @@ object PhotoStampRenderer {
                 missingLocationText = missingLocationText
             ),
             bearingDeg = stamp.bearingDeg,
-            tileBitmap = tileBitmap
+            tileBitmap = tileBitmap,
+            mapScene = stamp.mapScene
         )
     }
 
@@ -219,20 +307,21 @@ object PhotoStampRenderer {
         tileBitmap: Bitmap? = null,
         missingLocationText: String = "Khong co vi tri"
     ) {
+        val stamp = CaptureStamp(
+            timestampMs = timestampMs,
+            latitude = latitude,
+            longitude = longitude,
+            address = address,
+            note = note,
+            bearingDeg = bearingDeg
+        )
         drawStamp(
             canvas = canvas,
             frameWidth = frameWidth,
             frameHeight = frameHeight,
-            content = PhotoStampLayoutCalculator.buildContent(
-                timestampMs = timestampMs,
-                address = address,
-                latitude = latitude,
-                longitude = longitude,
-                note = note,
-                missingLocationText = missingLocationText
-            ),
-            bearingDeg = bearingDeg,
-            tileBitmap = tileBitmap
+            stamp = stamp,
+            tileBitmap = tileBitmap,
+            missingLocationText = missingLocationText
         )
     }
 
@@ -242,7 +331,8 @@ object PhotoStampRenderer {
         frameHeight: Float,
         content: PhotoStampContent,
         bearingDeg: Float,
-        tileBitmap: Bitmap? = null
+        tileBitmap: Bitmap? = null,
+        mapScene: com.mapsupervision.domain.model.CaptureStampMapScene? = null
     ) {
         val layout = PhotoStampLayoutCalculator.calculate(
             frameWidth = frameWidth,
@@ -273,22 +363,23 @@ object PhotoStampRenderer {
             showMap = content.coordinateText != null
         )
 
+        val maxIconWidth = content.rows.maxOfOrNull { iconPaint.measureText(it.icon) } ?: 0f
+
+        val fontMetrics = textPaint.fontMetrics
+        val iconMetrics = iconPaint.fontMetrics
+
         contentLayout.rowLayouts.forEach { rowLayout ->
             val rect = rowLayout.rect.toRectF()
             canvas.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, pillBgPaint)
 
             rowLayout.row.lines.forEachIndexed { index, line -> 
                 val lineTop = rect.top + index * (contentLayout.pillHeight + contentLayout.lineGap)
-                val textBounds = Rect()
-                textPaint.getTextBounds(line, 0, line.length, textBounds)
-                val baselineY = lineTop + (contentLayout.pillHeight + textBounds.height()) / 2f
+                val baselineY = lineTop + (contentLayout.pillHeight - fontMetrics.bottom - fontMetrics.top) / 2f
                 canvas.drawText(line, rect.left + contentLayout.pillPaddingHorizontal, baselineY, textPaint)
             }
 
-            val iconBounds = Rect()
-            iconPaint.getTextBounds(rowLayout.row.icon, 0, rowLayout.row.icon.length, iconBounds)
-            val iconX = rect.right - contentLayout.pillPaddingHorizontal - iconPaint.measureText(rowLayout.row.icon)
-            val iconY = rect.top + (rect.height() + iconBounds.height()) / 2f
+            val iconX = rect.right - contentLayout.pillPaddingHorizontal - maxIconWidth
+            val iconY = rect.top + (rect.height() - iconMetrics.bottom - iconMetrics.top) / 2f
             canvas.drawText(rowLayout.row.icon, iconX, iconY, iconPaint)
         }
 
@@ -309,7 +400,8 @@ object PhotoStampRenderer {
                 coordinateOffsetY = contentLayout.mapCoordinateOffsetY,
                 outerDotRadius = contentLayout.mapDotOuterRadius,
                 innerDotRadius = contentLayout.mapDotInnerRadius,
-                coreDotRadius = contentLayout.mapDotCoreRadius
+                coreDotRadius = contentLayout.mapDotCoreRadius,
+                mapScene = mapScene
             )
         }
     }
@@ -335,10 +427,42 @@ object PhotoStampRenderer {
     fun fetchOsmTile(lat: Double, lng: Double, zoom: Int): Bitmap? {
         return try {
             val n = 1 shl zoom
-            val xTile = ((lng + 180.0) / 360.0 * n).toInt().coerceIn(0, n - 1)
+            val x = (lng + 180.0) / 360.0 * n
             val latRad = Math.toRadians(lat)
-            val yTile = ((1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) / 2.0 * n)
-                .toInt().coerceIn(0, n - 1)
+            val y = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) / 2.0 * n
+
+            val xTile = x.toInt()
+            val yTile = y.toInt()
+            val xFrac = x - xTile
+            val yFrac = y - yTile
+
+            val xLeft = if (xFrac < 0.5) (xTile - 1).coerceAtLeast(0) else xTile
+            val xRight = (xLeft + 1).coerceAtMost(n - 1)
+            val yTop = if (yFrac < 0.5) (yTile - 1).coerceAtLeast(0) else yTile
+            val yBottom = (yTop + 1).coerceAtMost(n - 1)
+
+            val tileTL = fetchOsmTileRaw(xLeft, yTop, zoom)
+            val tileTR = fetchOsmTileRaw(xRight, yTop, zoom)
+            val tileBL = fetchOsmTileRaw(xLeft, yBottom, zoom)
+            val tileBR = fetchOsmTileRaw(xRight, yBottom, zoom)
+
+            val composite = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(composite)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+            tileTL?.let { canvas.drawBitmap(it, 0f, 0f, paint); it.recycle() }
+            tileTR?.let { canvas.drawBitmap(it, 256f, 0f, paint); it.recycle() }
+            tileBL?.let { canvas.drawBitmap(it, 0f, 256f, paint); it.recycle() }
+            tileBR?.let { canvas.drawBitmap(it, 256f, 256f, paint); it.recycle() }
+
+            composite
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun fetchOsmTileRaw(xTile: Int, yTile: Int, zoom: Int): Bitmap? {
+        return try {
             val url = URL("https://tile.openstreetmap.org/$zoom/$xTile/$yTile.png")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -352,25 +476,176 @@ object PhotoStampRenderer {
         }
     }
 
-    private fun resolveStampTileBitmap(stamp: CaptureStamp, tileBitmap: Bitmap?): Bitmap? {
-        if (tileBitmap != null) return tileBitmap
-        val latitude = stamp.latitude
-        val longitude = stamp.longitude
-        return if (latitude != null && longitude != null) {
-            fetchOsmTile(latitude, longitude, zoom = 17)
-        } else {
-            null
+    private fun resolveStampTileBitmap(
+        stamp: CaptureStamp,
+        tileBitmap: Bitmap?,
+        viewport: MinimapViewport?
+    ): Bitmap? {
+        if (viewport == null) return null
+        val hasScopedMap = !stamp.mapScene?.nodes.isNullOrEmpty() || !stamp.mapScene?.routes.isNullOrEmpty()
+        if (tileBitmap != null && !hasScopedMap && viewport.zoom == MINIMAP_MAX_ZOOM) {
+            return tileBitmap
         }
+        return fetchOsmTile(viewport.centerLat, viewport.centerLng, zoom = viewport.zoom)
     }
 
-    private fun tilePixelOffset(lat: Double, lng: Double, zoom: Int, tileSize: Int): Pair<Float, Float> {
+    internal data class MinimapTileFrame(
+        val xLeftTile: Int,
+        val yTopTile: Int,
+        val centerSourceX: Float,
+        val centerSourceY: Float
+    )
+
+    internal data class MinimapViewport(
+        val centerLat: Double,
+        val centerLng: Double,
+        val zoom: Int,
+        val frame: MinimapTileFrame
+    )
+
+    private fun worldPixelPosition(lat: Double, lng: Double, zoom: Int): Pair<Float, Float> {
         val n = 1 shl zoom
-        val xFrac = (lng + 180.0) / 360.0 * n
+        val x = (lng + 180.0) / 360.0 * n * 256.0
         val latRad = Math.toRadians(lat)
-        val yFrac = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) / 2.0 * n
-        val px = ((xFrac - xFrac.toLong()) * tileSize).toFloat()
-        val py = ((yFrac - yFrac.toLong()) * tileSize).toFloat()
-        return Pair(px, py)
+        val y = (1.0 - kotlin.math.ln(kotlin.math.tan(latRad) + 1.0 / kotlin.math.cos(latRad)) / Math.PI) / 2.0 * n * 256.0
+        return Pair(x.toFloat(), y.toFloat())
+    }
+
+    private fun buildMinimapTileFrame(
+        centerLat: Double,
+        centerLng: Double,
+        zoom: Int
+    ): MinimapTileFrame {
+        val n = 1 shl zoom
+        val x = (centerLng + 180.0) / 360.0 * n
+        val latRad = Math.toRadians(centerLat)
+        val y = (1.0 - kotlin.math.ln(kotlin.math.tan(latRad) + 1.0 / kotlin.math.cos(latRad)) / Math.PI) / 2.0 * n
+
+        val xTile = x.toInt()
+        val yTile = y.toInt()
+        val xFrac = x - xTile
+        val yFrac = y - yTile
+
+        val xLeft = if (xFrac < 0.5) (xTile - 1).coerceAtLeast(0) else xTile
+        val yTop = if (yFrac < 0.5) (yTile - 1).coerceAtLeast(0) else yTile
+
+        val centerSourceX = ((x - xLeft) * 256.0).toFloat()
+        val centerSourceY = ((y - yTop) * 256.0).toFloat()
+        return MinimapTileFrame(
+            xLeftTile = xLeft,
+            yTopTile = yTop,
+            centerSourceX = centerSourceX,
+            centerSourceY = centerSourceY
+        )
+    }
+
+    internal fun getCanvasCoords(
+        nodeLat: Double,
+        nodeLng: Double,
+        frame: MinimapTileFrame,
+        rect: RectF,
+        tileBitmapWidth: Int,
+        zoom: Int
+    ): Pair<Float, Float> {
+        val (nodeWorldX, nodeWorldY) = worldPixelPosition(nodeLat, nodeLng, zoom)
+        val sourceX = nodeWorldX - frame.xLeftTile * 256f
+        val sourceY = nodeWorldY - frame.yTopTile * 256f
+        val scale = rect.width() / tileBitmapWidth.toFloat()
+        val canvasX = rect.centerX() + (sourceX - frame.centerSourceX) * scale
+        val canvasY = rect.centerY() + (sourceY - frame.centerSourceY) * scale
+        return Pair(canvasX, canvasY)
+    }
+
+    private fun minimapFitPaddingPx(
+        rect: RectF,
+        borderWidth: Float,
+        outerDotRadius: Float
+    ): Float {
+        val coneRadius = rect.width() * 0.42f * 0.8f
+        val visualPadding = maxOf(rect.width() * 0.08f, borderWidth * 2f, outerDotRadius * 1.5f)
+        return maxOf(visualPadding, coneRadius + borderWidth)
+    }
+
+    private fun offsetCoordinate(
+        latitude: Double,
+        longitude: Double,
+        bearingDeg: Float,
+        distanceMeters: Double
+    ): Pair<Double, Double> {
+        val earthRadiusM = 6_378_137.0
+        val bearingRad = Math.toRadians(bearingDeg.toDouble())
+        val latRad = Math.toRadians(latitude)
+        val lngRad = Math.toRadians(longitude)
+        val angularDistance = distanceMeters / earthRadiusM
+        val sinLat = sin(latRad)
+        val cosLat = cos(latRad)
+        val sinAd = sin(angularDistance)
+        val cosAd = cos(angularDistance)
+        val destLat = kotlin.math.asin(sinLat * cosAd + cosLat * sinAd * cos(bearingRad))
+        val destLng = lngRad + kotlin.math.atan2(
+            sin(bearingRad) * sinAd * cosLat,
+            cosAd - sinLat * sin(destLat)
+        )
+        return Math.toDegrees(destLat) to Math.toDegrees(destLng)
+    }
+
+    internal fun resolveMinimapViewport(
+        rect: RectF,
+        latitude: Double,
+        longitude: Double,
+        bearingDeg: Float,
+        borderWidth: Float,
+        outerDotRadius: Float,
+        mapScene: com.mapsupervision.domain.model.CaptureStampMapScene?
+    ): MinimapViewport {
+        val cameraLat = mapScene?.cameraLatitude ?: latitude
+        val cameraLng = mapScene?.cameraLongitude ?: longitude
+        val scopedNodes = mapScene?.nodes.orEmpty()
+        val scopedRoutes = mapScene?.routes.orEmpty()
+        val hasScopedMap = scopedNodes.isNotEmpty() || scopedRoutes.isNotEmpty()
+        if (!hasScopedMap) {
+            return MinimapViewport(
+                centerLat = cameraLat,
+                centerLng = cameraLng,
+                zoom = MINIMAP_MAX_ZOOM,
+                frame = buildMinimapTileFrame(cameraLat, cameraLng, MINIMAP_MAX_ZOOM)
+            )
+        }
+
+        val fitPaddingPx = minimapFitPaddingPx(rect, borderWidth, outerDotRadius)
+        val availableWidthPx = (rect.width() - fitPaddingPx * 2f).coerceAtLeast(24f)
+        val availableHeightPx = (rect.height() - fitPaddingPx * 2f).coerceAtLeast(24f)
+        val coneMeters = 35.0
+        val mapPoints = mutableListOf<Pair<Double, Double>>()
+        mapPoints += cameraLat to cameraLng
+        mapPoints += offsetCoordinate(cameraLat, cameraLng, bearingDeg - 22.5f, coneMeters)
+        mapPoints += offsetCoordinate(cameraLat, cameraLng, bearingDeg + 22.5f, coneMeters)
+        scopedNodes.forEach { mapPoints += it.latitude to it.longitude }
+        scopedRoutes.forEach { route -> mapPoints += route.points }
+
+        val latitudes = mapPoints.map { it.first }
+        val longitudes = mapPoints.map { it.second }
+        for (zoom in MINIMAP_MAX_ZOOM downTo MINIMAP_MIN_ZOOM) {
+            val worldPoints = mapPoints.map { worldPixelPosition(it.first, it.second, zoom) }
+            val cameraWorld = worldPixelPosition(cameraLat, cameraLng, zoom)
+            val maxDeltaX = worldPoints.maxOf { kotlin.math.abs(it.first - cameraWorld.first) }
+            val maxDeltaY = worldPoints.maxOf { kotlin.math.abs(it.second - cameraWorld.second) }
+            if (maxDeltaX * 2f <= availableWidthPx && maxDeltaY * 2f <= availableHeightPx) {
+                return MinimapViewport(
+                    centerLat = cameraLat,
+                    centerLng = cameraLng,
+                    zoom = zoom,
+                    frame = buildMinimapTileFrame(cameraLat, cameraLng, zoom)
+                )
+            }
+        }
+
+        return MinimapViewport(
+            centerLat = cameraLat,
+            centerLng = cameraLng,
+            zoom = MINIMAP_MIN_ZOOM,
+            frame = buildMinimapTileFrame(cameraLat, cameraLng, MINIMAP_MIN_ZOOM)
+        )
     }
 
     private fun drawMinimap(
@@ -388,81 +663,146 @@ object PhotoStampRenderer {
         coordinateOffsetY: Float,
         outerDotRadius: Float,
         innerDotRadius: Float,
-        coreDotRadius: Float
+        coreDotRadius: Float,
+        mapScene: com.mapsupervision.domain.model.CaptureStampMapScene? = null
     ) {
         val clipPath = Path().apply {
             addRoundRect(rect, cornerR, cornerR, Path.Direction.CW)
         }
+        val hasScopedMap = !mapScene?.nodes.isNullOrEmpty() || !mapScene?.routes.isNullOrEmpty()
         canvas.save()
         canvas.clipPath(clipPath)
 
+        val viewport = resolveMinimapViewport(
+            rect = rect,
+            latitude = lat,
+            longitude = lng,
+            bearingDeg = bearingDeg,
+            borderWidth = borderWidth,
+            outerDotRadius = outerDotRadius,
+            mapScene = mapScene
+        )
+        val frame = viewport.frame
+
         if (tileBitmap != null) {
-            val tileW = tileBitmap.width.toFloat()
-            val tileH = tileBitmap.height.toFloat()
-            val (px, py) = tilePixelOffset(lat, lng, zoom = 17, tileSize = tileBitmap.width)
-            val half = minOf(tileW, tileH) / 2f
-            val srcLeft = (px - half).coerceIn(0f, tileW - 1f)
-            val srcTop = (py - half).coerceIn(0f, tileH - 1f)
-            val srcRight = (srcLeft + minOf(tileW, tileH)).coerceAtMost(tileW)
-            val srcBottom = (srcTop + minOf(tileW, tileH)).coerceAtMost(tileH)
-            val src = Rect(srcLeft.toInt(), srcTop.toInt(), srcRight.toInt(), srcBottom.toInt())
-            canvas.drawBitmap(tileBitmap, src, rect, Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = MINIMAP_TILE_ALPHA })
+            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(248, 242, 239, 233) }
+            canvas.drawRect(rect, bgPaint)
+            canvas.drawBitmap(
+                tileBitmap,
+                null,
+                rect,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = MINIMAP_TILE_ALPHA }
+            )
         } else {
             val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(248, 242, 239, 233) }
             canvas.drawRect(rect, bgPaint)
+            if (!hasScopedMap) {
+                val waterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(220, 160, 210, 230) }
+                val waterPath = Path().apply {
+                    moveTo(rect.left, rect.top + rect.height() * 0.58f)
+                    cubicTo(
+                        rect.left + rect.width() * 0.25f, rect.top + rect.height() * 0.50f,
+                        rect.left + rect.width() * 0.60f, rect.top + rect.height() * 0.65f,
+                        rect.right, rect.top + rect.height() * 0.55f
+                    )
+                    lineTo(rect.right, rect.bottom)
+                    lineTo(rect.left, rect.bottom)
+                    close()
+                }
+                canvas.drawPath(waterPath, waterPaint)
 
-            val waterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(220, 160, 210, 230) }
-            val waterPath = Path().apply {
-                moveTo(rect.left, rect.top + rect.height() * 0.58f)
-                cubicTo(
-                    rect.left + rect.width() * 0.25f, rect.top + rect.height() * 0.50f,
-                    rect.left + rect.width() * 0.60f, rect.top + rect.height() * 0.65f,
-                    rect.right, rect.top + rect.height() * 0.55f
+                val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(180, 195, 230, 170) }
+                canvas.drawRoundRect(
+                    RectF(
+                        rect.left + rect.width() * 0.06f,
+                        rect.top + rect.height() * 0.06f,
+                        rect.left + rect.width() * 0.38f,
+                        rect.top + rect.height() * 0.40f
+                    ),
+                    18f * scale,
+                    18f * scale,
+                    greenPaint
                 )
-                lineTo(rect.right, rect.bottom)
-                lineTo(rect.left, rect.bottom)
-                close()
             }
-            canvas.drawPath(waterPath, waterPaint)
-
-            val greenPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(180, 195, 230, 170) }
-            canvas.drawRoundRect(
-                RectF(
-                    rect.left + rect.width() * 0.06f,
-                    rect.top + rect.height() * 0.06f,
-                    rect.left + rect.width() * 0.38f,
-                    rect.top + rect.height() * 0.40f
-                ),
-                6f * scale,
-                6f * scale,
-                greenPaint
-            )
-
-            val roadMainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                strokeWidth = 6f * scale
-                strokeCap = Paint.Cap.ROUND
-                style = Paint.Style.STROKE
-            }
-            val cx = rect.centerX()
-            val cy = rect.centerY()
-            canvas.drawLine(rect.left + 6f * scale, cy - 6f * scale, rect.right - 6f * scale, cy + 6f * scale, roadMainPaint)
-            canvas.drawLine(cx + 5f * scale, rect.top + 6f * scale, cx - 5f * scale, rect.bottom - 6f * scale, roadMainPaint)
-
-            val buildingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(130, 205, 198, 188) }
-            listOf(
-                RectF(rect.left + 8f * scale, rect.top + 8f * scale, cx - 12f * scale, cy - 16f * scale),
-                RectF(cx + 12f * scale, rect.top + 8f * scale, rect.right - 8f * scale, cy - 16f * scale),
-                RectF(rect.left + 8f * scale, cy + 16f * scale, cx - 12f * scale, rect.bottom - 8f * scale),
-                RectF(cx + 12f * scale, cy + 16f * scale, rect.right - 8f * scale, rect.bottom - 8f * scale)
-            ).forEach { canvas.drawRect(it, buildingPaint) }
         }
 
-        val cx = rect.centerX()
-        val cy = rect.centerY()
+        // Draw GIS routes
+        mapScene?.routes?.forEach { route ->
+            if (route.points.size > 1) {
+                val path = Path()
+                var first = true
+                route.points.forEach { pt ->
+                    val (rx, ry) = getCanvasCoords(pt.first, pt.second, frame, rect, tileBitmap?.width ?: 512, viewport.zoom)
+                    if (first) {
+                        path.moveTo(rx, ry)
+                        first = false
+                    } else {
+                        path.lineTo(rx, ry)
+                    }
+                }
+                val routePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = if (route.highlighted) Color.argb(220, 255, 179, 0) else Color.argb(180, 26, 115, 232)
+                    style = Paint.Style.STROKE
+                    strokeWidth = if (route.highlighted) 5f * scale else 3f * scale
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                }
+                canvas.drawPath(path, routePaint)
+            }
+        }
+
+        // Draw GIS nodes
+        mapScene?.nodes?.forEach { node ->
+            val (cxNode, cyNode) = getCanvasCoords(node.latitude, node.longitude, frame, rect, tileBitmap?.width ?: 512, viewport.zoom)
+            val nodeStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                style = Paint.Style.STROKE
+                strokeWidth = 1.5f * scale
+            }
+            if (!node.label.isNullOrBlank()) {
+                val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.WHITE
+                    textSize = 8f * scale
+                    typeface = Typeface.DEFAULT_BOLD
+                    textAlign = Paint.Align.CENTER
+                }
+                val radius = 9f * scale
+                val nodeLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    val hex = node.colorHex
+                    color = if (!hex.isNullOrBlank()) {
+                        try { Color.parseColor(hex) } catch (_: Exception) { Color.parseColor("#f97316") }
+                    } else {
+                        if (node.highlighted) Color.parseColor("#ffb300") else Color.parseColor("#f97316")
+                    }
+                    style = Paint.Style.FILL
+                }
+                canvas.drawCircle(cxNode, cyNode, radius, nodeLabelPaint)
+                canvas.drawCircle(cxNode, cyNode, radius, nodeStroke)
+
+                val textY = cyNode - (labelPaint.descent() + labelPaint.ascent()) / 2f
+                canvas.drawText(node.label, cxNode, textY, labelPaint)
+            } else {
+                val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    val hex = node.colorHex
+                    color = if (!hex.isNullOrBlank()) {
+                        try { Color.parseColor(hex) } catch (_: Exception) { Color.parseColor("#f97316") }
+                    } else {
+                        if (node.highlighted) Color.parseColor("#ffb300") else Color.parseColor("#f97316")
+                    }
+                    style = Paint.Style.FILL
+                }
+                val radius = if (node.highlighted) 6f * scale else 4f * scale
+                canvas.drawCircle(cxNode, cyNode, radius, nodePaint)
+                canvas.drawCircle(cxNode, cyNode, radius, nodeStroke)
+            }
+        }
+
+        val cameraLat = mapScene?.cameraLatitude ?: lat
+        val cameraLng = mapScene?.cameraLongitude ?: lng
+        val (cx, cy) = getCanvasCoords(cameraLat, cameraLng, frame, rect, tileBitmap?.width ?: 512, viewport.zoom)
         val bearingRad = Math.toRadians(bearingDeg.toDouble()).toFloat()
         val coneAngle = Math.toRadians(45.0).toFloat()
-        val coneLen = rect.width() * 0.42f
+        val coneLen = rect.width() * 0.42f * 0.8f
 
         val coneFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(90, 255, 200, 0)
@@ -471,7 +811,7 @@ object PhotoStampRenderer {
         val coneStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(180, 220, 160, 0)
             style = Paint.Style.STROKE
-            strokeWidth = 2f * scale
+            strokeWidth = 6f * scale
         }
         val conePath = Path().apply {
             moveTo(cx, cy)
@@ -491,26 +831,34 @@ object PhotoStampRenderer {
 
         canvas.restore()
 
-        canvas.drawRoundRect(rect, cornerR, cornerR, Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(200, 25, 110, 190)
-            style = Paint.Style.STROKE
-            strokeWidth = borderWidth
-        })
+        // Draw map border
+        if (borderWidth > 0f) {
+            val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(160, 255, 255, 255)
+                style = Paint.Style.STROKE
+                strokeWidth = borderWidth
+            }
+            canvas.drawRoundRect(rect, cornerR, cornerR, borderPaint)
+        }
 
         if (coordinateText != null) {
             val coordinateTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.argb(210, 25, 110, 190)
                 textSize = coordinateTextSize
                 typeface = Typeface.DEFAULT_BOLD
-                setShadowLayer(2f * scale, 0f, 1f * scale, Color.WHITE)
+                setShadowLayer(6f * scale, 0f, 3f * scale, Color.WHITE)
             }
-            val textWidth = coordinateTextPaint.measureText(coordinateText)
-            canvas.drawText(
-                coordinateText,
-                rect.centerX() - textWidth / 2f,
-                rect.bottom + coordinateOffsetY,
-                coordinateTextPaint
-            )
+            val lines = coordinateText.split("\n")
+            lines.forEachIndexed { idx, line ->
+                val textWidth = coordinateTextPaint.measureText(line)
+                val offset = coordinateOffsetY + idx * (coordinateTextSize + 4f * scale)
+                canvas.drawText(
+                    line,
+                    rect.centerX() - textWidth / 2f,
+                    rect.bottom + offset,
+                    coordinateTextPaint
+                )
+            }
         }
     }
 

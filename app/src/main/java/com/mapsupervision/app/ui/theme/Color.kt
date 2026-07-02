@@ -17,16 +17,17 @@ val OnTertiary = Color(0xFF00363D)
 val TertiaryContainer = Color(0xFF00B4D8)
 val OnTertiaryContainer = Color(0xFF03045E)
 
-val BackgroundDark = Color(0xFF060814) // Deep OLED Black
+val BackgroundDark = Color(0xFF000000) // Pure OLED Black
 val OnBackground = Color(0xFFE2E6F3)
 
-val SurfaceDark = Color(0xFF0E1225) // Card base on background
+val SurfaceDark = Color(0xFF0C0D14) // Surface level 1
 val OnSurface = Color(0xFFE2E6F3)
-val SurfaceVariantDark = Color(0xFF1B223C) // Secondary panels / active states
+val SurfaceVariantDark = Color(0xFF141724) // Surface level 2 (Raised)
 val OnSurfaceVariant = Color(0xFFBAC3E2)
+val SurfaceOverlayDark = Color(0xFF1C2032) // Surface level 3 (Overlay)
 
-val OutlineColor = Color(0xFF4C567A) // Reflective border/divider lines
-val OutlineVariantColor = Color(0xFF262D4A)
+val OutlineColor = Color(0xFF2C324E) // High contrast border/divider lines
+val OutlineVariantColor = Color(0xFF1E2235)
 
 val ErrorColor = Color(0xFFFFB4AB)
 val OnErrorColor = Color(0xFF690005)

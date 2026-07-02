@@ -28,28 +28,34 @@ class GisRepositoryImpl @Inject constructor(
     private val activeProjectRepository: ActiveProjectRepository
 ) : GisRepository {
     override suspend fun upsertNode(node: GisNode): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        nodeDao(node.projectId).upsert(node.toEntity())
+        val normalized = node.copy(updatedAtEpochMs = if (node.updatedAtEpochMs == 0L) System.currentTimeMillis() else node.updatedAtEpochMs)
+        nodeDao(node.projectId).upsert(normalized.toEntity())
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to upsert node", it)) }
     ) }
 
     override suspend fun upsertRoute(route: GisRoute): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        routeDao(route.projectId).upsert(route.toEntity())
+        val normalized = route.copy(updatedAtEpochMs = if (route.updatedAtEpochMs == 0L) System.currentTimeMillis() else route.updatedAtEpochMs)
+        routeDao(route.projectId).upsert(normalized.toEntity())
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to upsert route", it)) }
     ) }
 
     override suspend fun upsertNodes(nodes: List<GisNode>): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        if (nodes.isNotEmpty()) nodeDao(nodes.first().projectId).upsertAll(nodes.map { it.toEntity() })
+        if (nodes.isNotEmpty()) nodeDao(nodes.first().projectId).upsertAll(nodes.map {
+            it.copy(updatedAtEpochMs = if (it.updatedAtEpochMs == 0L) System.currentTimeMillis() else it.updatedAtEpochMs).toEntity()
+        })
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to bulk upsert nodes", it)) }
     ) }
 
     override suspend fun upsertRoutes(routes: List<GisRoute>): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        if (routes.isNotEmpty()) routeDao(routes.first().projectId).upsertAll(routes.map { it.toEntity() })
+        if (routes.isNotEmpty()) routeDao(routes.first().projectId).upsertAll(routes.map {
+            it.copy(updatedAtEpochMs = if (it.updatedAtEpochMs == 0L) System.currentTimeMillis() else it.updatedAtEpochMs).toEntity()
+        })
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to bulk upsert routes", it)) }
@@ -65,9 +71,10 @@ class GisRepositoryImpl @Inject constructor(
             val normalizedNodes = nodes.map { it.copy(projectId = projectId, importedFileId = importedFileId) }
             val normalizedRoutes = routes.map { it.copy(projectId = projectId, importedFileId = importedFileId) }
             val db = databaseFor(projectId)
+            val now = System.currentTimeMillis()
             db.withTransaction {
-                db.gisNodeDao().deleteByImportedFileId(projectId, importedFileId)
-                db.gisRouteDao().deleteByImportedFileId(projectId, importedFileId)
+                db.gisNodeDao().markDeletedByImportedFileId(projectId, importedFileId, now, now)
+                db.gisRouteDao().markDeletedByImportedFileId(projectId, importedFileId, now, now)
                 if (normalizedNodes.isNotEmpty()) db.gisNodeDao().upsertAll(normalizedNodes.map { it.toEntity() })
                 if (normalizedRoutes.isNotEmpty()) db.gisRouteDao().upsertAll(normalizedRoutes.map { it.toEntity() })
             }
@@ -78,7 +85,11 @@ class GisRepositoryImpl @Inject constructor(
 
     override suspend fun searchNodes(projectId: String, query: String): AppResult<List<GisNode>> = withContext(Dispatchers.IO) { runCatching {
         val dao = nodeDao(projectId)
-        val rows = if (query.isBlank()) dao.byProject(projectId) else dao.search(projectId, query)
+        val trimmedQuery = query.trim()
+        val rows = when {
+            trimmedQuery.isBlank() -> dao.byProject(projectId)
+            else -> dao.searchFast(projectId, trimmedQuery).ifEmpty { dao.search(projectId, trimmedQuery) }
+        }
         rows.map { it.toDomain() }
     }.fold(
         onSuccess = { AppResult.Success(it) },
@@ -87,7 +98,11 @@ class GisRepositoryImpl @Inject constructor(
 
     override suspend fun searchRoutes(projectId: String, query: String): AppResult<List<GisRoute>> = withContext(Dispatchers.IO) { runCatching {
         val dao = routeDao(projectId)
-        val rows = if (query.isBlank()) dao.byProject(projectId) else dao.search(projectId, query)
+        val trimmedQuery = query.trim()
+        val rows = when {
+            trimmedQuery.isBlank() -> dao.byProject(projectId)
+            else -> dao.searchFast(projectId, trimmedQuery).ifEmpty { dao.search(projectId, trimmedQuery) }
+        }
         rows.map { it.toDomain() }
     }.fold(
         onSuccess = { AppResult.Success(it) },
@@ -114,10 +129,40 @@ class GisRepositoryImpl @Inject constructor(
         emitAll(source.map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
     }
 
-    private fun GisNode.toEntity() = GisNodeEntity(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, materialSummary, importedFileId)
-    private fun GisRoute.toEntity() = GisRouteEntity(id, projectId, code, contractor, startNodeCode, endNodeCode, points, importedFileId, designLength)
-    private fun GisNodeEntity.toDomain() = GisNode(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, materialSummary, importedFileId)
-    private fun GisRouteEntity.toDomain() = GisRoute(id, projectId, code, contractor, startNodeCode, endNodeCode, points, importedFileId, designLength)
+    private fun GisNode.toEntity() = GisNodeEntity(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, workVolumeSummary, importedFileId, updatedAtEpochMs, isDeleted, deletedAtEpochMs)
+    private fun GisRoute.toEntity() = GisRouteEntity(
+        id = id,
+        projectId = projectId,
+        code = code,
+        contractor = contractor,
+        startNodeCode = startNodeCode,
+        endNodeCode = endNodeCode,
+        points = points,
+        importedFileId = importedFileId,
+        designLength = designLength,
+        startNodeId = startNodeId,
+        endNodeId = endNodeId,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
+    )
+    private fun GisNodeEntity.toDomain() = GisNode(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, workVolumeSummary, importedFileId, updatedAtEpochMs, isDeleted, deletedAtEpochMs)
+    private fun GisRouteEntity.toDomain() = GisRoute(
+        id = id,
+        projectId = projectId,
+        code = code,
+        contractor = contractor,
+        startNodeCode = startNodeCode,
+        endNodeCode = endNodeCode,
+        points = points,
+        importedFileId = importedFileId,
+        designLength = designLength,
+        startNodeId = startNodeId,
+        endNodeId = endNodeId,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
+    )
 
     private suspend fun databaseFor(projectId: String): MapSupervisionDatabase =
         projectScopedDatabaseProvider.databaseFor(projectId) ?: sharedDatabase
@@ -128,3 +173,4 @@ class GisRepositoryImpl @Inject constructor(
     private suspend fun routeDao(projectId: String): GisRouteDao =
         databaseFor(projectId).gisRouteDao()
 }
+

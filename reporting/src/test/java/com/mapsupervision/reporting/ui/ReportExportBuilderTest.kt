@@ -1,10 +1,10 @@
 package com.mapsupervision.reporting.ui
 
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.ai.core.ReportDraftResult
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.PhotoLocationStatus
 import com.mapsupervision.domain.model.SitePhoto
@@ -20,7 +20,7 @@ class ReportExportBuilderTest {
             filterContractor = null,
             photos = samplePhotos(),
             progress = sampleProgress(),
-            materialRowsRaw = sampleMaterialRows(),
+            workVolumeRowsRaw = sampleWorkVolumeRows(),
             nodes = sampleNodes(),
             routes = sampleRoutes(),
             dailyLogs = sampleDailyLogs(),
@@ -33,11 +33,11 @@ class ReportExportBuilderTest {
         assertEquals(8, content.lines.size)
         assertTrue(content.lines.any { it.contains("Summary") })
         assertTrue(content.lines.any { it.contains("Risk") })
-        assertEquals(listOf("Cable", "Pipe", "Tổng"), content.materialRows.map { it.materialName })
-        assertTrue(content.materialRows.last().isTotal)
-        assertEquals(30f, content.materialRows[0].totalPlannedQty, 0.001f)
-        assertEquals(20f, content.materialRows[0].totalActualQty, 0.001f)
-        assertEquals(66.666664f, content.materialRows[0].completionPercent, 0.001f)
+        assertEquals(listOf("Cable", "Pipe", "Tổng"), content.workVolumeRows.map { it.workName })
+        assertTrue(content.workVolumeRows.last().isTotal)
+        assertEquals(30f, content.workVolumeRows[0].totalPlannedQty, 0.001f)
+        assertEquals(20f, content.workVolumeRows[0].totalActualQty, 0.001f)
+        assertEquals(66.666664f, content.workVolumeRows[0].completionPercent, 0.001f)
     }
 
     @Test
@@ -47,7 +47,7 @@ class ReportExportBuilderTest {
             filterContractor = "Contractor A",
             photos = samplePhotos(),
             progress = sampleProgress(),
-            materialRowsRaw = sampleMaterialRows(),
+            workVolumeRowsRaw = sampleWorkVolumeRows(),
             nodes = sampleNodes(),
             routes = sampleRoutes(),
             dailyLogs = sampleDailyLogs(),
@@ -60,13 +60,13 @@ class ReportExportBuilderTest {
         assertEquals(8, content.lines.size)
         assertTrue(content.lines.any { it.contains("Summary") })
         assertTrue(content.lines.any { it.contains("Risk") })
-        assertEquals(listOf("Cable", "Tổng"), content.materialRows.map { it.materialName })
-        assertEquals(10f, content.materialRows[0].totalPlannedQty, 0.001f)
-        assertEquals(6f, content.materialRows[0].totalActualQty, 0.001f)
-        assertEquals(60f, content.materialRows[0].completionPercent, 0.001f)
-        assertEquals(10f, content.materialRows.last().totalPlannedQty, 0.001f)
-        assertEquals(6f, content.materialRows.last().totalActualQty, 0.001f)
-        assertEquals(60f, content.materialRows.last().completionPercent, 0.001f)
+        assertEquals(listOf("Cable", "Tổng"), content.workVolumeRows.map { it.workName })
+        assertEquals(10f, content.workVolumeRows[0].totalPlannedQty, 0.001f)
+        assertEquals(6f, content.workVolumeRows[0].totalActualQty, 0.001f)
+        assertEquals(60f, content.workVolumeRows[0].completionPercent, 0.001f)
+        assertEquals(10f, content.workVolumeRows.last().totalPlannedQty, 0.001f)
+        assertEquals(6f, content.workVolumeRows.last().totalActualQty, 0.001f)
+        assertEquals(60f, content.workVolumeRows.last().completionPercent, 0.001f)
     }
 
     @Test
@@ -78,8 +78,8 @@ class ReportExportBuilderTest {
             routes = sampleRoutes(),
             photos = samplePhotos(),
             progress = sampleProgress(),
-            materialRowsRaw = sampleMaterialRows(),
-            materialRows = buildMaterialReportRows(sampleNodes(), sampleRoutes(), sampleMaterialRows()),
+            workVolumeRowsRaw = sampleWorkVolumeRows(),
+            workVolumeRows = buildMaterialReportRows(sampleNodes(), sampleRoutes(), sampleWorkVolumeRows()),
             dailyLogs = sampleDailyLogs()
         )
 
@@ -94,7 +94,7 @@ class ReportExportBuilderTest {
         assertEquals(2, content.dailyLogLines.size)
         assertEquals(8, content.lines.size)
         assertTrue(content.lines.first().startsWith("B"))
-        assertEquals(listOf("Cable", "Tổng"), content.materialRows.map { it.materialName })
+        assertEquals(listOf("Cable", "Tổng"), content.workVolumeRows.map { it.workName })
     }
 
 
@@ -108,15 +108,15 @@ class ReportExportBuilderTest {
                 contractor = "Contractor C",
                 latitude = 0.0,
                 longitude = 0.0,
-                materialSummary = ""
+                workVolumeSummary = ""
             )
         )
         val rows = listOf(
-            MaterialProgress(
+            WorkVolumeProgress(
                 id = "material-c",
                 projectId = "project-1",
                 nodeCode = "NODE-C",
-                materialName = "Clamp",
+                workName = "Clamp",
                 plannedQty = 7f,
                 actualQty = 3f,
                 updatedAtEpochMs = 1_000L,
@@ -126,7 +126,7 @@ class ReportExportBuilderTest {
 
         val materialRows = buildMaterialReportRows(nodes, emptyList(), rows, filterContractor = "Contractor C")
 
-        assertEquals(listOf("Clamp", "Tổng"), materialRows.map { it.materialName })
+        assertEquals(listOf("Clamp", "Tổng"), materialRows.map { it.workName })
         assertEquals(7f, materialRows[0].totalPlannedQty, 0.001f)
         assertEquals(3f, materialRows[0].totalActualQty, 0.001f)
         assertEquals(42.857143f, materialRows[0].completionPercent, 0.001f)
@@ -194,32 +194,32 @@ class ReportExportBuilderTest {
         )
     )
 
-    private fun sampleMaterialRows() = listOf(
-        MaterialProgress(
+    private fun sampleWorkVolumeRows() = listOf(
+        WorkVolumeProgress(
             id = "material-a",
             projectId = "project-1",
             nodeCode = "NODE-A",
-            materialName = "Cable",
+            workName = "Cable",
             plannedQty = 10f,
             actualQty = 6f,
             updatedAtEpochMs = 1_000L,
             unit = ""
         ),
-        MaterialProgress(
+        WorkVolumeProgress(
             id = "material-b",
             projectId = "project-1",
             nodeCode = "NODE-B",
-            materialName = "Cable",
+            workName = "Cable",
             plannedQty = 20f,
             actualQty = 14f,
             updatedAtEpochMs = 2_000L,
             unit = ""
         ),
-        MaterialProgress(
+        WorkVolumeProgress(
             id = "material-c",
             projectId = "project-1",
             nodeCode = "NODE-B",
-            materialName = "Pipe",
+            workName = "Pipe",
             plannedQty = 5f,
             actualQty = 2f,
             updatedAtEpochMs = 3_000L,
@@ -235,7 +235,7 @@ class ReportExportBuilderTest {
             contractor = "Contractor A",
             latitude = 0.0,
             longitude = 0.0,
-            materialSummary = "Cable: 10"
+            workVolumeSummary = "Cable: 10"
         ),
         GisNode(
             id = "node-b-id",
@@ -244,7 +244,7 @@ class ReportExportBuilderTest {
             contractor = "Contractor B",
             latitude = 0.0,
             longitude = 0.0,
-            materialSummary = "Cable: 20\nPipe: 5"
+            workVolumeSummary = "Cable: 20\nPipe: 5"
         )
     )
 
@@ -284,6 +284,7 @@ class ReportExportBuilderTest {
         )
     )
 }
+
 
 
 

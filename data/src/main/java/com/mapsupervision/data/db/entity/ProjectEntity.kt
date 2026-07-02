@@ -20,5 +20,8 @@ data class ProjectEntity(
     val storageMode: ProjectStorageMode = ProjectStorageMode.LEGACY_SHARED,
     @ColumnInfo(defaultValue = "")
     val projectDbPath: String = "",
-    val projectCode: String? = null
+    val projectCode: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )

@@ -55,22 +55,22 @@ fun NonExcelMappingDialog(
         contractorField: String?,
         mapNumberField: String?,
         objectTypeField: String?,
-        itemFieldsCsv: String?,
+        workVolumeFieldsCsv: String?,
         routeLengthField: String?,
         confirmedPositionField: Boolean?,
         confirmedCoordinateField: Boolean?,
         confirmedContractorField: Boolean?,
         confirmedMapNumberField: Boolean?,
         confirmedObjectTypeField: Boolean?,
-        confirmedItemFields: Boolean?,
+        confirmedWorkVolumeFields: Boolean?,
         confirmedRouteLengthField: Boolean?
     ) -> Unit,
     onConfirmParse: () -> Unit
 ) {
     val candidates = state.candidates
-    val selectedItems = remember(state.itemFieldsCsv) {
+    val selectedItems = remember(state.workVolumeFieldsCsv) {
         mutableStateListOf<String>().apply {
-            addAll(state.itemFieldsCsv.split(",").map { it.trim() }.filter { it.isNotBlank() })
+            addAll(state.workVolumeFieldsCsv.split(",").map { it.trim() }.filter { it.isNotBlank() })
         }
     }
 
@@ -163,7 +163,7 @@ fun NonExcelMappingDialog(
                     onConfirmedChange = { onUpdateMapping(null, null, null, null, null, null, null, null, null, null, null, null, null, it) }
                 )
 
-                // 7. Trường vật tư / Khối lượng (Items)
+                // 7. Trường công việc / khối lượng công việc
                 if (candidates.itemOptions.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -171,7 +171,7 @@ fun NonExcelMappingDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("7. Chọn trường vật tư đi kèm", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("7. Chọn trường công việc đi kèm", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     text = "Tất cả",
@@ -232,12 +232,12 @@ fun NonExcelMappingDialog(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
-                                checked = state.confirmedItemFields,
+                                checked = state.confirmedWorkVolumeFields,
                                 onCheckedChange = { onUpdateMapping(null, null, null, null, null, null, null, null, null, null, null, null, it, null) },
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Xác nhận nhập thông tin vật tư đi kèm", color = Color.LightGray, fontSize = 12.sp)
+                            Text("Xác nhận nhập thông tin công việc đi kèm", color = Color.LightGray, fontSize = 12.sp)
                         }
                     }
                 }
@@ -312,3 +312,4 @@ private fun ColumnSectionWithConfirm(
         }
     }
 }
+

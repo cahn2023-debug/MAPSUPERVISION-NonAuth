@@ -2,6 +2,7 @@ package com.mapsupervision.app.workspace
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -31,6 +33,8 @@ import androidx.core.content.FileProvider
 import com.mapsupervision.app.ui.theme.extendedColors
 import com.mapsupervision.app.ui.theme.SecondaryMint
 import com.mapsupervision.app.ui.theme.PrimaryPeach
+import com.mapsupervision.domain.model.WorkPlan
+import com.mapsupervision.domain.model.resolveEpochDay
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -44,13 +48,14 @@ fun ProgressHubScreen(
     activeProjectId: String?,
     constructionProgress: List<com.mapsupervision.domain.model.NodeProgress>,
     dailyLogs: List<com.mapsupervision.domain.model.DailyLog>,
+    workPlans: List<WorkPlan>,
     dashboardState: com.mapsupervision.app.workspace.DashboardState,
     progressUiState: ProgressUiState,
     screenUiState: ProgressHubScreenUiState,
     workCategories: List<com.mapsupervision.domain.model.WorkCategory>,
     photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
     activeProjectName: String? = null,
-    onSetProgressTab: (Boolean) -> Unit,
+    onSetSubTab: (ProgressHubSubTab) -> Unit,
     onUpdateGroupMode: (String) -> Unit,
     onUpdateFilterMode: (String) -> Unit,
     onSelectProgressNode: (String, String, String) -> Unit,
@@ -85,10 +90,29 @@ fun ProgressHubScreen(
     onUpdateProgressSheetNote: (String) -> Unit,
     onResetLogForm: () -> Unit,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?) -> Unit,
-    onAddDailyLogBatch: (String, Int, String, String, Double, List<String>, Long, Double, String, String) -> Unit,
+    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?, Float?) -> Unit,
     onAddWorkCategory: (String, String) -> Unit,
-    onEditDailyLog: (com.mapsupervision.domain.model.DailyLog) -> Unit
+    onEditDailyLog: (com.mapsupervision.domain.model.DailyLog) -> Unit,
+
+    // Plan Actions
+    onAddWorkPlanBatch: suspend (String, List<String>, List<String>, Double, String, String, Long) -> Boolean,
+    onUpdateSelectedPlanWorkName: (String) -> Unit,
+    onUpdatePlanUnitInput: (String) -> Unit,
+    onUpdatePlanQuantityInput: (String) -> Unit,
+    onUpdatePlanNoteInput: (String) -> Unit,
+    onAddSelectedPlanNodeCode: (String) -> Unit,
+    onRemoveSelectedPlanNodeCode: (String) -> Unit,
+    onAddSelectedPlanRouteCode: (String) -> Unit,
+    onRemoveSelectedPlanRouteCode: (String) -> Unit,
+    onSetPlanNodeDropdownExpanded: (Boolean) -> Unit,
+    onSetPlanRouteDropdownExpanded: (Boolean) -> Unit,
+    onSetPlanWorkDropdownExpanded: (Boolean) -> Unit,
+    onSetShowAddPlanWorkDialog: (Boolean) -> Unit,
+    onUpdateNewPlanWorkName: (String) -> Unit,
+    onUpdateNewPlanWorkUnit: (String) -> Unit,
+    onUpdatePlanFormError: (String) -> Unit,
+    onSelectPlanWorkTemplate: (String, String) -> Unit,
+    onResetPlanForm: () -> Unit
 ) {
     val selectedNodeCodeForProgress = screenUiState.selectedNodeCodeForProgress
     val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -215,7 +239,7 @@ fun ProgressHubScreen(
     val emptyCellsBefore = if (firstDayOfWeek == Calendar.SUNDAY) 6 else firstDayOfWeek - 2
 
     val calendarCells = remember(currentMonth, currentYear, emptyCellsBefore, daysInMonth) {
-        buildList {
+        buildList<Calendar?> {
             repeat(emptyCellsBefore) { add(null) }
             for (day in 1..daysInMonth) {
                 val cal = Calendar.getInstance().apply {
@@ -233,12 +257,11 @@ fun ProgressHubScreen(
     }
 
     fun getEpochDay(cal: Calendar): Long {
-        val temp = cal.clone() as Calendar
-        temp.set(Calendar.HOUR_OF_DAY, 0)
-        temp.set(Calendar.MINUTE, 0)
-        temp.set(Calendar.SECOND, 0)
-        temp.set(Calendar.MILLISECOND, 0)
-        return temp.timeInMillis / (24 * 60 * 60 * 1000)
+        return java.time.LocalDate.of(
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH) + 1,
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).toEpochDay()
     }
 
     val selectedEpoch = remember(selectedDate) { getEpochDay(selectedDate) }
@@ -248,28 +271,70 @@ fun ProgressHubScreen(
         return dayEpoch in progressUiState.logEpochDays
     }
 
-    val logsForSelectedDate = remember(dailyLogs, selectedDate) {
-        dailyLogs.filter { log ->
-            val logCal = Calendar.getInstance().apply { timeInMillis = log.createdAtEpochMs }
-            val logEpoch = getEpochDay(logCal)
-            log.dateEpochDay == selectedEpoch || (log.dateEpochDay == 0L && logEpoch == selectedEpoch)
-        }.sortedByDescending { it.createdAtEpochMs }
+    val diarySnapshot = remember(dailyLogs, photos, selectedEpoch) {
+        val filteredLogs = dailyLogs.filter { log -> log.resolveEpochDay() == selectedEpoch }
+            .sortedByDescending { it.createdAtEpochMs }
+
+        val filteredPhotos = photos.filter { photo ->
+            val photoCal = Calendar.getInstance().apply { timeInMillis = photo.capturedAtEpochMs }
+            val photoEpoch = java.time.LocalDate.of(
+                photoCal.get(Calendar.YEAR),
+                photoCal.get(Calendar.MONTH) + 1,
+                photoCal.get(Calendar.DAY_OF_MONTH)
+            ).toEpochDay()
+            photoEpoch == selectedEpoch
+        }
+
+        val matched = filteredPhotos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }
+        val unmatched = filteredPhotos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() }
+
+        val totalManpower = filteredLogs.sumOf { it.manpower }
+        val locations = filteredLogs.mapNotNull { it.nodeCode }.distinct()
+        val volumesByCategory = filteredLogs
+            .filter { it.categoryName.isNotBlank() && it.volume > 0.0 }
+            .groupBy { it.categoryName }
+            .mapValues { entry ->
+                val sum = entry.value.sumOf { it.volume }
+                val unit = entry.value.firstOrNull()?.unit.orEmpty()
+                Pair(sum, unit)
+            }
+
+        DiarySelectedDateSnapshot(
+            logs = filteredLogs,
+            matchedPhotos = matched,
+            unmatchedPhotos = unmatched,
+            photos = filteredPhotos,
+            totalManpower = totalManpower,
+            locations = locations,
+            volumesByCategory = volumesByCategory
+        )
     }
-    val matchedPhotos = remember(photos) { photos.filter { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
-    val unmatchedPhotos = remember(photos) { photos.filterNot { it.matchedNodeCode != null || it.matchedRouteCode != null || it.tagCodesCsv.isNotBlank() } }
+
+    val logsForSelectedDate = diarySnapshot.logs
+    val matchedPhotos = diarySnapshot.matchedPhotos
+    val unmatchedPhotos = diarySnapshot.unmatchedPhotos
+    val photosForSelectedDate = diarySnapshot.photos
+
 
     val selectedTemplateUnit = remember(
         screenUiState.selectedCategoryName,
         workCategories,
-        progressUiState.materialRows
+        progressUiState.workVolumeRows
     ) {
         resolveWorkTemplateUnit(
             screenUiState.selectedCategoryName,
             workCategories,
-            progressUiState.materialRows
+            progressUiState.workVolumeRows
         )
     }
     val isUnitReadOnly = selectedTemplateUnit.isNotBlank()
+
+    val plansForDate = remember(workPlans, selectedEpoch) {
+        workPlans.filter { it.plannedDateEpochDay == selectedEpoch }
+    }
+    val groupedPlans = remember(plansForDate) {
+        plansForDate.groupBy { it.batchGroupId.ifBlank { it.id } }
+    }
 
     Scaffold( snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
@@ -326,7 +391,7 @@ fun ProgressHubScreen(
                         Icon( imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = primaryTextColor
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Xuất báo cáo", color = primaryTextColor, fontSize = 14.sp)
+                        Text("Xuất nhật ký", color = primaryTextColor, fontSize = 14.sp)
                     }
                 }
             }
@@ -338,24 +403,40 @@ fun ProgressHubScreen(
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                         .padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Button( onClick = { onSetProgressTab(true) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (screenUiState.isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (screenUiState.isProgressSubTab) primaryTextColor else secondaryTextColor
-                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (screenUiState.isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
+                    val isProgressSelected = screenUiState.subTab == ProgressHubSubTab.PROGRESS
+                    val isPlanSelected = screenUiState.subTab == ProgressHubSubTab.PLAN
+                    val isDiarySelected = screenUiState.subTab == ProgressHubSubTab.DIARY
+
+                    Button( onClick = { onSetSubTab(ProgressHubSubTab.PROGRESS) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isProgressSelected) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isProgressSelected) primaryTextColor else secondaryTextColor
+                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isProgressSelected) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Tiến độ", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Tiến độ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
-                    Button( onClick = { onSetProgressTab(false) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (!screenUiState.isProgressSubTab) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (!screenUiState.isProgressSubTab) primaryTextColor else secondaryTextColor
-                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (!screenUiState.isProgressSubTab) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
+                    Button( onClick = { onSetSubTab(ProgressHubSubTab.PLAN) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isPlanSelected) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isPlanSelected) primaryTextColor else secondaryTextColor
+                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isPlanSelected) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Outlined.EditCalendar, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Nhật ký", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Icon(Icons.AutoMirrored.Outlined.Assignment, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Kế hoạch", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Button( onClick = { onSetSubTab(ProgressHubSubTab.DIARY) }, modifier = Modifier.weight(1f).height(40.dp), colors = ButtonDefaults.buttonColors( containerColor = if (isDiarySelected) MaterialTheme.colorScheme.surface else Color.Transparent, contentColor = if (isDiarySelected) primaryTextColor else secondaryTextColor
+                        ), elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isDiarySelected) 2.dp else 0.dp), shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Outlined.EditCalendar, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Nhật ký", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
 
-            if (screenUiState.isProgressSubTab) {
+            fun hasPlansOnDay(dayCal: Calendar): Boolean {
+                val dayEpoch = getEpochDay(dayCal)
+                return workPlans.any { it.plannedDateEpochDay == dayEpoch }
+            }
+
+            if (screenUiState.subTab == ProgressHubSubTab.PROGRESS) {
                 // ========================== PROGRESS VIEW ==========================
                 item {
                     GlassmorphicCard( modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
@@ -513,9 +594,498 @@ fun ProgressHubScreen(
                         }
                     }
                 }
+            } else if (screenUiState.subTab == ProgressHubSubTab.PLAN) {
+                // ========================== PLAN VIEW ==========================
+                item {
+                    Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text( text = "Lịch tháng ${currentMonth + 1}, $currentYear", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor
+                                )
+                                Row {
+                                    IconButton(onClick = {
+                                        if (currentMonth == 0) {
+                                            onUpdateCurrentMonth(11)
+                                            onUpdateCurrentYear(currentYear - 1)
+                                        } else {
+                                            onUpdateCurrentMonth(currentMonth - 1)
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.ChevronLeft, contentDescription = "Tháng trước")
+                                    }
+                                    IconButton(onClick = {
+                                        if (currentMonth == 11) {
+                                            onUpdateCurrentMonth(0)
+                                            onUpdateCurrentYear(currentYear + 1)
+                                        } else {
+                                            onUpdateCurrentMonth(currentMonth + 1)
+                                        }
+                                    }) {
+                                        Icon(Icons.Default.ChevronRight, contentDescription = "Tháng sau")
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                listOf("T2", "T3", "T4", "T5", "T6", "T7", "CN").forEach { dayName ->
+                                    Text( text = dayName, modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            val chunks = calendarCells.chunked(7)
+                            chunks.forEach { rowDays ->
+                                Row( modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    rowDays.forEach { cellCal ->
+                                        if (cellCal == null) {
+                                            Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                        } else {
+                                            val isToday = cellCal.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) &&
+                                                    cellCal.get(Calendar.MONTH) == todayCal.get(Calendar.MONTH) &&
+                                                    cellCal.get(Calendar.DAY_OF_MONTH) == todayCal.get(Calendar.DAY_OF_MONTH)
+                                            
+                                            val isSelected = getEpochDay(cellCal) == selectedEpoch
+                                            val hasLogs = hasLogsOnDay(cellCal)
+                                            val hasPlans = hasPlansOnDay(cellCal)
+
+                                            Box( modifier = Modifier
+                                                    .weight(1f)
+                                                    .aspectRatio(1f)
+                                                    .clip(CircleShape)
+                                                    .background( when {
+                                                            isSelected -> orangeColor
+                                                            isToday -> orangeColor.copy(alpha = 0.2f)
+                                                            else -> Color.Transparent
+                                                        }
+                                                    )
+                                                    .clickable { onUpdateSelectedDateMillis(cellCal.timeInMillis) }
+                                                    .padding(4.dp), contentAlignment = Alignment.Center
+                                            ) {
+                                                Column( horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text( text = cellCal.get(Calendar.DAY_OF_MONTH).toString(), fontSize = 14.sp, fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal, color = when {
+                                                            isSelected -> MaterialTheme.colorScheme.onPrimary
+                                                            isToday -> orangeColor
+                                                            else -> primaryTextColor
+                                                        }
+                                                    )
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.Center,
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    ) {
+                                                        if (hasLogs) {
+                                                            Box( modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else successColor)
+                                                            )
+                                                        }
+                                                        if (hasPlans) {
+                                                            if (hasLogs) Spacer(modifier = Modifier.width(2.dp))
+                                                            Box( modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (rowDays.size < 7) {
+                                        repeat(7 - rowDays.size) {
+                                            Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    val dateFormatted = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(selectedDate.time)
+                    val selectedPlanTemplateUnit = remember(
+                        screenUiState.selectedPlanWorkName,
+                        workCategories,
+                        progressUiState.workVolumeRows
+                    ) {
+                        resolveWorkTemplateUnit(
+                            screenUiState.selectedPlanWorkName,
+                            workCategories,
+                            progressUiState.workVolumeRows
+                        )
+                    }
+                    val isPlanUnitReadOnly = selectedPlanTemplateUnit.isNotBlank()
+
+                    Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text( text = "Lập kế hoạch: $dateFormatted", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text("CÔNG VIỆC", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton( onClick = { onSetPlanWorkDropdownExpanded(true) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = screenUiState.selectedPlanWorkName.ifBlank { "Chọn hoặc thêm công việc..." },
+                                        color = if (screenUiState.selectedPlanWorkName.isNotBlank()) primaryTextColor else secondaryTextColor,
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Start
+                                    )
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                                DropdownMenu(
+                                    expanded = screenUiState.planWorkDropdownExpanded,
+                                    onDismissRequest = { onSetPlanWorkDropdownExpanded(false) },
+                                    modifier = Modifier.fillMaxWidth(0.9f)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Thêm công việc mới...", fontWeight = FontWeight.Bold)
+                                            }
+                                        },
+                                        onClick = {
+                                            onSetPlanWorkDropdownExpanded(false)
+                                            onSetShowAddPlanWorkDialog(true)
+                                        }
+                                    )
+                                    val allWorkOptions = remember(workCategories, progressUiState.workVolumeRows) {
+                                        val cats = workCategories.map { it.name to it.unit }
+                                        val rows = progressUiState.workVolumeRows.map { it.materialName to it.unit }
+                                        (cats + rows).distinctBy { it.first }
+                                    }
+                                    allWorkOptions.forEach { opt ->
+                                        DropdownMenuItem(
+                                            text = { Text("${opt.first} (${opt.second})") },
+                                            onClick = {
+                                                onSelectPlanWorkTemplate(opt.first, opt.second)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                OutlinedTextField(
+                                    value = screenUiState.planQuantityInput,
+                                    onValueChange = { onUpdatePlanQuantityInput(it) },
+                                    label = { Text("Khối lượng") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = if (isPlanUnitReadOnly) selectedPlanTemplateUnit else screenUiState.planUnitInput,
+                                    onValueChange = { if (!isPlanUnitReadOnly) onUpdatePlanUnitInput(it) },
+                                    label = { Text("Đơn vị tính") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    enabled = !isPlanUnitReadOnly,
+                                    readOnly = isPlanUnitReadOnly
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text("LIÊN KẾT VỊ TRÍ (ĐIỂM NÚT)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { onSetPlanNodeDropdownExpanded(true) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Chọn vị trí...", modifier = Modifier.weight(1f), textAlign = TextAlign.Start, color = secondaryTextColor)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                                DropdownMenu(
+                                    expanded = screenUiState.planNodeDropdownExpanded,
+                                    onDismissRequest = { onSetPlanNodeDropdownExpanded(false) },
+                                    modifier = Modifier.fillMaxWidth(0.9f)
+                                ) {
+                                    progressUiState.nodeSelectorOptions.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option.label) },
+                                            onClick = {
+                                                onAddSelectedPlanNodeCode(option.key)
+                                                onSetPlanNodeDropdownExpanded(false)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text("LIÊN KẾT TUYẾN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { onSetPlanRouteDropdownExpanded(true) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Chọn tuyến...", modifier = Modifier.weight(1f), textAlign = TextAlign.Start, color = secondaryTextColor)
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                                DropdownMenu(
+                                    expanded = screenUiState.planRouteDropdownExpanded,
+                                    onDismissRequest = { onSetPlanRouteDropdownExpanded(false) },
+                                    modifier = Modifier.fillMaxWidth(0.9f)
+                                ) {
+                                    routeSelectorOptions.forEach { opt ->
+                                        DropdownMenuItem(
+                                            text = { Text(opt.label) },
+                                            onClick = {
+                                                onAddSelectedPlanRouteCode(opt.key)
+                                                onSetPlanRouteDropdownExpanded(false)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (screenUiState.selectedPlanNodeCodes.isNotEmpty() || screenUiState.selectedPlanRouteCodes.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Đã chọn:", fontSize = 12.sp, color = secondaryTextColor)
+                                    androidx.compose.foundation.lazy.LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        items(screenUiState.selectedPlanNodeCodes) { code ->
+                                            InputChip(
+                                                selected = true,
+                                                onClick = { onRemoveSelectedPlanNodeCode(code) },
+                                                label = { Text(code, fontSize = 11.sp) },
+                                                trailingIcon = { Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                            )
+                                        }
+                                        items(screenUiState.selectedPlanRouteCodes) { code ->
+                                            val label = routeSelectorOptions.firstOrNull { it.key == code }?.label ?: code
+                                            InputChip(
+                                                selected = true,
+                                                onClick = { onRemoveSelectedPlanRouteCode(code) },
+                                                label = { Text(label, fontSize = 11.sp) },
+                                                trailingIcon = { Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = screenUiState.planNoteInput,
+                                onValueChange = { onUpdatePlanNoteInput(it) },
+                                label = { Text("Ghi chú kế hoạch") },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2,
+                                maxLines = 4
+                            )
+
+                            if (screenUiState.planFormError.isNotBlank()) {
+                                Text(
+                                    text = screenUiState.planFormError,
+                                    color = redColor,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Button(
+                                onClick = {
+                                    val qty = screenUiState.planQuantityInput.toDoubleOrNull()
+                                    if (screenUiState.selectedPlanWorkName.isBlank()) {
+                                        onUpdatePlanFormError("Vui lòng chọn hoặc thêm công việc")
+                                    } else if (qty == null || qty <= 0.0) {
+                                        onUpdatePlanFormError("Khối lượng phải là số dương hợp lệ")
+                                    } else if (
+                                        screenUiState.selectedPlanNodeCodes.isEmpty() &&
+                                        screenUiState.selectedPlanRouteCodes.isEmpty()
+                                    ) {
+                                        onUpdatePlanFormError("Vui lòng chọn ít nhất 1 vị trí hoặc tuyến")
+                                    } else {
+                                        coroutineScope.launch {
+                                            val saved = onAddWorkPlanBatch(
+                                                screenUiState.selectedPlanWorkName,
+                                                screenUiState.selectedPlanNodeCodes,
+                                                screenUiState.selectedPlanRouteCodes,
+                                                qty,
+                                                if (isPlanUnitReadOnly) selectedPlanTemplateUnit else screenUiState.planUnitInput,
+                                                screenUiState.planNoteInput,
+                                                selectedEpoch
+                                            )
+                                            if (saved) {
+                                                onResetPlanForm()
+                                            } else if (screenUiState.planFormError.isBlank()) {
+                                                onUpdatePlanFormError("Không lưu được kế hoạch, vui lòng thử lại")
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Lưu Kế Hoạch")
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    Text( "Kế hoạch đã lập trong ngày", fontWeight = FontWeight.Bold, color = primaryTextColor, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                if (groupedPlans.isEmpty()) {
+                    item {
+                        Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(modifier = Modifier.padding(24.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Text("Chưa có kế hoạch thi công nào được lập cho ngày này", color = secondaryTextColor, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                } else {
+                    groupedPlans.forEach { (batchGroupId, plans) ->
+                        val firstPlan = plans.first()
+                        item(key = batchGroupId) {
+                            Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = firstPlan.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = primaryTextColor
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Khối lượng: ${"%.2f".format(firstPlan.quantity)} ${firstPlan.unit}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = successColor
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("Vị trí áp dụng:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    
+                                    // Flexbox row using FlowRow style or a scrollable LazyRow for locations
+                                    androidx.compose.foundation.lazy.LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        items(plans) { plan ->
+                                            if (!plan.nodeCode.isNullOrBlank()) {
+                                                SuggestionChip(
+                                                    onClick = {},
+                                                    label = { Text(nodeDisplayName(plan.nodeCode!!, nodesMap)) }
+                                                )
+                                            }
+                                            if (!plan.routeCode.isNullOrBlank()) {
+                                                val label = routeSelectorOptions.firstOrNull { it.key == plan.routeCode }?.label ?: plan.routeCode
+                                                SuggestionChip(
+                                                    onClick = {},
+                                                    label = { Text(label ?: "") }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (firstPlan.description.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Box( modifier = Modifier
+                                                 .fillMaxWidth()
+                                                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(6.dp))
+                                                 .padding(10.dp)
+                                         ) {
+                                            Text(firstPlan.description, color = secondaryTextColor, fontSize = 13.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 // ========================== DIARY / CALENDAR VIEW ==========================
                 
+                item {
+                    val context = LocalContext.current
+                    var isSyncChecked by remember {
+                        mutableStateOf(
+                            context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                .getBoolean("calendar_sync_enabled", false)
+                        )
+                    }
+                    val launcher = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+                    ) { results ->
+                        val granted = results.values.all { it }
+                        if (granted) {
+                            context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean("calendar_sync_enabled", true).apply()
+                            isSyncChecked = true
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Đồng bộ lịch hệ thống", color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                        Switch(
+                            checked = isSyncChecked,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    launcher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.READ_CALENDAR,
+                                            android.Manifest.permission.WRITE_CALENDAR
+                                        )
+                                    )
+                                } else {
+                                    context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                        .edit().putBoolean("calendar_sync_enabled", false).apply()
+                                    isSyncChecked = false
+                                }
+                            }
+                        )
+                    }
+                }
+
                 // Month Header & Navigation
                 item {
                     Card( colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()
@@ -578,6 +1148,7 @@ fun ProgressHubScreen(
                                             
                                             val isSelected = getEpochDay(cellCal) == selectedEpoch
                                             val hasLogs = hasLogsOnDay(cellCal)
+                                            val hasPlans = hasPlansOnDay(cellCal)
 
                                             Box( modifier = Modifier
                                                     .weight(1f)
@@ -600,12 +1171,26 @@ fun ProgressHubScreen(
                                                             else -> primaryTextColor
                                                         }
                                                     )
-                                                    if (hasLogs) {
-                                                        Box( modifier = Modifier
-                                                                .size(4.dp)
-                                                                .clip(CircleShape)
-                                                                .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else successColor)
-                                                        )
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.Center,
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    ) {
+                                                        if (hasLogs) {
+                                                            Box( modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else successColor)
+                                                            )
+                                                        }
+                                                        if (hasPlans) {
+                                                            if (hasLogs) Spacer(modifier = Modifier.width(2.dp))
+                                                            Box( modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -692,7 +1277,7 @@ fun ProgressHubScreen(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Associated node selector
-                            Text("LIÊN KẾT VỊ TRÍ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                            Text("LIÊN KẾT VỊ TRÍ (ĐIỂM NÚT)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Box(modifier = Modifier.fillMaxWidth()) {
@@ -704,17 +1289,22 @@ fun ProgressHubScreen(
                                      )
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
                                 }
-                                DropdownMenu( expanded = nodeDropdownExpanded, onDismissRequest = { onSetNodeDropdownExpanded(false) }, modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
-                                 ) {
-                                    DropdownMenuItem( text = { Text("Không liên kết vị trí", color = secondaryTextColor) }, onClick = {
-                                             onUpdateSelectedNodeCodeForLog(null)
-                                             onSetNodeDropdownExpanded(false)
-                                         }
-                                     )
+                                DropdownMenu(
+                                    expanded = nodeDropdownExpanded,
+                                    onDismissRequest = { onSetNodeDropdownExpanded(false) },
+                                    modifier = Modifier.fillMaxWidth(0.9f).background(MaterialTheme.colorScheme.surfaceVariant)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Không liên kết vị trí", color = secondaryTextColor) },
+                                        onClick = {
+                                            onUpdateSelectedNodeCodeForLog(null)
+                                            onSetNodeDropdownExpanded(false)
+                                        }
+                                    )
                                     progressUiState.nodeSelectorOptions.forEach { option ->
-                                        DropdownMenuItem( text = { 
-                                                Text(option.label, color = primaryTextColor)
-                                            }, onClick = {
+                                        DropdownMenuItem(
+                                            text = { Text(option.label, color = primaryTextColor) },
+                                            onClick = {
                                                 onUpdateSelectedNodeCodeForLog(option.key)
                                                 onSetNodeDropdownExpanded(false)
                                             }
@@ -724,26 +1314,19 @@ fun ProgressHubScreen(
                             }
 
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("HOẶC LIÊN KẾT TUYẾN DỰ ÁN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+
+                            // Associated route selector
+                            Text("LIÊN KẾT TUYẾN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Box(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedButton(
-                                    onClick = { onSetRouteDropdownExpanded(true) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(
-                                        text = selectedRouteCodeForLog?.let { code ->
-                                            val label = routeSelectorOptions.firstOrNull { it.key == code }?.label ?: code
-                                            "$label ($code)"
-                                        } ?: "Chọn tuyến liên kết (không bắt buộc)",
-                                        color = if (selectedRouteCodeForLog != null) primaryTextColor else secondaryTextColor,
-                                        modifier = Modifier.weight(1f),
-                                        textAlign = TextAlign.Start,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
+                                OutlinedButton( onClick = { onSetRouteDropdownExpanded(true) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)
+                                 ) {
+                                    Text( text = selectedRouteCodeForLog?.let { code ->
+                                            val opt = routeSelectorOptions.find { it.key == code }
+                                            opt?.label ?: code
+                                         } ?: "Chọn tuyến liên kết (không bắt buộc)", color = if (selectedRouteCodeForLog != null) primaryTextColor else secondaryTextColor, modifier = Modifier.weight(1f), textAlign = TextAlign.Start, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                     )
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = secondaryTextColor)
                                 }
                                 DropdownMenu(
@@ -802,14 +1385,14 @@ fun ProgressHubScreen(
                                              }
                                          )
 
-                                         val allMaterials = progressUiState.templateOptions.filter { it.source == "Vật tư / Thiết bị" }
+                                         val allMaterials = progressUiState.templateOptions.filter { it.source == "Công việc / khối lượng công việc" }
                                          val materials = if (selectedNodeCodeForLog != null) {
                                              val parsedNames = progressUiState.materialOptionsByNodeCode[selectedNodeCodeForLog].orEmpty()
                                                  .map { it.key.lowercase().trim() }
                                                  .toSet()
-                                             val dbNames = progressUiState.materialRows
+                                             val dbNames = progressUiState.workVolumeRows
                                                  .filter { it.nodeCode.trim().lowercase() == selectedNodeCodeForLog.trim().lowercase() }
-                                                 .map { it.materialName.trim().lowercase() }
+                                                 .map { it.workName.trim().lowercase() }
                                                  .toSet()
                                              allMaterials.filter { option ->
                                                  val optKey = option.name.trim().lowercase()
@@ -822,7 +1405,7 @@ fun ProgressHubScreen(
 
                                          if (materials.isNotEmpty()) {
                                              DropdownMenuItem(
-                                                 text = { Text("Vật tư / Thiết bị:", color = secondaryTextColor, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                                                 text = { Text("Công việc / khối lượng công việc:", color = secondaryTextColor, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                                                  onClick = {},
                                                  enabled = false
                                              )
@@ -833,7 +1416,7 @@ fun ProgressHubScreen(
                                                     onClick = {
                                                         onSelectWorkTemplate(
                                                             option.name,
-                                                            resolveWorkTemplateUnit(option.name, workCategories, progressUiState.materialRows)
+                                                            resolveWorkTemplateUnit(option.name, workCategories, progressUiState.workVolumeRows)
                                                                 .ifBlank { option.unit }
                                                         )
                                                         onSetCategoryDropdownExpanded(false)
@@ -855,7 +1438,7 @@ fun ProgressHubScreen(
                                                     onClick = {
                                                         onSelectWorkTemplate(
                                                             option.name,
-                                                            resolveWorkTemplateUnit(option.name, workCategories, progressUiState.materialRows)
+                                                            resolveWorkTemplateUnit(option.name, workCategories, progressUiState.workVolumeRows)
                                                                 .ifBlank { option.unit }
                                                         )
                                                         onSetCategoryDropdownExpanded(false)
@@ -876,14 +1459,14 @@ fun ProgressHubScreen(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
-                            OutlinedTextField( value = screenUiState.workItemInput, onValueChange = { onUpdateWorkItemInput(it); onUpdateLogFormError("") }, label = { Text("Nội dung thực hiện trong ngày *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
+                            OutlinedTextField( value = screenUiState.workItemInput, onValueChange = { onUpdateWorkItemInput(it); onUpdateLogFormError("") }, label = { Text("Nội dung công việc *") }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 5
                              )
 
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedTextField( value = screenUiState.volumeInput, onValueChange = { onUpdateVolumeInput(it) }, label = { Text("Khối lượng thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
+                                OutlinedTextField( value = screenUiState.volumeInput, onValueChange = { onUpdateVolumeInput(it) }, label = { Text("Khối lượng công việc thực hiện lũy kế:") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f), singleLine = true
                                  )
                                 OutlinedTextField( value = screenUiState.unitInput, onValueChange = { onUpdateUnitInput(it) }, label = { Text("Đơn vị tính") }, modifier = Modifier.weight(1f), singleLine = true, enabled = !isUnitReadOnly
                                  )
@@ -914,70 +1497,94 @@ fun ProgressHubScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            Button( onClick = {
-                                if (screenUiState.workItemInput.isBlank()) {
-                                    onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
-                                    return@Button
-                                }
-                                val manpower = screenUiState.manpowerInput.toIntOrNull() ?: 0
-                                val temp = screenUiState.temperatureInput.toDoubleOrNull() ?: 30.0
-                                val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
-                                val volume = screenUiState.volumeInput.toDoubleOrNull() ?: 0.0
-                                
-                                    onAddDailyLog(
-                                        screenUiState.workItemInput.trim(),
-                                        manpower,
-                                        screenUiState.noteInput.trim(),
-                                        weatherDesc,
-                                        temp,
-                                        selectedNodeCodeForLog,
-                                        selectedRouteCodeForLog,
-                                        selectedEpoch,
-                                        volume,
-                                        screenUiState.unitInput.trim(),
-                                        screenUiState.selectedCategoryName.trim(),
-                                        screenUiState.editingDailyLogId
-                                    )
+                             Row(
+                                 modifier = Modifier.fillMaxWidth(),
+                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                 verticalAlignment = Alignment.CenterVertically
+                             ) {
+                                 if (screenUiState.editingDailyLogId != null) {
+                                     OutlinedButton(
+                                         onClick = {
+                                             onResetLogForm()
+                                             onSetSubTab(ProgressHubSubTab.DIARY)
+                                         },
+                                         modifier = Modifier.weight(1f).height(48.dp),
+                                         shape = RoundedCornerShape(8.dp),
+                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+                                     ) {
+                                         Text("Hủy", fontWeight = FontWeight.Bold)
+                                     }
+                                 }
 
-                                    // Clear fields after saving
-                                    onResetLogForm()
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar(if (screenUiState.editingDailyLogId == null) "Đã thêm nhật ký thi công mới" else "Đã cập nhật nhật ký")
-                                    }
-                                }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = MaterialTheme.colorScheme.onPrimary)
-                            ) {
-                                Text(if (screenUiState.editingDailyLogId == null) "Lưu nhật ký & đồng bộ tiến độ" else "Cập nhật nhật ký", fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedButton(
-                                onClick = {
-                                    if (screenUiState.workItemInput.isBlank()) {
-                                        onUpdateLogFormError("Vui lòng nhập nội dung thực hiện")
-                                        return@OutlinedButton
-                                    }
-                                    val manpower = screenUiState.manpowerInput.toIntOrNull() ?: 0
-                                    val temp = screenUiState.temperatureInput.toDoubleOrNull() ?: 30.0
-                                    val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
-                                    val volume = screenUiState.volumeInput.toDoubleOrNull() ?: 0.0
-                                    onAddDailyLogBatch(
-                                        screenUiState.workItemInput.trim(),
-                                        manpower,
-                                        screenUiState.noteInput.trim(),
-                                        weatherDesc,
-                                        temp,
-                                        allNodeCodes,
-                                        selectedEpoch,
-                                        volume,
-                                        screenUiState.unitInput.trim(),
-                                        screenUiState.selectedCategoryName.trim()
-                                    )
-                                    onResetLogForm()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Áp nhật ký cho toàn bộ node thi công", fontWeight = FontWeight.Bold)
-                            }
+                                 Button(
+                                     onClick = {
+                                         val workItem = screenUiState.workItemInput.trim()
+                                         if (workItem.isBlank()) {
+                                             onUpdateLogFormError("Vui lòng nhập nội dung công việc")
+                                             return@Button
+                                         }
+                                         val manpower = screenUiState.manpowerInput.toIntOrNull()
+                                         if (manpower == null || manpower < 0) {
+                                             onUpdateLogFormError("Số nhân công phải là số nguyên không âm")
+                                             return@Button
+                                         }
+                                         val progressPercent = if (selectedNodeCodeForLog != null && screenUiState.actualProgressInput.isNotBlank()) {
+                                             val p = screenUiState.actualProgressInput.toFloatOrNull()
+                                             if (p == null || p < 0f || p > 100f) {
+                                                 onUpdateLogFormError("Tiến độ thực tế phải từ 0 đến 100")
+                                                 return@Button
+                                             }
+                                             p
+                                         } else null
+
+                                         val volumeText = screenUiState.volumeInput.trim()
+                                         val volume = if (volumeText.isNotBlank()) {
+                                             val v = volumeText.toDoubleOrNull()
+                                             if (v == null || v < 0.0) {
+                                                 onUpdateLogFormError("Khối lượng công việc phải là số không âm")
+                                                 return@Button
+                                             }
+                                             v
+                                         } else 0.0
+
+                                         val temp = screenUiState.temperatureInput.toDoubleOrNull() ?: 30.0
+                                         val weatherDesc = customWeather.trim().ifBlank { weatherSelected }
+
+                                         val wasEditing = screenUiState.editingDailyLogId != null
+
+                                         onAddDailyLog(
+                                             workItem,
+                                             manpower,
+                                             screenUiState.noteInput.trim(),
+                                             weatherDesc,
+                                             temp,
+                                             selectedNodeCodeForLog,
+                                             selectedRouteCodeForLog,
+                                             selectedEpoch,
+                                             volume,
+                                             screenUiState.unitInput.trim(),
+                                             screenUiState.selectedCategoryName.trim(),
+                                             screenUiState.editingDailyLogId,
+                                             progressPercent
+                                         )
+
+                                         // Clear fields after saving
+                                         onResetLogForm()
+                                         if (wasEditing) {
+                                             onSetSubTab(ProgressHubSubTab.DIARY)
+                                         }
+                                         coroutineScope.launch {
+                                             snackbarHostState.showSnackbar(if (!wasEditing) "Đã thêm nhật ký thi công mới" else "Đã cập nhật nhật ký")
+                                         }
+                                     },
+                                     modifier = Modifier.weight(1f).height(48.dp),
+                                     shape = RoundedCornerShape(8.dp),
+                                     colors = ButtonDefaults.buttonColors(containerColor = orangeColor, contentColor = MaterialTheme.colorScheme.onPrimary)
+                                 ) {
+                                     Text(if (screenUiState.editingDailyLogId == null) "Lưu nhật ký & đồng bộ tiến độ" else "Cập nhật nhật ký", fontWeight = FontWeight.Bold)
+                                 }
+                             }
                         }
                     }
                 }
@@ -1078,7 +1685,7 @@ fun ProgressHubScreen(
                                     Spacer(modifier = Modifier.height(12.dp))
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    Text("Khối lượng thực hiện lũy kế:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                                    Text("Khối lượng công việc thực hiện lũy kế:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
                                     Spacer(modifier = Modifier.height(6.dp))
                                     volumesByCategory.forEach { (category, value) ->
                                         Row( modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
@@ -1291,3 +1898,15 @@ private fun PhotoStatusBadge(photo: com.mapsupervision.domain.model.SitePhoto) {
         )
     }
 }
+
+data class DiarySelectedDateSnapshot(
+    val logs: List<com.mapsupervision.domain.model.DailyLog>,
+    val matchedPhotos: List<com.mapsupervision.domain.model.SitePhoto>,
+    val unmatchedPhotos: List<com.mapsupervision.domain.model.SitePhoto>,
+    val photos: List<com.mapsupervision.domain.model.SitePhoto>,
+    val totalManpower: Int,
+    val locations: List<String>,
+    val volumesByCategory: Map<String, Pair<Double, String>>
+)
+
+

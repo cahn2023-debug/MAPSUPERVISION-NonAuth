@@ -28,5 +28,28 @@ data class DailyLog(
     val batchGroupId: String = "",
     val appliedNodeCodesCsv: String = "",
     val linkedPhotoIdsCsv: String = "",
-    val photoMatchOffsetMinutes: Int = 0
+    val appliedNodeIds: List<String> = emptyList(),
+    val linkedPhotoIds: List<String> = emptyList(),
+    val photoMatchOffsetMinutes: Int = 0,
+    val nodeId: String? = null,
+    val routeId: String? = null,
+    val updatedAtEpochMs: Long = createdAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
+
+val DailyLog.resolvedAppliedNodeIds: List<String>
+    get() = if (appliedNodeIds.isNotEmpty()) appliedNodeIds else parseCsvList(appliedNodeCodesCsv)
+
+val DailyLog.resolvedLinkedPhotoIds: List<String>
+    get() = if (linkedPhotoIds.isNotEmpty()) linkedPhotoIds else parseCsvList(linkedPhotoIdsCsv)
+
+fun DailyLog.resolveEpochDay(): Long {
+    if (dateEpochDay != 0L) return dateEpochDay
+    val cal = java.util.Calendar.getInstance().apply { timeInMillis = createdAtEpochMs }
+    return java.time.LocalDate.of(
+        cal.get(java.util.Calendar.YEAR),
+        cal.get(java.util.Calendar.MONTH) + 1,
+        cal.get(java.util.Calendar.DAY_OF_MONTH)
+    ).toEpochDay()
+}

@@ -2,6 +2,15 @@ package com.mapsupervision.storage.importer
 
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
+import com.mapsupervision.domain.model.ConfirmedFieldFlags
+import com.mapsupervision.domain.model.ExcelClassificationMode
+import com.mapsupervision.domain.model.ExcelColumnMapping
+import com.mapsupervision.domain.model.ExcelMappingSuggestion
+import com.mapsupervision.domain.model.ExcelPreview
+import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
+import com.mapsupervision.domain.model.NonExcelFieldPreview
+import com.mapsupervision.domain.model.NonExcelImportMapping
+import com.mapsupervision.domain.model.NonExcelPreview
 import java.io.File
 import java.io.InputStream
 import java.util.Locale
@@ -25,7 +34,7 @@ data class CollectedLineSegment(
     val routeDisplayName: String,
     val contractor: String,
     val mapNumber: String,
-    val materialSummary: String,
+    val workVolumeSummary: String,
     val description: String,
     val points: List<Pair<Double, Double>>,
     val extendedData: Map<String, String>,
@@ -100,11 +109,15 @@ fun mergeAndProcessLines(
                     totalRouteLengthMeters += dist
                 }
 
-                val rawRouteLength = if (mapping != null && mapping.routeLengthField?.isNotBlank() == true) {
-                    val field = mapping.routeLengthField
-                    val cleanField = field.removePrefix("properties.")
-                    firstLine.extendedData[field]?.trim()?.ifBlank { null }
-                        ?: firstLine.extendedData[cleanField]?.trim()?.ifBlank { null }
+                val rawRouteLength = if (mapping != null) {
+                    val routeLengthField = mapping.routeLengthField
+                    if (!routeLengthField.isNullOrBlank()) {
+                        val cleanField = routeLengthField.removePrefix("properties.")
+                        firstLine.extendedData[routeLengthField]?.trim()?.ifBlank { null }
+                            ?: firstLine.extendedData[cleanField]?.trim()?.ifBlank { null }
+                    } else {
+                        null
+                    }
                 } else null
 
                 val designLength = if (!rawRouteLength.isNullOrBlank()) {
@@ -166,14 +179,21 @@ internal fun parseKmlContent(
         // Find which keys are mapped to Excel fields
         val mappedKeys = mutableSetOf<String>()
         if (mapping != null) {
+            val coordinateField = mapping.coordinateField
+            val latitudeField = mapping.latitudeField
+            val longitudeField = mapping.longitudeField
+            val contractorField = mapping.contractorField
+            val mapNumberField = mapping.mapNumberField
+            val objectTypeField = mapping.objectTypeField
+            val routeLengthField = mapping.routeLengthField
             if (mapping.positionField.isNotBlank()) mappedKeys.add(mapping.positionField)
-            if (mapping.coordinateField?.isNotBlank() == true) mappedKeys.add(mapping.coordinateField)
-            if (mapping.latitudeField?.isNotBlank() == true) mappedKeys.add(mapping.latitudeField)
-            if (mapping.longitudeField?.isNotBlank() == true) mappedKeys.add(mapping.longitudeField)
-            if (mapping.contractorField?.isNotBlank() == true) mappedKeys.add(mapping.contractorField)
-            if (mapping.mapNumberField?.isNotBlank() == true) mappedKeys.add(mapping.mapNumberField)
-            if (mapping.objectTypeField?.isNotBlank() == true) mappedKeys.add(mapping.objectTypeField)
-            if (mapping.routeLengthField?.isNotBlank() == true) mappedKeys.add(mapping.routeLengthField)
+            if (!coordinateField.isNullOrBlank()) mappedKeys.add(coordinateField)
+            if (!latitudeField.isNullOrBlank()) mappedKeys.add(latitudeField)
+            if (!longitudeField.isNullOrBlank()) mappedKeys.add(longitudeField)
+            if (!contractorField.isNullOrBlank()) mappedKeys.add(contractorField)
+            if (!mapNumberField.isNullOrBlank()) mappedKeys.add(mapNumberField)
+            if (!objectTypeField.isNullOrBlank()) mappedKeys.add(objectTypeField)
+            if (!routeLengthField.isNullOrBlank()) mappedKeys.add(routeLengthField)
             mappedKeys.addAll(mapping.itemFields)
         }
 
@@ -258,7 +278,7 @@ internal fun parseKmlContent(
                 latitude = point.first,
                 longitude = point.second,
                 mapNumberLabel = extractedMapNumber,
-                materialSummary = materialSummary
+                workVolumeSummary = materialSummary
             )
         }
 
@@ -274,7 +294,7 @@ internal fun parseKmlContent(
                                 routeDisplayName = routeDisplayName,
                                 contractor = extractedContractor,
                                 mapNumber = extractedMapNumber,
-                                materialSummary = "",
+                                workVolumeSummary = "",
                                 description = description,
                                 points = block.points,
                                 extendedData = extendedData,
@@ -483,7 +503,8 @@ internal fun parseKmlContentStreaming(
     mapping: NonExcelImportMapping? = null
 ): ParsedImportResult {
     val useStreaming = try {
-        xmlPullParserFactory != null
+        xmlPullParserFactory
+        true
     } catch (e: Throwable) {
         false
     }
@@ -517,14 +538,21 @@ internal fun parseKmlContentStreaming(
         val routeDisplayName = placemark.name.ifBlank { "${base}_LINE_$placemarkCount" }
         val mappedKeys = mutableSetOf<String>()
         if (mapping != null) {
+            val coordinateField = mapping.coordinateField
+            val latitudeField = mapping.latitudeField
+            val longitudeField = mapping.longitudeField
+            val contractorField = mapping.contractorField
+            val mapNumberField = mapping.mapNumberField
+            val objectTypeField = mapping.objectTypeField
+            val routeLengthField = mapping.routeLengthField
             if (mapping.positionField.isNotBlank()) mappedKeys.add(mapping.positionField)
-            if (mapping.coordinateField?.isNotBlank() == true) mappedKeys.add(mapping.coordinateField)
-            if (mapping.latitudeField?.isNotBlank() == true) mappedKeys.add(mapping.latitudeField)
-            if (mapping.longitudeField?.isNotBlank() == true) mappedKeys.add(mapping.longitudeField)
-            if (mapping.contractorField?.isNotBlank() == true) mappedKeys.add(mapping.contractorField)
-            if (mapping.mapNumberField?.isNotBlank() == true) mappedKeys.add(mapping.mapNumberField)
-            if (mapping.objectTypeField?.isNotBlank() == true) mappedKeys.add(mapping.objectTypeField)
-            if (mapping.routeLengthField?.isNotBlank() == true) mappedKeys.add(mapping.routeLengthField)
+            if (!coordinateField.isNullOrBlank()) mappedKeys.add(coordinateField)
+            if (!latitudeField.isNullOrBlank()) mappedKeys.add(latitudeField)
+            if (!longitudeField.isNullOrBlank()) mappedKeys.add(longitudeField)
+            if (!contractorField.isNullOrBlank()) mappedKeys.add(contractorField)
+            if (!mapNumberField.isNullOrBlank()) mappedKeys.add(mapNumberField)
+            if (!objectTypeField.isNullOrBlank()) mappedKeys.add(objectTypeField)
+            if (!routeLengthField.isNullOrBlank()) mappedKeys.add(routeLengthField)
             mappedKeys.addAll(mapping.itemFields)
         }
         val customFields = placemark.extendedData.filterKeys { it !in mappedKeys }
@@ -598,7 +626,7 @@ internal fun parseKmlContentStreaming(
                         latitude = point.first,
                         longitude = point.second,
                         mapNumberLabel = extractedMapNumber,
-                        materialSummary = materialSummary
+                        workVolumeSummary = materialSummary
                     )
                 }
                 KmlGeometryKind.LINE -> {
@@ -608,7 +636,7 @@ internal fun parseKmlContentStreaming(
                                 routeDisplayName = routeDisplayName,
                                 contractor = extractedContractor,
                                 mapNumber = extractedMapNumber,
-                                materialSummary = "",
+                                workVolumeSummary = "",
                                 description = placemark.description,
                                 points = block.points,
                                 extendedData = placemark.extendedData,
@@ -716,6 +744,13 @@ fun String.toPlainNumberOrNull(): Double? =
         .replace(",", ".")
         .toDoubleOrNull()
 
+data class ParsedImportResult(
+    val summary: String,
+    val nodes: List<GisNode> = emptyList(),
+    val routes: List<GisRoute> = emptyList(),
+    val routeLengthMeters: Double = 0.0
+)
+
 data class ImportedFileDraft(
     val fileName: String,
     val fileType: String,
@@ -726,102 +761,8 @@ data class ImportedFileDraft(
     val routeLengthMeters: Double = 0.0
 )
 
-data class ParsedImportResult(
-    val summary: String,
-    val nodes: List<GisNode> = emptyList(),
-    val routes: List<GisRoute> = emptyList(),
-    val routeLengthMeters: Double = 0.0
-)
-
-data class ExcelColumnMapping(
-    val positionColumn: String,
-    val coordinateColumn: String? = null,
-    val latitudeColumn: String? = null,
-    val longitudeColumn: String? = null,
-    val contractorColumn: String? = null,
-    val mapNumberColumn: String? = null,
-    val objectTypeColumn: String? = null,
-    val classificationMode: ExcelClassificationMode = ExcelClassificationMode.AUTO,
-    val itemColumns: List<String> = emptyList()
-)
-
-data class ExcelPreview(
-    val fileName: String,
-    val headers: List<String>,
-    val sampleRows: List<Map<String, String>>,
-    val suggestedMapping: ExcelColumnMapping? = null,
-    val suggestedMappingConfidence: Int = 0,
-    val sheets: List<String> = emptyList()
-)
-
-data class NonExcelPreview(
-    val fileName: String,
-    val fileType: String,
-    val sizeBytes: Long,
-    val summary: String,
-    val routeLengthMeters: Double = 0.0
-)
-
-data class NonExcelFieldCandidateSet(
-    val positionOptions: List<String>,
-    val coordinateOptions: List<String>,
-    val latitudeOptions: List<String>,
-    val longitudeOptions: List<String>,
-    val contractorOptions: List<String>,
-    val mapNumberOptions: List<String>,
-    val objectTypeOptions: List<String>,
-    val itemOptions: List<String>,
-    val routeLengthOptions: List<String>
-)
-
-data class NonExcelFieldPreview(
-    val fileName: String,
-    val fileType: String,
-    val sizeBytes: Long,
-    val summary: String,
-    val routeLengthMeters: Double = 0.0,
-    val candidates: NonExcelFieldCandidateSet,
-    val sampleRows: List<Map<String, String>> = emptyList()
-)
-
-data class NonExcelImportMapping(
-    val positionField: String,
-    val coordinateField: String? = null,
-    val latitudeField: String? = null,
-    val longitudeField: String? = null,
-    val contractorField: String? = null,
-    val mapNumberField: String? = null,
-    val objectTypeField: String? = null,
-    val itemFields: List<String> = emptyList(),
-    val routeLengthField: String? = null
-)
-
-data class ConfirmedFieldFlags(
-    val positionField: Boolean = false,
-    val coordinateField: Boolean = false,
-    val latitudeField: Boolean = false,
-    val longitudeField: Boolean = false,
-    val contractorField: Boolean = false,
-    val mapNumberField: Boolean = false,
-    val objectTypeField: Boolean = false,
-    val itemFields: Boolean = false,
-    val routeLengthField: Boolean = false
-)
-
 enum class ObjectKind {
     AUTO, NODE, ROUTE
-}
-
-data class ExcelMappingSuggestion(
-    val mapping: ExcelColumnMapping,
-    val confidence: Int
-)
-
-enum class ExcelClassificationMode {
-    AUTO,
-    BY_OBJECT_TYPE_COLUMN,
-    FORCE_NODE,
-    FORCE_ROUTE
 }
 
 val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")

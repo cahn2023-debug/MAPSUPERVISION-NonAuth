@@ -21,6 +21,8 @@ data class NodeProgress(
     val actual: Float,
     val remain: Float,
     val delayed: Boolean,
-    val updatedAtEpochMs: Long = 0L
+    val updatedAtEpochMs: Long = 0L,
+    val nodeId: String? = null,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
-

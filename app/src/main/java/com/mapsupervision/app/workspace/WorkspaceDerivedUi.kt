@@ -1,9 +1,10 @@
 package com.mapsupervision.app.workspace
 
 import com.mapsupervision.domain.model.DailyLog
+import com.mapsupervision.domain.model.resolveEpochDay
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 
 import com.mapsupervision.domain.model.WorkTemplateOption
@@ -26,7 +27,9 @@ data class DataHubDisplayItem(
     val code: String,
     val contractor: String,
     val node: GisNode? = null,
-    val route: GisRoute? = null
+    val route: GisRoute? = null,
+    val materialLines: List<PreparedMaterialLine> = emptyList(),
+    val routeDistanceText: String? = null
 )
 
 data class ProgressUiState(
@@ -41,7 +44,7 @@ data class ProgressUiState(
     val logEpochDays: Set<Long> = emptySet(),
     val materialOptionsByNodeCode: Map<String, List<SelectorOption>> = emptyMap(),
     val templateOptions: List<WorkTemplateOption> = emptyList(),
-    val materialRows: List<MaterialProgress> = emptyList()
+    val workVolumeRows: List<WorkVolumeProgress> = emptyList()
 )
 
 data class DataHubUiState(
@@ -56,7 +59,7 @@ internal data class WorkspaceIndexes(
     val routesByCode: Map<String, GisRoute> = emptyMap(),
     val routeRepresentativesByCode: Map<String, GisRoute> = emptyMap(),
     val progressByNodeCode: Map<String, NodeProgress> = emptyMap(),
-    val materialRowsByNodeKey: Map<String, List<MaterialProgress>> = emptyMap(),
+    val workVolumeRowsByNodeKey: Map<String, List<WorkVolumeProgress>> = emptyMap(),
     val parsedMaterialsByNodeKey: Map<String, List<PreparedMaterialLine>> = emptyMap(),
     val normalizedNodeSearch: Map<String, String> = emptyMap(),
     val normalizedRouteSearch: Map<String, String> = emptyMap(),
@@ -83,22 +86,22 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
 
     val parsedMaterialsByNodeKey = LinkedHashMap<String, List<PreparedMaterialLine>>(state.designNodes.size * 2 + 1)
     for (node in state.designNodes) {
-        val parsed = parseMaterialSummary(node.materialSummary)
+        val parsed = parseworkVolumeSummary(node.workVolumeSummary)
         parsedMaterialsByNodeKey[node.id] = parsed
         parsedMaterialsByNodeKey[node.code] = parsed
     }
 
-    val materialRowsByNodeKey = LinkedHashMap<String, MutableList<MaterialProgress>>(state.materialRows.size * 2 + 1)
-    for (row in state.materialRows) {
-        materialRowsByNodeKey.getOrPut(row.nodeCode) { mutableListOf() } += row
+    val workVolumeRowsByNodeKey = LinkedHashMap<String, MutableList<WorkVolumeProgress>>(state.workVolumeRows.size * 2 + 1)
+    for (row in state.workVolumeRows) {
+        workVolumeRowsByNodeKey.getOrPut(row.nodeCode) { mutableListOf() } += row
         val aliasNode = nodesById[row.nodeCode] ?: nodesByCode[row.nodeCode]
         if (aliasNode != null) {
-            materialRowsByNodeKey.getOrPut(aliasNode.id) { mutableListOf() } += row
-            materialRowsByNodeKey.getOrPut(aliasNode.code) { mutableListOf() } += row
+            workVolumeRowsByNodeKey.getOrPut(aliasNode.id) { mutableListOf() } += row
+            workVolumeRowsByNodeKey.getOrPut(aliasNode.code) { mutableListOf() } += row
         }
     }
 
-    val nodeSelectorOptions = nonStructuralNodes
+    val nodeSelectorOptions = state.designNodes
         .sortedBy { it.code }
         .map { node ->
             SelectorOption(
@@ -178,19 +181,23 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
                     id = node.id,
                     code = node.code,
                     contractor = node.contractor,
-                    node = node
+                    node = node,
+                    materialLines = parsedMaterialsByNodeKey[node.id].orEmpty()
                 )
             )
         }
         routeRepresentatives.forEach { (prefix, representative) ->
+            val segments = state.designRoutes
+                .asSequence()
+                .filter { routeDisplayKey(it.code) == prefix }
+                .sortedBy { route -> route.code.substringAfterLast("_s").toIntOrNull() ?: 0 }
+                .toList()
+            val resolvedSegments = if (segments.isEmpty()) listOf(representative) else segments
+            val routeDistanceText = buildRouteDistanceText(resolvedSegments, nodesByCode)
+
             if (prefix.contains("#pm")) {
-                val segments = state.designRoutes
-                    .asSequence()
-                    .filter { routeDisplayKey(it.code) == prefix }
-                    .sortedBy { route -> route.code.substringAfterLast("_s").toIntOrNull() ?: 0 }
-                    .toList()
-                val first = segments.firstOrNull() ?: representative
-                val last = segments.lastOrNull() ?: representative
+                val first = resolvedSegments.firstOrNull() ?: representative
+                val last = resolvedSegments.lastOrNull() ?: representative
                 add(
                     DataHubDisplayItem(
                         isRoute = true,
@@ -202,7 +209,8 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
                             code = prefix,
                             startNodeCode = first.startNodeCode,
                             endNodeCode = last.endNodeCode
-                        )
+                        ),
+                        routeDistanceText = routeDistanceText
                     )
                 )
             } else {
@@ -212,18 +220,19 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
                         id = representative.id,
                         code = representative.code,
                         contractor = representative.contractor,
-                        route = representative
+                        route = representative,
+                        routeDistanceText = routeDistanceText
                     )
                 )
             }
         }
     }
 
-    val logEpochDays = state.dailyLogs.mapTo(linkedSetOf()) { log -> resolveLogEpochDay(log) }
+    val logEpochDays = state.dailyLogs.mapTo(linkedSetOf()) { log -> log.resolveEpochDay() }
 
     val materialTypeOptions = (state.designNodes.flatMap { node ->
         parsedMaterialsByNodeKey[node.id].orEmpty().map { it.itemName }
-    } + state.materialRows.map { it.materialName })
+    } + state.workVolumeRows.map { it.workName })
         .asSequence()
         .map { it.trim() }
         .filter { it.isNotEmpty() }
@@ -233,8 +242,8 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
         .toList()
 
     val dbMaterials = LinkedHashMap<String, WorkTemplateOption>()
-    for (row in state.materialRows) {
-        val trimmedName = row.materialName.trim()
+    for (row in state.workVolumeRows) {
+        val trimmedName = row.workName.trim()
         if (trimmedName.isEmpty()) continue
         val key = trimmedName.lowercase()
         val existing = dbMaterials[key]
@@ -242,7 +251,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
             dbMaterials[key] = WorkTemplateOption(
                 name = trimmedName,
                 unit = row.unit.trim(),
-                source = "Vật tư / Thiết bị"
+                source = "Công việc / khối lượng công việc"
             )
         }
     }
@@ -257,7 +266,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
                 dbMaterials[key] = WorkTemplateOption(
                     name = trimmedName,
                     unit = "",
-                    source = "Vật tư / Thiết bị"
+                    source = "Công việc / khối lượng công việc"
                 )
             }
         }
@@ -295,7 +304,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
         routesByCode = routesByCode,
         routeRepresentativesByCode = routeRepresentatives,
         progressByNodeCode = progressByNodeCode,
-        materialRowsByNodeKey = materialRowsByNodeKey,
+        workVolumeRowsByNodeKey = workVolumeRowsByNodeKey,
         parsedMaterialsByNodeKey = parsedMaterialsByNodeKey,
         normalizedNodeSearch = state.designNodes.associate { node -> node.id to buildNodeSearchBlob(node) },
         normalizedRouteSearch = state.designRoutes.associate { route -> route.code to buildRouteSearchBlob(route) },
@@ -312,7 +321,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
             logEpochDays = logEpochDays,
             materialOptionsByNodeCode = materialOptionsByNodeCode,
             templateOptions = preferredTemplateOptions,
-            materialRows = state.materialRows
+            workVolumeRows = state.workVolumeRows
         ),
         dataHubUi = DataHubUiState(
             nonStructuralNodes = nonStructuralNodes,
@@ -323,16 +332,16 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
 }
 
 internal fun resolveMaterialActualText(
-    materialProgress: Map<String, String>,
+    workVolumeProgress: Map<String, String>,
     node: GisNode,
     itemName: String
 ): String {
-    return materialProgress["${node.id}_$itemName"]
-        ?: materialProgress["${node.code}_$itemName"]
+    return workVolumeProgress["${node.id}_$itemName"]
+        ?: workVolumeProgress["${node.code}_$itemName"]
         ?: ""
 }
 
-private fun parseMaterialSummary(summary: String): List<PreparedMaterialLine> {
+private fun parseworkVolumeSummary(summary: String): List<PreparedMaterialLine> {
     if (summary.isBlank()) return emptyList()
     return summary
         .lineSequence()
@@ -366,16 +375,32 @@ private fun buildRouteSearchBlob(route: GisRoute): String =
         listOf(route.code, route.contractor, route.startNodeCode, route.endNodeCode).joinToString(" ")
     )
 
-private fun resolveLogEpochDay(log: DailyLog): Long {
-    if (log.dateEpochDay != 0L) return log.dateEpochDay
-    return log.createdAtEpochMs / (24 * 60 * 60 * 1000)
-}
+private fun resolveLogEpochDay(log: DailyLog): Long = log.resolveEpochDay()
 
 private fun normalizeObjectCode(value: String): String = value.trim().uppercase()
 
 private fun routeDisplayKey(code: String): String {
     val markerIndex = if (code.contains("#pm")) code.lastIndexOf("_s") else code.lastIndexOf("_R")
     return if (markerIndex >= 0) code.substring(0, markerIndex) else code
+}
+
+private fun buildRouteDistanceText(
+    segments: List<GisRoute>,
+    nodesByCode: Map<String, GisNode>
+): String? {
+    var totalDistM = 0.0
+    segments.forEach { seg ->
+        val start = nodesByCode[seg.startNodeCode]
+        val end = nodesByCode[seg.endNodeCode]
+        if (start != null && end != null) {
+            totalDistM += com.mapsupervision.domain.util.Haversine.distanceInMeters(
+                start.latitude, start.longitude,
+                end.latitude, end.longitude
+            )
+        }
+    }
+    if (totalDistM <= 0.0) return null
+    return if (totalDistM >= 1000) "${"%.2f".format(totalDistM / 1000)} km" else "${totalDistM.toInt()} m"
 }
 
 private fun normalizeForSearch(text: String): String {
@@ -388,3 +413,4 @@ private fun normalizeForSearch(text: String): String {
         .trim()
         .replace(Regex("\\s+"), " ")
 }
+

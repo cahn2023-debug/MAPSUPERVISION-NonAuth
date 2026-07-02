@@ -1,19 +1,19 @@
 package com.mapsupervision.data.repository
 
 import com.google.ai.client.generativeai.GenerativeModel
-import com.mapsupervision.domain.ai.DiscrepancyCheckPayload
-import com.mapsupervision.domain.ai.DiscrepancyResult
-import com.mapsupervision.domain.ai.ImportMappingPayload
-import com.mapsupervision.domain.ai.ImportMappingResult
-import com.mapsupervision.domain.ai.OpsRecommendationPayload
-import com.mapsupervision.domain.ai.OpsRecommendationResult
-import com.mapsupervision.domain.ai.PhotoQualityPayload
-import com.mapsupervision.domain.ai.PhotoQualityResult
-import com.mapsupervision.domain.ai.ReportDraftPayload
-import com.mapsupervision.domain.ai.ReportDraftResult
-import com.mapsupervision.domain.ai.TimelineSummaryPayload
-import com.mapsupervision.domain.ai.TimelineSummaryResult
-import com.mapsupervision.domain.repository.AiRepository
+import com.mapsupervision.ai.core.DiscrepancyCheckPayload
+import com.mapsupervision.ai.core.DiscrepancyResult
+import com.mapsupervision.ai.core.ImportMappingPayload
+import com.mapsupervision.ai.core.ImportMappingResult
+import com.mapsupervision.ai.core.OpsRecommendationPayload
+import com.mapsupervision.ai.core.OpsRecommendationResult
+import com.mapsupervision.ai.core.PhotoQualityPayload
+import com.mapsupervision.ai.core.PhotoQualityResult
+import com.mapsupervision.ai.core.ReportDraftPayload
+import com.mapsupervision.ai.core.ReportDraftResult
+import com.mapsupervision.ai.core.TimelineSummaryPayload
+import com.mapsupervision.ai.core.TimelineSummaryResult
+import com.mapsupervision.ai.core.repository.AiRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -48,9 +48,9 @@ class GeminiRepositoryImpl @Inject constructor() : AiRepository {
         val fileTypeLabel = if (isExcel) "Excel" else fileType.uppercase()
         val fileDesc = if (isExcel) "Excel giám sát thi công" else "$fileTypeLabel chứa thông tin địa lý của các đối tượng hạ tầng"
         val itemsRule = if (isExcel) {
-            "3. Danh sách \"items\" phải chứa các tên cột khớp chính xác 100% từ danh sách Headers đại diện cho các hạng mục vật tư, khối lượng, thiết bị. Không chứa các cột kết cấu hay thông tin hành chính khác."
+            "3. Danh sách \"items\" phải chứa các tên cột khớp chính xác 100% từ danh sách Headers đại diện cho các công việc, khối lượng công việc và dữ liệu thực hiện. Không chứa các cột kết cấu hay thông tin hành chính khác."
         } else {
-            "3. Đối với tệp tin địa lý ($fileTypeLabel), cột \"items\" có thể trống hoặc chứa các trường dữ liệu bổ sung (ExtendedData/properties) đặc trưng cho vật tư hoặc thuộc tính chi tiết của đối tượng."
+            "3. Đối với tệp tin địa lý ($fileTypeLabel), cột \"items\" có thể trống hoặc chứa các trường dữ liệu bổ sung (ExtendedData/properties) đặc trưng cho công việc hoặc thuộc tính chi tiết của đối tượng."
         }
 
         val formattedSampleRows = if (payload.sampleRows.isEmpty()) {
@@ -98,7 +98,7 @@ class GeminiRepositoryImpl @Inject constructor() : AiRepository {
     }
 
     private fun suggestMappingLocal(payload: ImportMappingPayload): ImportMappingResult {
-        return com.mapsupervision.domain.ai.engines.ImportMappingHelper.suggestMapping(payload.headers)
+        return com.mapsupervision.ai.core.engines.ImportMappingHelper.suggestMapping(payload.headers)
     }
 
     override suspend fun detectDiscrepancies(payload: DiscrepancyCheckPayload): DiscrepancyResult = withContext(Dispatchers.IO) {
@@ -152,7 +152,7 @@ class GeminiRepositoryImpl @Inject constructor() : AiRepository {
         if (!isConfigured) {
             return@withContext summarizeDailyLocal(payload)
         }
-        val delayed = payload.progress.count { it.delayed }
+        val delayed = payload.progress.count { it.actual < it.planned }
         val prompt = """
             Tóm tắt vận hành thi công theo ngày/tuần và trả về JSON:
             {
@@ -174,7 +174,7 @@ class GeminiRepositoryImpl @Inject constructor() : AiRepository {
     }
 
     private fun summarizeDailyLocal(payload: TimelineSummaryPayload): TimelineSummaryResult {
-        val delayed = payload.progress.count { it.delayed }
+        val delayed = payload.progress.count { it.actual < it.planned }
         val summary = "Tóm tắt tiến độ: Tổng số ${payload.progress.size} trạm, có $delayed trạm bị chậm trễ. " +
                 "Hôm nay ghi nhận ${payload.logs.size} lượt nhật ký và ${payload.photoCount} ảnh hiện trường."
         val highlights = ArrayList<String>()
@@ -317,7 +317,7 @@ class GeminiRepositoryImpl @Inject constructor() : AiRepository {
             if (payload.delayedNodes > 0) {
                 add("Đẩy nhanh tiến độ thi công tại ${payload.delayedNodes} điểm chậm tiến độ.")
                 add("Tổ chức rà soát mặt bằng thi công để tháo gỡ vướng mắc phát sinh.")
-                add("Yêu cầu các nhà thầu chậm tiến độ bổ sung nhân lực và thiết bị để bù tiến độ.")
+                add("Yêu cầu các nhà thầu chậm tiến độ bổ sung nhân lực và nguồn lực thi công để bù tiến độ.")
             } else {
                 add("Duy trì nhịp độ thi công và tiến hành công tác nghiệm thu cuốn chiếu.")
             }

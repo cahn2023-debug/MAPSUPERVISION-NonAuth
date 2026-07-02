@@ -1,6 +1,7 @@
 package com.mapsupervision.storage
 
 import com.mapsupervision.domain.repository.ActiveProjectRepository
+import com.mapsupervision.domain.repository.DomainEventBus
 import com.mapsupervision.domain.repository.ProjectSyncRepository
 import dagger.Binds
 import dagger.Module
@@ -15,4 +16,7 @@ abstract class StorageBindModule {
 
     @Binds
     abstract fun bindProjectSyncRepository(impl: ProjectSyncRepositoryImpl): ProjectSyncRepository
+
+    @Binds
+    abstract fun bindDomainEventBus(impl: DomainEventBusImpl): DomainEventBus
 }

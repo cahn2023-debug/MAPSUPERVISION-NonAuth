@@ -50,8 +50,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.mapsupervision.app.workspace.IncomingSharePayload
+import com.mapsupervision.app.workspace.PendingSharedImport
 import com.mapsupervision.app.workspace.MapHubScreen
 import com.mapsupervision.app.workspace.ChatDictionaryResolver
+import com.mapsupervision.app.workspace.MaterialsHubScreen
+import com.mapsupervision.app.workspace.ShareImportSheet
 import com.mapsupervision.app.workspace.WorkspaceAction
 import com.mapsupervision.app.workspace.WorkspaceEffect
 import com.mapsupervision.app.workspace.WorkspaceLayoutMode
@@ -66,7 +70,7 @@ import com.mapsupervision.app.workspace.DataHubRoute
 import com.mapsupervision.app.workspace.ProgressHubRoute
 import com.mapsupervision.app.workspace.addConstructionProgress
 import com.mapsupervision.app.workspace.addDailyLog
-import com.mapsupervision.app.workspace.addDailyLogBatch
+import com.mapsupervision.app.workspace.addWorkPlanBatch
 import com.mapsupervision.app.workspace.addNote
 import com.mapsupervision.app.workspace.addTask
 import com.mapsupervision.app.workspace.addWorkCategory
@@ -84,7 +88,7 @@ import com.mapsupervision.app.workspace.fetchWeatherAuto
 import com.mapsupervision.app.workspace.getDataHubUiState
 import com.mapsupervision.app.workspace.getFilteredDesignNodesForMap
 import com.mapsupervision.app.workspace.getFilteredDesignRoutes
-import com.mapsupervision.app.workspace.getPreviewMaterialRows
+import com.mapsupervision.app.workspace.getPreviewworkVolumeRows
 import com.mapsupervision.app.workspace.getProgressUiState
 import com.mapsupervision.app.workspace.getRouteProperties
 import com.mapsupervision.app.workspace.getSelectedNodeMaterialLines
@@ -95,6 +99,7 @@ import com.mapsupervision.app.workspace.loadNotesAndTasks
 import com.mapsupervision.app.workspace.loadPhotosForSelectedNode
 import com.mapsupervision.app.workspace.importMediaFromGallery
 import com.mapsupervision.app.workspace.onContractorColorChanged
+import com.mapsupervision.app.workspace.onToggleContractorVisibility
 import com.mapsupervision.app.workspace.onFilterContractorChanged
 import com.mapsupervision.app.workspace.onFilterMaterialTypeChanged
 import com.mapsupervision.app.workspace.onMapBaseMapChanged
@@ -123,7 +128,7 @@ import com.mapsupervision.app.workspace.updateExcelMapping
 import com.mapsupervision.app.workspace.updateImportMappingUi
 import com.mapsupervision.app.workspace.updateMapLabelField
 import com.mapsupervision.app.workspace.updateMapVisualOptions
-import com.mapsupervision.app.workspace.updateMaterialProgress
+import com.mapsupervision.app.workspace.updateWorkVolumeProgress
 import com.mapsupervision.app.workspace.updateMeasureDistance
 import com.mapsupervision.app.workspace.updateRouteNote
 import com.mapsupervision.app.workspace.updateSelectedExcelSheet
@@ -149,13 +154,16 @@ private val shellDestinations = listOf(
     ShellDestination(WorkspaceTab.MAP, "map", "Bản đồ", Icons.Outlined.Map),
     ShellDestination(WorkspaceTab.PROGRESS, "progress", "Tiến độ", Icons.Outlined.Assessment),
     ShellDestination(WorkspaceTab.DATA, "data", "Nhập liệu", Icons.Outlined.CameraAlt),
+    ShellDestination(WorkspaceTab.MATERIALS, "materials", "Vật tư", Icons.Outlined.Description),
     ShellDestination(WorkspaceTab.REPORTS, "reports", "Báo cáo", Icons.Outlined.Description)
 )
 
 @Composable
 fun WorkspaceAppShell(
     photoPipelineService: IPhotoPipelineService,
-    locationProvider: IPhotoLocationProvider
+    locationProvider: IPhotoLocationProvider,
+    incomingSharePayload: IncomingSharePayload? = null,
+    onIncomingShareConsumed: () -> Unit = {}
 ) {
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
     val coroutineScope = rememberCoroutineScope()
@@ -171,6 +179,8 @@ fun WorkspaceAppShell(
     val lastPdfPath by reportingViewModel.lastReportPath.collectAsStateWithLifecycle()
     val lastWordPath by reportingViewModel.lastWordReportPath.collectAsStateWithLifecycle()
     val reportExporting by reportingViewModel.isExporting.collectAsStateWithLifecycle()
+    val mapDesignNodes by workspaceViewModel.filteredNodesForMap.collectAsStateWithLifecycle()
+    val mapDesignRoutes by workspaceViewModel.filteredRoutesForMap.collectAsStateWithLifecycle()
 
     LaunchedEffect(workspaceUiState.showReportPreview, projectState.activeProjectId) {
         val pid = projectState.activeProjectId
@@ -264,6 +274,16 @@ fun WorkspaceAppShell(
         }
     }
 
+    LaunchedEffect(incomingSharePayload?.id) {
+        val payload = incomingSharePayload ?: return@LaunchedEffect
+        workspaceViewModel.dispatch(
+            WorkspaceAction.SetPendingSharedImport(
+                PendingSharedImport(payload = payload)
+            )
+        )
+        onIncomingShareConsumed()
+    }
+
     LaunchedEffect(Unit) {
         workspaceViewModel.effects.collectLatest { effect ->
             when (effect) {
@@ -284,7 +304,7 @@ fun WorkspaceAppShell(
     }
 
     val previewPhotos = reportingSnapshot.photos
-    val previewMaterialRows = reportingSnapshot.materialRows
+    val previewMaterialRows = reportingSnapshot.workVolumeRows
 
     val navChrome: @Composable () -> Unit = {
         val theme = MaterialTheme.colorScheme
@@ -350,14 +370,12 @@ fun WorkspaceAppShell(
             modifier = Modifier.fillMaxSize()
         ) {
             composable("map") {
-                val mapDesignNodes by workspaceViewModel.filteredNodesForMap.collectAsStateWithLifecycle()
-                val mapDesignRoutes by workspaceViewModel.filteredRoutesForMap.collectAsStateWithLifecycle()
                 MapHubScreen(
                     designNodes = mapDesignNodes,
                     designRoutes = mapDesignRoutes,
                     mapUi = workspaceState.mapUi,
                     routeProperties = workspaceState.mapUi.selectedRoute?.let { workspaceViewModel.getRouteProperties(it) }.orEmpty(),
-                    materialProgress = workspaceState.materialProgress,
+                    materialProgress = workspaceState.workVolumeProgress,
                     contractorOptions = workspaceViewModel.getDataHubUiState().contractorOptions.filter { it != "Tất cả" },
                     materialTypeOptions = workspaceViewModel.ensureIndexes().materialTypeOptions,
                     selectedNodeMaterialLines = workspaceViewModel.getSelectedNodeMaterialLines(),
@@ -368,7 +386,7 @@ fun WorkspaceAppShell(
                     onRefreshProjects = projectViewModel::refresh,
                     onSelectNode = workspaceViewModel::selectMapNode,
                     onSelectRoute = workspaceViewModel::selectMapRoute,
-                    onUpdateMaterialProgress = workspaceViewModel::updateMaterialProgress,
+                    onUpdateMaterialProgress = workspaceViewModel::updateWorkVolumeProgress,
                     onCloseNodeCard = workspaceViewModel::clearMapNodeSelection,
                     onCloseRouteCard = workspaceViewModel::clearMapRouteSelection,
                     onZoomIn = workspaceViewModel::onMapZoomIn,
@@ -380,6 +398,7 @@ fun WorkspaceAppShell(
                     onFilterContractorChanged = workspaceViewModel::onFilterContractorChanged,
                     onFilterMaterialTypeChanged = workspaceViewModel::onFilterMaterialTypeChanged,
                     onContractorColorChanged = workspaceViewModel::onContractorColorChanged,
+                    onToggleContractorVisibility = workspaceViewModel::onToggleContractorVisibility,
                     onSearchQueryChanged = workspaceViewModel::onSearchQueryChanged,
                     onViewPhotos = workspaceViewModel::loadPhotosForSelectedNode,
                     onCapturePicture = workspaceViewModel::triggerCapture,
@@ -423,16 +442,15 @@ fun WorkspaceAppShell(
                     dashboardState = workspaceState.dashboard,
                     progressUiState = workspaceViewModel.getProgressUiState(),
                     workCategories = workspaceState.workCategories,
+                    workPlans = workspaceState.workPlans,
                     photos = reportingSnapshot.photos,
                     activeProjectName = projectState.projects.firstOrNull { it.id == projectState.activeProjectId }?.name,
                     onAddConstruction = workspaceViewModel::addConstructionProgress,
-                    onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId ->
-                        workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId)
-                    },
-                    onAddDailyLogBatch = { workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName ->
-                        workspaceViewModel.addDailyLogBatch(workItem, manpower, note, weather, temp, nodeCodes, dateDay, volume, unit, categoryName)
+                    onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId, actualProgressPercent ->
+                        workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId, actualProgressPercent)
                     },
                     onAddWorkCategory = workspaceViewModel::addWorkCategory,
+                    onAddWorkPlanBatch = workspaceViewModel::addWorkPlanBatch,
                     onFetchWeatherAuto = { nodeCode, routeCode, onResult -> workspaceViewModel.fetchWeatherAuto(nodeCode, routeCode, onResult) }
                 )
             }
@@ -456,7 +474,7 @@ fun WorkspaceAppShell(
                     onUpdateMapVisualOptions = workspaceViewModel::updateMapVisualOptions,
                     onParseExcelToDesign = workspaceViewModel::parseExcelToDesign,
                     onAddConstruction = workspaceViewModel::addConstructionProgress,
-                    onUpdateMaterialProgress = workspaceViewModel::updateMaterialProgress,
+                    onUpdateWorkVolumeProgress = workspaceViewModel::updateWorkVolumeProgress,
                     onOpenNodeOnMap = { node ->
                         workspaceViewModel.dispatch(WorkspaceAction.SelectTab(WorkspaceTab.MAP))
                         workspaceViewModel.selectMapNode(node)
@@ -485,7 +503,14 @@ fun WorkspaceAppShell(
                 ReportingScreen(
                     activeProjectId = projectState.activeProjectId,
                     photoSaveCount = workspaceState.photoSaveCount,
-                    materialProgress = workspaceState.materialProgress
+                    workVolumeProgress = workspaceState.workVolumeProgress
+                )
+            }
+            composable("materials") {
+                MaterialsHubScreen(
+                    state = workspaceState,
+                    viewModel = workspaceViewModel,
+                    onRefresh = workspaceViewModel::refresh
                 )
             }
         }
@@ -538,14 +563,20 @@ fun WorkspaceAppShell(
                 )
             }
         }
+            val activeId = workspaceState.activeProjectId ?: ""
+            val activeProject = projectState.projects.firstOrNull { it.id == activeId }
+            val activeSlug = activeProject?.slug ?: activeId
             CameraOverlay(
                 nodeCode = pendingCapture,
-                projectId = workspaceState.activeProjectId ?: "",
+                projectId = activeId,
+                projectSlug = activeSlug,
                 photoPipelineService = photoPipelineService,
                 locationProvider = locationProvider,
                 onPhotoCaptured = workspaceViewModel::refresh,
                 onSavePhoto = { file -> workspaceViewModel.savePhoto(file, pendingCapture) },
-                onDismiss = workspaceViewModel::clearCaptureRequest
+                onDismiss = workspaceViewModel::clearCaptureRequest,
+                nodes = workspaceState.designNodes,
+                routes = workspaceState.designRoutes
             )
         }
 
@@ -629,10 +660,23 @@ fun WorkspaceAppShell(
             }
             workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview)
         },
+        nodes = workspaceState.designNodes,
+        routes = workspaceState.designRoutes,
         photos = previewPhotos,
-        materialRows = previewMaterialRows,
+        workVolumeRows = previewMaterialRows,
         aiDraft = reportingSnapshot.aiDraft
     )
+
+    workspaceState.pendingSharedImport?.let { pendingSharedImport ->
+        ShareImportSheet(
+            pendingSharedImport = pendingSharedImport,
+            projects = projectState.projects,
+            activeProjectId = workspaceState.activeProjectId,
+            workspaceViewModel = workspaceViewModel,
+            projectViewModel = projectViewModel,
+            onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.ClearPendingSharedImport) }
+        )
+    }
 }
 
 private fun openExportedFile(context: android.content.Context, path: String) {

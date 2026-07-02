@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 data class MapSupervisionExtendedColors(
     val panelBackground: Color,
     val panelBackgroundAlt: Color,
+    val panelBackgroundOverlay: Color,
     val accent: Color,
     val success: Color,
     val mapAccent: Color,
@@ -24,6 +25,7 @@ internal val LocalMapSupervisionExtendedColors = staticCompositionLocalOf {
     MapSupervisionExtendedColors(
         panelBackground = SurfaceDark,
         panelBackgroundAlt = SurfaceVariantDark,
+        panelBackgroundOverlay = SurfaceOverlayDark,
         accent = PrimaryContainer,
         success = SuccessColor,
         mapAccent = MapAccentColor,

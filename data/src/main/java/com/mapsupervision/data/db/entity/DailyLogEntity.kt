@@ -12,13 +12,27 @@ import androidx.room.PrimaryKey
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["nodeId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisRouteEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["routeId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["projectId", "createdAtEpochMs"]),
         Index(value = ["projectId", "dateEpochDay"]),
-        Index(value = ["projectId", "batchGroupId"])
+        Index(value = ["projectId", "batchGroupId"]),
+        Index("nodeId"),
+        Index("routeId")
     ]
 )
 data class DailyLogEntity(
@@ -30,14 +44,15 @@ data class DailyLogEntity(
     val createdAtEpochMs: Long,
     val weather: String,
     val temperature: Double,
-    val nodeCode: String?,
-    val routeCode: String?,
     val dateEpochDay: Long,
     val volume: Double,
     val unit: String,
     val categoryName: String,
     val batchGroupId: String,
-    val appliedNodeCodesCsv: String,
-    val linkedPhotoIdsCsv: String,
-    val photoMatchOffsetMinutes: Int
+    val photoMatchOffsetMinutes: Int,
+    val nodeId: String? = null,
+    val routeId: String? = null,
+    val updatedAtEpochMs: Long = createdAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )

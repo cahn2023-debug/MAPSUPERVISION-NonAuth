@@ -45,7 +45,7 @@ class WorkspaceDedupUtilsTest {
             latitude = 10.0,
             longitude = 106.0,
             mapNumberLabel = "",
-            materialSummary = "existing"
+            workVolumeSummary = "existing"
         )
         val incoming = GisNode(
             id = "id-2",
@@ -55,14 +55,14 @@ class WorkspaceDedupUtilsTest {
             latitude = 10.0,
             longitude = 106.0,
             mapNumberLabel = "MAP-22",
-            materialSummary = "incoming"
+            workVolumeSummary = "incoming"
         )
 
         val merged = combineNodeMetadata(canonical, incoming)
 
         assertEquals("CTY ABC", merged.contractor)
         assertEquals("MAP-22", merged.mapNumberLabel)
-        assertEquals("existing", merged.materialSummary)
+        assertEquals("existing", merged.workVolumeSummary)
     }
 
     @Test
@@ -88,10 +88,11 @@ private fun dedupCoordBucketKey(lat: Double, lon: Double): Long {
 private fun combineNodeMetadata(canonical: GisNode, incoming: GisNode): GisNode {
     val contractor = canonical.contractor.ifBlank { incoming.contractor }
     val mapNumber = canonical.mapNumberLabel.ifBlank { incoming.mapNumberLabel }
-    val material = canonical.materialSummary.ifBlank { incoming.materialSummary }
+    val material = canonical.workVolumeSummary.ifBlank { incoming.workVolumeSummary }
     return canonical.copy(
         contractor = contractor,
         mapNumberLabel = mapNumber,
-        materialSummary = material
+        workVolumeSummary = material
     )
 }
+

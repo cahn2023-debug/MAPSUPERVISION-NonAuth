@@ -9,7 +9,7 @@ import com.mapsupervision.data.db.dao.GisNodeDao
 import com.mapsupervision.data.db.dao.GisRouteDao
 import com.mapsupervision.data.db.dao.AiDecisionCacheDao
 import com.mapsupervision.data.db.dao.ChatHistoryDao
-import com.mapsupervision.data.db.dao.MaterialProgressDao
+import com.mapsupervision.data.db.dao.WorkVolumeProgressDao
 import com.mapsupervision.data.db.dao.NodeProgressDao
 import com.mapsupervision.data.db.dao.NoteDao
 import com.mapsupervision.data.db.dao.TaskDao
@@ -20,7 +20,7 @@ import com.mapsupervision.data.repository.DailyLogRepositoryImpl
 import com.mapsupervision.data.repository.AiDecisionCacheStoreImpl
 import com.mapsupervision.data.repository.ChatHistoryRepositoryImpl
 import com.mapsupervision.data.repository.GisRepositoryImpl
-import com.mapsupervision.data.repository.MaterialProgressRepositoryImpl
+import com.mapsupervision.data.repository.WorkVolumeProgressRepositoryImpl
 import com.mapsupervision.data.repository.PhotoRepositoryImpl
 import com.mapsupervision.data.repository.ProgressRepositoryImpl
 import com.mapsupervision.data.repository.ProjectRepositoryImpl
@@ -30,18 +30,35 @@ import com.mapsupervision.data.repository.WorkCategoryRepositoryImpl
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.ChatHistoryRepository
 import com.mapsupervision.domain.repository.GisRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.NoteRepository
 import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
+import com.mapsupervision.domain.repository.StampDataRepository
+import com.mapsupervision.data.repository.StampDataRepositoryImpl
 import com.mapsupervision.data.db.dao.ReportDraftDao
 import com.mapsupervision.data.db.dao.WorkPlanDao
 import com.mapsupervision.data.repository.ReportDraftRepositoryImpl
 import com.mapsupervision.domain.repository.ReportDraftRepository
+import com.mapsupervision.data.db.dao.MaterialHandoverDao
+import com.mapsupervision.data.repository.MaterialHandoverRepositoryImpl
+import com.mapsupervision.domain.repository.MaterialHandoverRepository
+import com.mapsupervision.data.repository.MaterialDeclarationRepositoryImpl
+import com.mapsupervision.domain.repository.MaterialDeclarationRepository
+import com.mapsupervision.data.repository.ImportLifecycleRepositoryImpl
+import com.mapsupervision.domain.repository.ImportLifecycleRepository
+import com.mapsupervision.domain.repository.ContractorColorPreferenceRepository
+import com.mapsupervision.data.repository.ContractorColorPreferenceRepositoryImpl
+import com.mapsupervision.data.mlkit.MlKitScannerService
 import com.mapsupervision.domain.service.WeatherService
+import com.mapsupervision.domain.service.PhotoOcrService
+import com.mapsupervision.ai.core.rag.RagContextBuilder
+import com.mapsupervision.ai.core.rag.RagIndexRepository
+import com.mapsupervision.ai.core.rag.RagRetriever
+import com.mapsupervision.ai.core.rag.TextEmbeddingEngine
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -66,27 +83,7 @@ object DataModule {
                     db.execSQL("PRAGMA temp_store = MEMORY")
                 }
             })
-            .addMigrations(
-                MapSupervisionDatabase.MIGRATION_8_9,
-                MapSupervisionDatabase.MIGRATION_9_10,
-                MapSupervisionDatabase.MIGRATION_10_11,
-                MapSupervisionDatabase.MIGRATION_11_12,
-                MapSupervisionDatabase.MIGRATION_12_13,
-                MapSupervisionDatabase.MIGRATION_13_14,
-                MapSupervisionDatabase.MIGRATION_14_15,
-                MapSupervisionDatabase.MIGRATION_15_16,
-                MapSupervisionDatabase.MIGRATION_16_17,
-                MapSupervisionDatabase.MIGRATION_17_18,
-                MapSupervisionDatabase.MIGRATION_18_19,
-                MapSupervisionDatabase.MIGRATION_19_20,
-                MapSupervisionDatabase.MIGRATION_20_21,
-                MapSupervisionDatabase.MIGRATION_21_22,
-                MapSupervisionDatabase.MIGRATION_22_23,
-                MapSupervisionDatabase.MIGRATION_23_24,
-                MapSupervisionDatabase.MIGRATION_24_25,
-                MapSupervisionDatabase.MIGRATION_25_26,
-                MapSupervisionDatabase.MIGRATION_26_27
-            )
+            .addMigrations(*MapSupervisionDatabase.ALL_MIGRATIONS)
             .build()
 
     @Provides
@@ -117,7 +114,10 @@ object DataModule {
     fun provideImportedFileDao(db: MapSupervisionDatabase): com.mapsupervision.data.db.dao.ImportedFileDao = db.importedFileDao()
 
     @Provides
-    fun provideMaterialProgressDao(db: MapSupervisionDatabase): MaterialProgressDao = db.materialProgressDao()
+    fun provideEventOutboxDao(db: MapSupervisionDatabase): com.mapsupervision.data.db.dao.EventOutboxDao = db.eventOutboxDao()
+
+    @Provides
+    fun provideWorkVolumeProgressDao(db: MapSupervisionDatabase): WorkVolumeProgressDao = db.workVolumeProgressDao()
 
     @Provides
     fun provideNoteDao(db: MapSupervisionDatabase): NoteDao = db.noteDao()
@@ -136,11 +136,24 @@ object DataModule {
 
     @Provides
     fun provideReportDraftDao(db: MapSupervisionDatabase): ReportDraftDao = db.reportDraftDao()
+
+    @Provides
+    fun provideMaterialHandoverDao(db: MapSupervisionDatabase): MaterialHandoverDao = db.materialHandoverDao()
+
+    @Provides
+    fun provideMaterialDeclarationDao(db: MapSupervisionDatabase): com.mapsupervision.data.db.dao.MaterialDeclarationDao = db.materialDeclarationDao()
+
+    @Provides
+    fun provideRagDocumentEmbeddingDao(db: MapSupervisionDatabase): com.mapsupervision.data.db.dao.RagDocumentEmbeddingDao = db.ragDocumentEmbeddingDao()
 }
 
 @Module
 @InstallIn(SingletonComponent::class)
 abstract class DataBindModule {
+    @Binds
+    @Singleton
+    abstract fun bindStampDataRepository(impl: StampDataRepositoryImpl): StampDataRepository
+
     @Binds
     abstract fun bindProjectRepository(impl: ProjectRepositoryImpl): ProjectRepository
 
@@ -160,10 +173,10 @@ abstract class DataBindModule {
     abstract fun bindImportedFileRepository(impl: com.mapsupervision.data.repository.ImportedFileRepositoryImpl): com.mapsupervision.domain.repository.ImportedFileRepository
 
     @Binds
-    abstract fun bindAiRepository(impl: com.mapsupervision.data.repository.GeminiRepositoryImpl): com.mapsupervision.domain.repository.AiRepository
+    abstract fun bindAiRepository(impl: com.mapsupervision.data.repository.GeminiRepositoryImpl): com.mapsupervision.ai.core.repository.AiRepository
 
     @Binds
-    abstract fun bindMaterialProgressRepository(impl: MaterialProgressRepositoryImpl): MaterialProgressRepository
+    abstract fun bindWorkVolumeProgressRepository(impl: WorkVolumeProgressRepositoryImpl): WorkVolumeProgressRepository
 
     @Binds
     abstract fun bindNoteRepository(impl: NoteRepositoryImpl): NoteRepository
@@ -175,16 +188,15 @@ abstract class DataBindModule {
     abstract fun bindWorkCategoryRepository(impl: WorkCategoryRepositoryImpl): WorkCategoryRepository
 
     @Binds
-    abstract fun bindTfLiteRepository(impl: com.mapsupervision.data.tflite.TfLiteRepositoryImpl): com.mapsupervision.domain.repository.TfLiteRepository
+    abstract fun bindTfLiteRepository(impl: com.mapsupervision.data.tflite.TfLiteRepositoryImpl): com.mapsupervision.ai.core.repository.TfLiteRepository
 
     @Binds
     abstract fun bindWeatherService(impl: com.mapsupervision.data.network.WeatherServiceImpl): WeatherService
 
     @Binds
-    abstract fun bindAiDecisionCacheStore(impl: AiDecisionCacheStoreImpl): com.mapsupervision.domain.repository.AiDecisionCacheStore
+    abstract fun bindAiDecisionCacheStore(impl: AiDecisionCacheStoreImpl): com.mapsupervision.ai.core.repository.AiDecisionCacheStore
 
-    @Binds
-    abstract fun bindLocalLlmRepository(impl: com.mapsupervision.data.mediapipe.LocalLiteRtRepositoryImpl): com.mapsupervision.domain.repository.LocalLlmRepository
+
 
     @Binds
     abstract fun bindChatHistoryRepository(impl: ChatHistoryRepositoryImpl): ChatHistoryRepository
@@ -197,4 +209,35 @@ abstract class DataBindModule {
 
     @Binds
     abstract fun bindWorkPlanRepository(impl: com.mapsupervision.data.repository.WorkPlanRepositoryImpl): com.mapsupervision.domain.repository.WorkPlanRepository
+
+    @Binds
+    abstract fun bindMaterialHandoverRepository(impl: MaterialHandoverRepositoryImpl): MaterialHandoverRepository
+
+    @Binds
+    abstract fun bindMaterialDeclarationRepository(impl: MaterialDeclarationRepositoryImpl): MaterialDeclarationRepository
+
+    @Binds
+    abstract fun bindImportLifecycleRepository(impl: ImportLifecycleRepositoryImpl): ImportLifecycleRepository
+
+    @Binds
+    abstract fun bindPhotoOcrService(impl: MlKitScannerService): PhotoOcrService
+
+    @Binds
+    abstract fun bindTextEmbeddingEngine(impl: com.mapsupervision.data.rag.OptionalTfliteTextEmbeddingEngine): TextEmbeddingEngine
+
+    @Binds
+    abstract fun bindRagIndexRepository(impl: com.mapsupervision.data.rag.RagIndexRepositoryImpl): RagIndexRepository
+
+    @Binds
+    abstract fun bindRagRetriever(impl: com.mapsupervision.data.rag.RagRetrieverImpl): RagRetriever
+
+    @Binds
+    abstract fun bindRagContextBuilder(impl: com.mapsupervision.data.rag.RagContextBuilderImpl): RagContextBuilder
+
+    @Binds
+    abstract fun bindProjectStorageMigrationService(impl: com.mapsupervision.data.db.ProjectStorageMigrationServiceImpl): com.mapsupervision.domain.service.ProjectStorageMigrationService
+
+    @Binds
+    abstract fun bindContractorColorPreferenceRepository(impl: ContractorColorPreferenceRepositoryImpl): ContractorColorPreferenceRepository
 }
+

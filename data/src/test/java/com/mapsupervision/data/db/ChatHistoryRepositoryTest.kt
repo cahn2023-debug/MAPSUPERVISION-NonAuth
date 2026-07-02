@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.mapsupervision.core.result.AppResult
 import com.mapsupervision.data.repository.ChatHistoryRepositoryImpl
 import com.mapsupervision.domain.model.ChatHistoryMessage
+import com.mapsupervision.storage.ProjectStorageManager
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -31,7 +32,7 @@ class ChatHistoryRepositoryTest {
         database = Room.inMemoryDatabaseBuilder(context, MapSupervisionDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        provider = ProjectScopedDatabaseProvider(context, database)
+        provider = ProjectScopedDatabaseProvider(context, database, ProjectStorageManager(context))
         repository = ChatHistoryRepositoryImpl(database.chatHistoryDao(), provider)
     }
 

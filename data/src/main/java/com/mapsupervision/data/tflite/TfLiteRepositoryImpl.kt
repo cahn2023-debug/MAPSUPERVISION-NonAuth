@@ -18,7 +18,7 @@ import java.nio.channels.FileChannel
 import javax.inject.Inject
 import javax.inject.Singleton
 
-import com.mapsupervision.domain.repository.TfLiteRepository
+import com.mapsupervision.ai.core.repository.TfLiteRepository
 
 /**
  * TensorFlow Lite Repository Implementation
@@ -201,11 +201,11 @@ class TfLiteRepositoryImpl @Inject constructor(
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
     
-    override fun checkPhotoQuality(filePath: String): com.mapsupervision.domain.ai.PhotoQualityResult {
+    override fun checkPhotoQuality(filePath: String): com.mapsupervision.ai.core.PhotoQualityResult {
         val bitmap = android.graphics.BitmapFactory.decodeFile(filePath)
             ?: throw IllegalArgumentException("Failed to decode image from path: $filePath")
         val localResult = checkPhotoQuality(bitmap)
-        return com.mapsupervision.domain.ai.PhotoQualityResult(
+        return com.mapsupervision.ai.core.PhotoQualityResult(
             score = localResult.score,
             issues = localResult.issues,
             recommendation = localResult.recommendation,
@@ -213,9 +213,9 @@ class TfLiteRepositoryImpl @Inject constructor(
         )
     }
 
-    override fun checkDiscrepancy(features: FloatArray): com.mapsupervision.domain.ai.DiscrepancyResult {
+    override fun checkDiscrepancy(features: FloatArray): com.mapsupervision.ai.core.DiscrepancyResult {
         val localResult = checkDiscrepancyInternal(features)
-        return com.mapsupervision.domain.ai.DiscrepancyResult(
+        return com.mapsupervision.ai.core.DiscrepancyResult(
             issues = localResult.issues,
             recommendedActions = localResult.recommendedActions
         )

@@ -62,9 +62,9 @@ fun ExcelMappingDialog(
         }
     }
     val allHeaders = state.headers
-    val selectedMaterials = remember(state.itemColumnsCsv) {
+    val selectedMaterials = remember(state.workVolumeColumnsCsv) {
         mutableStateListOf<String>().apply {
-            addAll(state.itemColumnsCsv.split(",").map { it.trim() }.filter { it.isNotBlank() })
+            addAll(state.workVolumeColumnsCsv.split(",").map { it.trim() }.filter { it.isNotBlank() })
         }
     }
 
@@ -138,7 +138,7 @@ fun ExcelMappingDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("5. Cột vật tư / khối lượng", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text("5. Cột công việc / khối lượng công việc", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = "Chọn tất cả",
@@ -294,3 +294,4 @@ private fun DropdownField(selected: String, options: List<String>, onSelected: (
         }
     }
 }
+

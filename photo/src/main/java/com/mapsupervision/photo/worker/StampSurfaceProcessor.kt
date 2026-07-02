@@ -27,11 +27,20 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.concurrent.Executor
 
-class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableListener {
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+
+class StampSurfaceProcessor(
+    private val repository: com.mapsupervision.domain.repository.StampDataRepository
+) : SurfaceProcessor, SurfaceTexture.OnFrameAvailableListener {
 
     private val glThread = HandlerThread("StampGLThread").apply { start() }
     private val glHandler = Handler(glThread.looper)
     private val glExecutor = Executor { command -> glHandler.post(command) }
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     // EGL objects (managed on GL thread)
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -48,7 +57,22 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
     // GL program variables
     private var oesProgram = -1
     private var textureProgram = -1
-    private var stampTextureId = -1
+
+    private class ViewportTextureCache(
+        val width: Int,
+        val height: Int,
+        val bitmap: Bitmap,
+        val canvas: Canvas,
+        val textureId: Int
+    ) {
+        fun release() {
+            bitmap.recycle()
+            GLES20.glDeleteTextures(1, intArrayOf(textureId), 0)
+        }
+    }
+
+    private val textureCaches = mutableMapOf<Pair<Int, Int>, ViewportTextureCache>()
+    private var lastRenderedSize: Pair<Int, Int>? = null
 
     // Stamp properties
     @Volatile
@@ -59,9 +83,6 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
     private var stampEnabled = true
     @Volatile
     private var stampBitmapPending = false
-    private var cachedStampBitmap: Bitmap? = null
-    private var stampBitmapWidth = 0
-    private var stampBitmapHeight = 0
 
     @Volatile
     private var currentAspectRatio = CameraAspectRatio.RATIO_4_3
@@ -106,6 +127,37 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
         }
 
         glHandler.post { initEGL() }
+
+        // Start listening to the repository updates
+        scope.launch {
+            repository.stampSnapshot.collect { snapshot ->
+                if (snapshot != null) {
+                    val stamp = CaptureStamp(
+                        timestampMs = snapshot.timestampMs,
+                        latitude = snapshot.locationKey?.let { it.latitudeE4 / 10000.0 },
+                        longitude = snapshot.locationKey?.let { it.longitudeE4 / 10000.0 },
+                        address = snapshot.address,
+                        note = snapshot.note,
+                        bearingDeg = snapshot.bearingBucket.toFloat(),
+                        mapScene = snapshot.mapScene
+                    )
+                    currentStamp = stamp
+                    stampBitmapPending = true
+                    triggerRedraw()
+                } else {
+                    currentStamp = null
+                    stampBitmapPending = true
+                    triggerRedraw()
+                }
+            }
+        }
+        scope.launch {
+            repository.currentTile.collect { tile ->
+                currentTileBitmap = tile as? Bitmap
+                stampBitmapPending = true
+                triggerRedraw()
+            }
+        }
     }
 
     fun updateStamp(stamp: CaptureStamp, tileBitmap: Bitmap?, enabled: Boolean) {
@@ -287,7 +339,6 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
 
         oesProgram = compileProgram(vertexShaderCode, oesFragmentShaderCode)
         textureProgram = compileProgram(simpleVertexShaderCode, textureFragmentShaderCode)
-        stampTextureId = createNormalTexture()
     }
 
     private fun compileProgram(vs: String, fs: String): Int {
@@ -373,42 +424,39 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
                 if (stampEnabled) {
                     val stamp = currentStamp
                     if (stamp != null) {
-                        updateStampBitmapTextureIfPending(viewport.width, viewport.height, stamp)
-                        drawStampTexture(stampTextureId)
+                        val sizeKey = Pair(viewport.width, viewport.height)
+                        val cache = textureCaches.getOrPut(sizeKey) {
+                            val bitmap = Bitmap.createBitmap(viewport.width, viewport.height, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bitmap)
+                            val tex = createNormalTexture()
+                            ViewportTextureCache(viewport.width, viewport.height, bitmap, canvas, tex)
+                        }
+
+                        if (stampBitmapPending || sizeKey != lastRenderedSize) {
+                            cache.bitmap.eraseColor(Color.TRANSPARENT)
+                            val tile = currentTileBitmap
+                            PhotoStampRenderer.drawStamp(
+                                canvas = cache.canvas,
+                                frameWidth = viewport.width.toFloat(),
+                                frameHeight = viewport.height.toFloat(),
+                                stamp = stamp,
+                                tileBitmap = tile,
+                                missingLocationText = "Khong co vi tri"
+                            )
+                            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, cache.textureId)
+                            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, cache.bitmap, 0)
+                            
+                            lastRenderedSize = sizeKey
+                        }
+                        drawStampTexture(cache.textureId)
                     }
                 }
 
                 EGL14.eglSwapBuffers(eglDisplay, spec.eglSurface)
             }
+            stampBitmapPending = false
         } catch (e: Exception) {
             AppLogger.e(e, "StampSurfaceProcessor: renderFrame failed")
-        }
-    }
-
-    private fun updateStampBitmapTextureIfPending(width: Int, height: Int, stamp: CaptureStamp) {
-        if (cachedStampBitmap == null || stampBitmapWidth != width || stampBitmapHeight != height || stampBitmapPending) {
-            stampBitmapPending = false
-            stampBitmapWidth = width
-            stampBitmapHeight = height
-
-            val oldBitmap = cachedStampBitmap
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-
-            val tile = currentTileBitmap
-            PhotoStampRenderer.drawStamp(
-                canvas = canvas,
-                frameWidth = width.toFloat(),
-                frameHeight = height.toFloat(),
-                stamp = stamp,
-                tileBitmap = tile,
-                missingLocationText = "Khong co vi tri"
-            )
-
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, stampTextureId)
-            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-            cachedStampBitmap = bitmap
-            oldBitmap?.recycle()
         }
     }
 
@@ -464,6 +512,7 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
     }
 
     fun release() {
+        scope.cancel()
         glHandler.post {
             try {
                 inputSurface?.release()
@@ -476,12 +525,13 @@ class StampSurfaceProcessor : SurfaceProcessor, SurfaceTexture.OnFrameAvailableL
                 }
                 outputs.clear()
 
-                cachedStampBitmap?.recycle()
-                cachedStampBitmap = null
+                textureCaches.forEach { (_, cache) ->
+                    cache.release()
+                }
+                textureCaches.clear()
 
                 GLES20.glDeleteProgram(oesProgram)
                 GLES20.glDeleteProgram(textureProgram)
-                GLES20.glDeleteTextures(1, intArrayOf(stampTextureId), 0)
                 GLES20.glDeleteTextures(1, intArrayOf(inputTextureId), 0)
 
                 EGL14.eglDestroySurface(eglDisplay, eglDummySurface)

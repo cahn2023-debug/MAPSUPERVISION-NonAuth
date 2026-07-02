@@ -5,12 +5,12 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.mapsupervision.data.mediapipe.GemmaChatController
-import com.mapsupervision.data.mediapipe.GemmaModelManager
+import com.mapsupervision.ai.model.mediapipe.GemmaChatController
+import com.mapsupervision.ai.model.mediapipe.GemmaModelManager
 import com.mapsupervision.domain.ai.ChatActionParser
 import com.mapsupervision.domain.ai.GemmaModelInfo
 import com.mapsupervision.domain.ai.GemmaModelStatus
-import com.mapsupervision.domain.ai.engines.RuleBasedEngine
+import com.mapsupervision.ai.model.engines.RuleBasedEngine
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +81,7 @@ class HeavyAIWorker @AssistedInject constructor(
                 history = emptyList(),
                 contextSummary = contextSummary,
                 normalizationContext = normalizationContext,
+                retrievedContext = "",
                 currentTab = tab,
                 selectedNodeCode = nodeCode,
                 selectedRouteCode = routeCode,

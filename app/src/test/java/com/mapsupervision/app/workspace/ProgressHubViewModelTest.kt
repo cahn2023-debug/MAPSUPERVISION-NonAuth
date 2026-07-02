@@ -7,6 +7,15 @@ import org.junit.Test
 class ProgressHubViewModelTest {
 
     @Test
+    fun `select plan sub tab updates state`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.setSubTab(ProgressHubSubTab.PLAN)
+
+        assertEquals(ProgressHubSubTab.PLAN, viewModel.uiState.value.subTab)
+    }
+
+    @Test
     fun `select progress node initializes sheet inputs`() {
         val viewModel = ProgressHubViewModel()
 
@@ -61,6 +70,51 @@ class ProgressHubViewModelTest {
     }
 
     @Test
+    fun `add and remove plan locations update selected chips`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.addSelectedPlanNodeCode("N-01")
+        viewModel.addSelectedPlanNodeCode("N-01")
+        viewModel.addSelectedPlanRouteCode("R-01")
+        viewModel.addSelectedPlanRouteCode("R-02")
+        viewModel.removeSelectedPlanRouteCode("R-01")
+        viewModel.removeSelectedPlanNodeCode("N-01")
+
+        val state = viewModel.uiState.value
+        assertEquals(emptyList<String>(), state.selectedPlanNodeCodes)
+        assertEquals(listOf("R-02"), state.selectedPlanRouteCodes)
+    }
+
+    @Test
+    fun `reset plan form clears transient inputs`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.updateSelectedPlanWorkName("Đào rãnh")
+        viewModel.updatePlanUnitInput("m3")
+        viewModel.updatePlanQuantityInput("12")
+        viewModel.updatePlanNoteInput("Theo tuyến chính")
+        viewModel.addSelectedPlanNodeCode("N-01")
+        viewModel.addSelectedPlanRouteCode("R-01")
+        viewModel.setPlanNodeDropdownExpanded(true)
+        viewModel.setPlanRouteDropdownExpanded(true)
+        viewModel.setPlanWorkDropdownExpanded(true)
+        viewModel.updatePlanFormError("Error")
+        viewModel.resetPlanForm()
+
+        val state = viewModel.uiState.value
+        assertEquals("", state.selectedPlanWorkName)
+        assertEquals("", state.planUnitInput)
+        assertEquals("", state.planQuantityInput)
+        assertEquals("", state.planNoteInput)
+        assertEquals(emptyList<String>(), state.selectedPlanNodeCodes)
+        assertEquals(emptyList<String>(), state.selectedPlanRouteCodes)
+        assertEquals(false, state.planNodeDropdownExpanded)
+        assertEquals(false, state.planRouteDropdownExpanded)
+        assertEquals(false, state.planWorkDropdownExpanded)
+        assertEquals("", state.planFormError)
+    }
+
+    @Test
     fun `select work template applies template unit`() {
         val viewModel = ProgressHubViewModel()
 
@@ -97,5 +151,81 @@ class ProgressHubViewModelTest {
         val state = viewModel.uiState.value
         assertEquals("", state.selectedCategoryName)
         assertEquals("", state.unitInput)
+    }
+
+    @Test
+    fun `startEditingDailyLog with valid dateEpochDay`() {
+        val viewModel = ProgressHubViewModel()
+        val log = com.mapsupervision.domain.model.DailyLog(
+            id = "log-1",
+            projectId = "p-1",
+            workItem = "Concrete pouring",
+            manpower = 4,
+            note = "Smooth",
+            createdAtEpochMs = 1718000000000L,
+            dateEpochDay = 19700L
+        )
+        viewModel.startEditingDailyLog(log, "80.0")
+
+        val state = viewModel.uiState.value
+        assertEquals("log-1", state.editingDailyLogId)
+        assertEquals("80.0", state.actualProgressInput)
+        val expectedCal = java.util.Calendar.getInstance().apply {
+            val localDate = java.time.LocalDate.ofEpochDay(19700L)
+            set(java.util.Calendar.YEAR, localDate.year)
+            set(java.util.Calendar.MONTH, localDate.monthValue - 1)
+            set(java.util.Calendar.DAY_OF_MONTH, localDate.dayOfMonth)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        assertEquals(expectedCal.timeInMillis, state.selectedDateMillis)
+    }
+
+    @Test
+    fun `startEditingDailyLog with legacy log fallback date`() {
+        val viewModel = ProgressHubViewModel()
+        val calDate = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.JUNE, 22, 10, 0, 0)
+        }
+        val log = com.mapsupervision.domain.model.DailyLog(
+            id = "log-2",
+            projectId = "p-1",
+            workItem = "Wiring",
+            manpower = 2,
+            note = "",
+            createdAtEpochMs = calDate.timeInMillis,
+            dateEpochDay = 0L
+        )
+        viewModel.startEditingDailyLog(log, "")
+
+        val state = viewModel.uiState.value
+        assertEquals("log-2", state.editingDailyLogId)
+
+        val expectedCal = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.JUNE, 22, 0, 0, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        assertEquals(expectedCal.timeInMillis, state.selectedDateMillis)
+    }
+
+    @Test
+    fun `resetLogForm clears editingDailyLogId`() {
+        val viewModel = ProgressHubViewModel()
+        val log = com.mapsupervision.domain.model.DailyLog(
+            id = "log-1",
+            projectId = "p-1",
+            workItem = "Concrete",
+            manpower = 4,
+            note = "",
+            createdAtEpochMs = 1718000000000L,
+            dateEpochDay = 19700L
+        )
+        viewModel.startEditingDailyLog(log)
+        viewModel.resetLogForm()
+
+        val state = viewModel.uiState.value
+        assertNull(state.editingDailyLogId)
     }
 }

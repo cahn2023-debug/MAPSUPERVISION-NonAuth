@@ -4,59 +4,77 @@ import com.mapsupervision.domain.model.WorkspaceSnapshot
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ImportedFileRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
+import com.mapsupervision.domain.repository.MaterialHandoverRepository
+import com.mapsupervision.domain.repository.MaterialDeclarationRepository
 import javax.inject.Inject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 class ObserveWorkspaceSnapshotUseCase @Inject constructor(
-    private val importedFileRepository: ImportedFileRepository,
-    private val gisRepository: GisRepository,
-    private val progressRepository: ProgressRepository,
-    private val materialProgressRepository: MaterialProgressRepository,
-    private val dailyLogRepository: DailyLogRepository,
-    private val workCategoryRepository: WorkCategoryRepository,
-    private val photoRepository: PhotoRepository
+    private val observeWorkspaceGeometrySnapshot: ObserveWorkspaceGeometrySnapshotUseCase,
+    private val observeWorkspaceProgressSnapshot: ObserveWorkspaceProgressSnapshotUseCase,
+    private val observeWorkspaceMediaSnapshot: ObserveWorkspaceMediaSnapshotUseCase,
+    private val observeWorkspacePlanningSnapshot: ObserveWorkspacePlanningSnapshotUseCase
 ) {
-    operator fun invoke(projectId: String): Flow<WorkspaceSnapshot> {
-        val geometryFlow = combine(
-            importedFileRepository.observeByProject(projectId),
-            gisRepository.observeNodes(projectId, ""),
-            gisRepository.observeRoutes(projectId, ""),
-            progressRepository.observeByProject(projectId)
-        ) { importedFiles, nodes, routes, progress ->
-            GeometryBundle(importedFiles, nodes, routes, progress)
-        }
+    constructor(
+        importedFileRepository: ImportedFileRepository,
+        gisRepository: GisRepository,
+        progressRepository: ProgressRepository,
+        workVolumeProgressRepository: WorkVolumeProgressRepository,
+        dailyLogRepository: DailyLogRepository,
+        workCategoryRepository: WorkCategoryRepository,
+        photoRepository: PhotoRepository,
+        materialHandoverRepository: MaterialHandoverRepository,
+        materialDeclarationRepository: MaterialDeclarationRepository,
+        workPlanRepository: com.mapsupervision.domain.repository.WorkPlanRepository
+    ) : this(
+        observeWorkspaceGeometrySnapshot = ObserveWorkspaceGeometrySnapshotUseCase(
+            importedFileRepository = importedFileRepository,
+            gisRepository = gisRepository,
+            progressRepository = progressRepository
+        ),
+        observeWorkspaceProgressSnapshot = ObserveWorkspaceProgressSnapshotUseCase(
+            workVolumeProgressRepository = workVolumeProgressRepository,
+            dailyLogRepository = dailyLogRepository,
+            workCategoryRepository = workCategoryRepository
+        ),
+        observeWorkspaceMediaSnapshot = ObserveWorkspaceMediaSnapshotUseCase(
+            photoRepository = photoRepository
+        ),
+        observeWorkspacePlanningSnapshot = ObserveWorkspacePlanningSnapshotUseCase(
+            materialHandoverRepository = materialHandoverRepository,
+            materialDeclarationRepository = materialDeclarationRepository,
+            workPlanRepository = workPlanRepository
+        )
+    )
 
+    operator fun invoke(projectId: String): Flow<WorkspaceSnapshot> {
         return combine(
-            geometryFlow,
-            materialProgressRepository.observeByProject(projectId),
-            dailyLogRepository.observeByProject(projectId),
-            workCategoryRepository.observeByProject(projectId),
-            photoRepository.observeByProject(projectId)
-        ) { geometry, materialRows, dailyLogs, workCategories, photos ->
+            observeWorkspaceGeometrySnapshot(projectId),
+            observeWorkspaceProgressSnapshot(projectId),
+            observeWorkspaceMediaSnapshot(projectId),
+            observeWorkspacePlanningSnapshot(projectId)
+        ) { geometry, progress, media, planning ->
             WorkspaceSnapshot(
                 projectId = projectId,
                 importedFiles = geometry.importedFiles,
-                designNodes = geometry.nodes,
-                designRoutes = geometry.routes,
-                constructionProgress = geometry.progress,
-                materialRows = materialRows,
-                dailyLogs = dailyLogs,
-                workCategories = workCategories,
-                sitePhotos = photos
+                designNodes = geometry.designNodes,
+                designRoutes = geometry.designRoutes,
+                constructionProgress = geometry.constructionProgress,
+                workVolumeRows = progress.workVolumeRows,
+                dailyLogs = progress.dailyLogs,
+                workCategories = progress.workCategories,
+                sitePhotos = media.sitePhotos,
+                materialHandovers = planning.materialHandovers,
+                materialDeclarations = planning.materialDeclarations,
+                workPlans = planning.workPlans
             )
         }.distinctUntilChanged()
     }
-
-    private data class GeometryBundle(
-        val importedFiles: List<com.mapsupervision.domain.model.ImportedFile>,
-        val nodes: List<com.mapsupervision.domain.model.GisNode>,
-        val routes: List<com.mapsupervision.domain.model.GisRoute>,
-        val progress: List<com.mapsupervision.domain.model.NodeProgress>
-    )
 }
+

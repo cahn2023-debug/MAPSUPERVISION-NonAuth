@@ -1,6 +1,7 @@
 package com.mapsupervision.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -45,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.mapsupervision.app.ui.theme.MapSupervisionTheme
+import com.mapsupervision.app.workspace.IncomingSharePayload
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import dagger.hilt.android.AndroidEntryPoint
@@ -55,19 +57,31 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var photoPipelineService: IPhotoPipelineService
     @Inject lateinit var locationProvider: IPhotoLocationProvider
+    private val pendingIncomingShare = mutableStateOf<IncomingSharePayload?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) {
+            pendingIncomingShare.value = parseIncomingSharePayload(this, intent)
+        }
         setContent {
             MapSupervisionTheme {
                 StartupPermissionWrapper {
                     WorkspaceAppShell(
                         photoPipelineService = photoPipelineService,
-                        locationProvider = locationProvider
+                        locationProvider = locationProvider,
+                        incomingSharePayload = pendingIncomingShare.value,
+                        onIncomingShareConsumed = { pendingIncomingShare.value = null }
                     )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingIncomingShare.value = parseIncomingSharePayload(this, intent)
     }
 }
 

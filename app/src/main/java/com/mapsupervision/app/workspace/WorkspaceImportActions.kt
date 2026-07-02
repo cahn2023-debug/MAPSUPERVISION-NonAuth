@@ -23,14 +23,14 @@ import com.mapsupervision.domain.ai.TaskRecommendationPayload
 import com.mapsupervision.domain.ai.TaskRecommendationResult
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ImportedFileRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectRepository
@@ -85,35 +85,35 @@ fun WorkspaceViewModel.retryFailedImports() {
 fun WorkspaceViewModel.onOpenPicker() {}
 fun WorkspaceViewModel.onPickerEmpty() {}
 
-fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: String, progress: String) {
+fun WorkspaceViewModel.updateWorkVolumeProgress(nodeCode: String, workName: String, progress: String) {
     // Update in-memory state immediately for responsive UI
-    val key = "${nodeCode}_${materialName}"
+    val key = "${nodeCode}_${workName}"
     val stateSnapshot = _state.value
     val indexes = ensureIndexes(stateSnapshot)
     val node = indexes.nodesById[nodeCode] ?: indexes.nodesByCode[nodeCode]
-    val current = stateSnapshot.materialProgress.toMutableMap()
+    val current = stateSnapshot.workVolumeProgress.toMutableMap()
     current[key] = progress
     if (node != null) {
-        current["${node.id}_${materialName}"] = progress
-        current["${node.code}_${materialName}"] = progress
+        current["${node.id}_${workName}"] = progress
+        current["${node.code}_${workName}"] = progress
     }
 
-    val updatedRows = stateSnapshot.materialRows.toMutableList()
+    val updatedRows = stateSnapshot.workVolumeRows.toMutableList()
     val existingIndex = updatedRows.indexOfFirst { row ->
         (row.nodeCode == nodeCode || row.nodeCode == node?.id || row.nodeCode == node?.code) &&
-            row.materialName.equals(materialName, ignoreCase = true)
+            row.workName.equals(workName, ignoreCase = true)
     }
     val resolvedUnit = if (existingIndex >= 0) {
         updatedRows[existingIndex].unit
     } else {
-        resolveWorkTemplateUnit(materialName, stateSnapshot.workCategories, stateSnapshot.materialRows)
+        resolveWorkTemplateUnit(workName, stateSnapshot.workCategories, stateSnapshot.workVolumeRows)
     }
-    val updatedRow = MaterialProgress(
+    val updatedRow = WorkVolumeProgress(
         id = if (existingIndex >= 0) updatedRows[existingIndex].id else UUID.randomUUID().toString(),
         projectId = stateSnapshot.activeProjectId.orEmpty(),
         nodeCode = nodeCode,
-        materialName = if (existingIndex >= 0) updatedRows[existingIndex].materialName else materialName,
-        plannedQty = extractPlannedQty(node, materialName),
+        workName = if (existingIndex >= 0) updatedRows[existingIndex].workName else workName,
+        plannedQty = extractPlannedQty(node, workName),
         actualQty = progress.toFloatOrNull() ?: 0f,
         updatedAtEpochMs = System.currentTimeMillis(),
         unit = resolvedUnit
@@ -124,24 +124,24 @@ fun WorkspaceViewModel.updateMaterialProgress(nodeCode: String, materialName: St
         updatedRows += updatedRow
     }
     _state.value = stateSnapshot.copy(
-        materialProgress = current,
-        materialRows = updatedRows,
+        workVolumeProgress = current,
+        workVolumeRows = updatedRows,
         dashboard = buildDashboard(stateSnapshot.designNodes, stateSnapshot.designRoutes, stateSnapshot.constructionProgress, updatedRows)
     )
 
     // Persist to DB (debounced to reduce write churn while typing)
-    materialProgressPersistJobs[key]?.cancel()
-    materialProgressPersistJobs[key] = viewModelScope.launch {
+    workVolumeProgressPersistJobs[key]?.cancel()
+    workVolumeProgressPersistJobs[key] = viewModelScope.launch {
         delay(450)
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
         val actualQty = progress.toFloatOrNull() ?: 0f
-        materialProgressRepository.upsert(
-            MaterialProgress(
+        workVolumeProgressRepository.upsert(
+            WorkVolumeProgress(
                 id = updatedRow.id,
                 projectId = projectId,
                 nodeCode = nodeCode,
-                materialName = materialName,
-                plannedQty = extractPlannedQty(node, materialName),
+                workName = workName,
+                plannedQty = extractPlannedQty(node, workName),
                 actualQty = actualQty,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 unit = updatedRow.unit
@@ -332,7 +332,7 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
             runCatching {
                 AppLogger.d("import.uri uri=$uri")
                 val parseStartedAtMs = System.currentTimeMillis()
-                val draft = withContext(Dispatchers.IO) { importService.importFile(projectId, uri) }
+                val draft = withContext(Dispatchers.IO) { importService.importFile(projectId, uri.toString()) }
                 parseTotalMs += (System.currentTimeMillis() - parseStartedAtMs)
                 AppLogger.d("import.parsed file=${draft.fileName} type=${draft.fileType}")
 
@@ -633,4 +633,5 @@ fun WorkspaceViewModel.importDesignFiles(uris: List<Uri>) {
         AppLogger.d("import.post project=$projectId nodes=${refreshedNodes.size} routes=${refreshedRoutes.size} nodeSig=${identitySignature(refreshedNodes.asSequence().map { it.id })} routeSig=${identitySignature(refreshedRoutes.asSequence().map { it.id })}")
     }
 }
+
 

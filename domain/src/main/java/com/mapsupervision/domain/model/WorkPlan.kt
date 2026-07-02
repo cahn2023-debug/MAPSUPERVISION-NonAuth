@@ -13,5 +13,10 @@ data class WorkPlan(
     val routeCode: String?,
     val taskId: String?,
     val sourceRawInput: String,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val quantity: Double = 0.0,
+    val unit: String = "",
+    val batchGroupId: String = "",
+    val nodeId: String? = null,
+    val routeId: String? = null
 )

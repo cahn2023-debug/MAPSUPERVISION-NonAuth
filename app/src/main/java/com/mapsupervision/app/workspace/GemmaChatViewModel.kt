@@ -6,10 +6,10 @@ import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mapsupervision.app.GemmaModelDownloadWorker
-import com.mapsupervision.data.mediapipe.GemmaChatController
-import com.mapsupervision.data.mediapipe.GemmaDownloadState
-import com.mapsupervision.data.mediapipe.GemmaLiteRtChatService
-import com.mapsupervision.data.mediapipe.GemmaModelManager
+import com.mapsupervision.ai.model.mediapipe.GemmaChatController
+import com.mapsupervision.ai.model.mediapipe.GemmaDownloadState
+import com.mapsupervision.ai.model.mediapipe.GemmaLiteRtChatService
+import com.mapsupervision.ai.model.mediapipe.GemmaModelManager
 import com.mapsupervision.domain.ai.AiOrchestrator
 import com.mapsupervision.domain.ai.ChatActionParser
 import com.mapsupervision.domain.ai.ChatAssistantPayload
@@ -26,9 +26,15 @@ import com.mapsupervision.domain.ai.GemmaDeviceSnapshot
 import com.mapsupervision.domain.ai.GemmaModelInfo
 import com.mapsupervision.domain.ai.GemmaModelSelection
 import com.mapsupervision.domain.ai.GemmaModelStatus
-import com.mapsupervision.domain.ai.SummaryAggregator
+import com.mapsupervision.ai.agent.SummaryAggregator
+import com.mapsupervision.ai.core.rag.RagBuildRequest
+import com.mapsupervision.ai.core.rag.RagBuildResult
+import com.mapsupervision.ai.core.rag.RagChatAnswerFormatter
+import com.mapsupervision.ai.core.rag.RagContextBuilder
+import com.mapsupervision.ai.core.rag.RagQueryDomain
 import com.mapsupervision.domain.model.ChatHistoryMessage
 import com.mapsupervision.domain.model.AiActionLog
+import com.mapsupervision.domain.model.WorkspaceSnapshot
 import com.mapsupervision.domain.repository.ChatHistoryRepository
 import com.mapsupervision.domain.repository.AiActionLogRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -44,7 +50,8 @@ import kotlinx.coroutines.launch
 
 data class GemmaChatMessage(
     val role: String,
-    val text: String
+    val text: String,
+    val id: String = java.util.UUID.randomUUID().toString()
 )
 
 data class GemmaChatUiState(
@@ -79,7 +86,8 @@ class GemmaChatViewModel @Inject constructor(
     private val chatController: GemmaChatController,
     private val chatHistoryRepository: ChatHistoryRepository,
     private val aiActionLogRepository: AiActionLogRepository,
-    private val summaryAggregator: SummaryAggregator
+    private val summaryAggregator: SummaryAggregator,
+    private val ragContextBuilder: RagContextBuilder
 ) : ViewModel() {
     companion object {
         private const val CHAT_HISTORY_LIMIT = 6
@@ -231,11 +239,11 @@ class GemmaChatViewModel @Inject constructor(
         projectId: String?,
         tab: String,
         selectedNodeCode: String?,
-        selectedRouteCode: String?
+        selectedRouteCode: String?,
+        workspaceSnapshot: WorkspaceSnapshot? = null
     ) {
         val text = _uiState.value.input.trim()
         if (text.isBlank()) return
-        val boundedContext = trimContext(contextSummary)
         val safeProjectId = projectId ?: activeProjectId
         activeProjectId = safeProjectId
 
@@ -257,13 +265,27 @@ class GemmaChatViewModel @Inject constructor(
         activeSendJob = viewModelScope.launch {
             try {
                 persistMessage(safeProjectId, "user", text)
+                val ragResult = buildRagContext(
+                    projectId = safeProjectId,
+                    query = canonicalUserMessage.ifBlank { text },
+                    workspaceSnapshot = workspaceSnapshot,
+                    selectedNodeCode = selectedNodeCode,
+                    selectedRouteCode = selectedRouteCode
+                )
+                val ragBlock = ragResult?.block
+                val ragPrompt = ragBlock?.toPromptBlock().orEmpty()
+                val enrichedContextSummary = trimContext(mergeContext(contextSummary, ragPrompt))
+                val enrichedNormalizationContext = mergeNormalization(
+                    normalizationContext,
+                    ragBlock?.resolvedRefs.orEmpty()
+                )
 
                 // 1. Fast path check: Try parsing locally first
                 val fastResult = ChatActionParser.parse(
                     message = canonicalUserMessage.ifBlank { text },
-                    contextSummary = boundedContext,
+                    contextSummary = enrichedContextSummary,
                     selectedNodeCode = selectedNodeCode,
-                    normalizationContext = normalizationContext,
+                    normalizationContext = enrichedNormalizationContext,
                     selectedRouteCode = selectedRouteCode
                 )
                 val fastClarificationPrompt = fastResult.clarificationPrompt
@@ -280,6 +302,25 @@ class GemmaChatViewModel @Inject constructor(
                 }
 
                 val fastPendingAction = fastResult.pendingAction
+                val deterministicAnswer = formatDeterministicReadAnswer(
+                    query = canonicalUserMessage.ifBlank { text },
+                    workspaceSnapshot = workspaceSnapshot,
+                    ragResult = ragResult,
+                    selectedNodeCode = selectedNodeCode,
+                    selectedRouteCode = selectedRouteCode
+                )
+                if (deterministicAnswer != null && (fastPendingAction == null || fastPendingAction.type == ChatActionType.GENERATE_SUMMARY)) {
+                    _uiState.update {
+                        it.copy(
+                            isBusy = false,
+                            pendingAction = null,
+                            messages = it.messages + GemmaChatMessage("assistant", deterministicAnswer)
+                        )
+                    }
+                    persistMessage(safeProjectId, "assistant", deterministicAnswer)
+                    return@launch
+                }
+
                 if (fastPendingAction != null && fastResult.writeDisposition != com.mapsupervision.domain.ai.WriteDisposition.REJECT) {
                     val finalPendingAction = if (fastPendingAction.type == ChatActionType.GENERATE_SUMMARY) null else fastPendingAction
                     val summaryReq = fastPendingAction.summaryRequest
@@ -323,8 +364,9 @@ class GemmaChatViewModel @Inject constructor(
                                 .dropLast(1)
                                 .takeLast(CHAT_HISTORY_LIMIT)
                                 .map { GemmaLiteRtChatService.ChatMessage(it.role, it.text) },
-                            contextSummary = boundedContext,
-                            normalizationContext = normalizationContext,
+                            contextSummary = enrichedContextSummary,
+                            normalizationContext = enrichedNormalizationContext,
+                            retrievedContext = ragPrompt,
                             currentTab = tab,
                             selectedNodeCode = selectedNodeCode,
                             selectedRouteCode = selectedRouteCode,
@@ -343,8 +385,9 @@ class GemmaChatViewModel @Inject constructor(
                                 projectId = safeProjectId,
                                 currentTab = tab,
                                 message = canonicalUserMessage.ifBlank { text },
-                                contextSummary = boundedContext,
-                                normalizationContext = normalizationContext,
+                                contextSummary = enrichedContextSummary,
+                                normalizationContext = enrichedNormalizationContext,
+                                retrievedContext = ragPrompt,
                                 selectedNodeCode = selectedNodeCode,
                                 selectedRouteCode = selectedRouteCode
                             )
@@ -530,7 +573,7 @@ class GemmaChatViewModel @Inject constructor(
                     }
                     ChatActionType.UPDATE_MATERIAL_OR_VOLUME_PROGRESS -> {
                         val draft = action.materialOrVolumeProgress ?: return@launch
-                        workspaceViewModel.updateMaterialProgress(draft.nodeCode, draft.materialName, draft.actualQty.toString())
+                        workspaceViewModel.updateWorkVolumeProgress(draft.nodeCode, draft.materialName, draft.actualQty.toString())
                     }
                     ChatActionType.ADD_WORK_PLAN -> {
                         val draft = action.workPlan ?: return@launch
@@ -742,6 +785,75 @@ class GemmaChatViewModel @Inject constructor(
         return normalized.take(CONTEXT_CHAR_LIMIT)
     }
 
+    private suspend fun buildRagContext(
+        projectId: String?,
+        query: String,
+        workspaceSnapshot: WorkspaceSnapshot?,
+        selectedNodeCode: String?,
+        selectedRouteCode: String?
+    ): RagBuildResult? {
+        val safeProjectId = projectId?.takeIf { it.isNotBlank() } ?: return null
+        return runCatching {
+            ragContextBuilder.build(
+                RagBuildRequest(
+                    projectId = safeProjectId,
+                    query = query,
+                    workspaceSnapshot = workspaceSnapshot,
+                    selectedNodeCode = selectedNodeCode,
+                    selectedRouteCode = selectedRouteCode
+                )
+            )
+        }.getOrNull()
+    }
+
+    private fun formatDeterministicReadAnswer(
+        query: String,
+        workspaceSnapshot: WorkspaceSnapshot?,
+        ragResult: RagBuildResult?,
+        selectedNodeCode: String?,
+        selectedRouteCode: String?
+    ): String? {
+        if (isWriteLikeQuery(query)) return null
+        val domain = ragResult?.queryDomain ?: RagQueryDomain.infer(query)
+        if (domain == RagQueryDomain.GENERAL) return null
+        return RagChatAnswerFormatter.format(
+            query = query,
+            snapshot = workspaceSnapshot,
+            domain = domain,
+            selectedNodeCode = selectedNodeCode,
+            selectedRouteCode = selectedRouteCode
+        )
+    }
+
+    private fun isWriteLikeQuery(query: String): Boolean {
+        val normalized = java.text.Normalizer.normalize(query, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+            .replace('đ', 'd')
+            .replace('Đ', 'D')
+            .lowercase(java.util.Locale.US)
+        return listOf(
+            "cap nhat",
+            "them",
+            "tao",
+            "lap ke hoach",
+            "ghi nhat ky",
+            "luu",
+            "sua",
+            "xoa"
+        ).any { normalized.contains(it) }
+    }
+
+    private fun mergeContext(base: String, extra: String): String {
+        return listOf(base.trim(), extra.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    }
+
+    private fun mergeNormalization(base: String, extra: String): String {
+        val normalizedExtra = extra.trim().let { value ->
+            if (value.isBlank()) "" else if (value.startsWith("resolved_refs=")) value else "resolved_refs=$value"
+        }
+        return listOf(base.trim(), normalizedExtra).filter { it.isNotBlank() }.joinToString("\n")
+    }
+
     private fun loadHistory(projectId: String?) {
         if (projectId.isNullOrBlank()) {
             _uiState.update { it.copy(messages = emptyList(), pendingAction = null) }
@@ -750,7 +862,7 @@ class GemmaChatViewModel @Inject constructor(
         viewModelScope.launch {
             val result = chatHistoryRepository.listRecentByProject(projectId, 50)
             val messages = (result as? com.mapsupervision.core.result.AppResult.Success)?.data.orEmpty()
-                .map { ChatHistoryMessage -> GemmaChatMessage(ChatHistoryMessage.role, ChatHistoryMessage.text) }
+                .map { ChatHistoryMessage -> GemmaChatMessage(ChatHistoryMessage.role, ChatHistoryMessage.text, ChatHistoryMessage.id) }
             _uiState.update { it.copy(messages = messages, pendingAction = null) }
         }
     }
@@ -786,3 +898,4 @@ class GemmaChatViewModel @Inject constructor(
         return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
     }
 }
+

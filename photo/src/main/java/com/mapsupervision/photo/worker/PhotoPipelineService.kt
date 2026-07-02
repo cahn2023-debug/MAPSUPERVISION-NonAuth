@@ -7,10 +7,11 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -18,12 +19,13 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
-import com.mapsupervision.data.mlkit.DailyLogDataResult
-import com.mapsupervision.data.mlkit.MaterialDataResult
-import com.mapsupervision.data.mlkit.MlKitScannerService
+import com.mapsupervision.domain.service.PhotoOcrService
+import com.mapsupervision.domain.service.PhotoMaterialDataResult
+import com.mapsupervision.domain.service.PhotoDailyLogDataResult
 import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.domain.model.CaptureStamp
 import com.mapsupervision.domain.model.CameraAspectRatio
+import com.mapsupervision.domain.model.ProjectStorageRef
 import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import com.mapsupervision.storage.ProjectStorageManager
@@ -41,10 +43,10 @@ import javax.inject.Singleton
 import dagger.hilt.android.qualifiers.ApplicationContext
 
 @Singleton
-class PhotoPipelineService @Inject constructor(
+open class PhotoPipelineService @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val storageManager: ProjectStorageManager,
-    private val mlKitScannerService: MlKitScannerService
+    private val ocrService: PhotoOcrService
 ) : IPhotoPipelineService {
     companion object {
         private const val mainJpegQuality = 78
@@ -53,42 +55,49 @@ class PhotoPipelineService @Inject constructor(
     }
 
     override fun createCaptureOutputFile(
-        projectId: String,
-        objectCode: String,
-        folderType: CaptureFolderType
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
+        objectCode: String
     ): File {
-        val root = storageManager.privateProjectRoot(projectId)
-        val photosDir = photoFolder(root, folderType, objectCode)
-        val fileName = "${projectId}_${objectCode}_${System.currentTimeMillis()}.jpg"
-        val out = File(photosDir, fileName)
+        val root = storageManager.resolveObjectFolder(storageRef.slug, folderType == CaptureFolderType.ROUTE, objectCode)
+        val fileName = storageManager.buildMediaFileName(capturedAt, locationLabel, note, "jpg")
+        val out = storageManager.generateUniqueFile(root, fileName.substringBeforeLast("."), "jpg")
         AppLogger.d(
-            "photo.pipeline.capture.output projectId=$projectId objectCode=$objectCode root=${root.absolutePath} file=${out.absolutePath}"
+            "photo.pipeline.capture.output projectId=${storageRef.id} objectCode=$objectCode root=${root.absolutePath} file=${out.absolutePath}"
         )
         return out
     }
 
     override fun createCaptureVideoOutputFile(
-        projectId: String,
-        objectCode: String,
-        folderType: CaptureFolderType
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
+        objectCode: String
     ): File {
-        val root = storageManager.privateProjectRoot(projectId)
-        val videosDir = videoFolder(root, folderType, objectCode)
-        val fileName = "${projectId}_${objectCode}_${System.currentTimeMillis()}.mp4"
-        val out = File(videosDir, fileName)
+        val root = storageManager.resolveObjectFolder(storageRef.slug, folderType == CaptureFolderType.ROUTE, objectCode)
+        val fileName = storageManager.buildMediaFileName(capturedAt, locationLabel, note, "mp4")
+        val out = storageManager.generateUniqueFile(root, fileName.substringBeforeLast("."), "mp4")
         AppLogger.d(
-            "photo.pipeline.capture.video.output projectId=$projectId objectCode=$objectCode root=${root.absolutePath} file=${out.absolutePath}"
+            "photo.pipeline.capture.video.output projectId=${storageRef.id} objectCode=$objectCode root=${root.absolutePath} file=${out.absolutePath}"
         )
         return out
     }
 
     fun createEmptyPhoto(
-        projectId: String,
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
         objectCode: String,
         engineer: String,
         folderType: CaptureFolderType = CaptureFolderType.NODE
     ): File {
-        val out = createCaptureOutputFile(projectId, objectCode, folderType)
+        val out = createCaptureOutputFile(storageRef, capturedAt, locationLabel, note, folderType, objectCode)
         val bitmap = Bitmap.createBitmap(1280, 720, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.DKGRAY)
@@ -132,30 +141,32 @@ class PhotoPipelineService @Inject constructor(
         )
     }
 
-    override fun importFromGallery(
-        context: Context,
-        projectId: String,
+    open override fun importFromGallery(
+        storageRef: ProjectStorageRef,
+        capturedAt: Long,
+        locationLabel: String?,
+        note: String?,
+        folderType: CaptureFolderType,
         objectCode: String,
-        engineer: String,
-        sourceUri: Uri,
-        folderType: CaptureFolderType
+        sourceUri: String
     ): File {
         AppLogger.d(
-            "photo.pipeline.gallery.import.start projectId=$projectId objectCode=$objectCode sourceUri=$sourceUri"
+            "photo.pipeline.gallery.import.start projectId=${storageRef.id} objectCode=$objectCode sourceUri=$sourceUri"
         )
-        val mimeType = context.contentResolver.getType(sourceUri) ?: ""
-        val isVideo = mimeType.startsWith("video/") || sourceUri.path?.endsWith(".mp4", ignoreCase = true) == true
+        val uri = sourceUri.toUri()
+        val mimeType = appContext.contentResolver.getType(uri) ?: ""
+        val isVideo = mimeType.startsWith("video/") || uri.path?.endsWith(".mp4", ignoreCase = true) == true
         val out = if (isVideo) {
-            createCaptureVideoOutputFile(projectId, objectCode, folderType)
+            createCaptureVideoOutputFile(storageRef, capturedAt, locationLabel, note, folderType, objectCode)
         } else {
-            createCaptureOutputFile(projectId, objectCode, folderType)
+            createCaptureOutputFile(storageRef, capturedAt, locationLabel, note, folderType, objectCode)
         }
-        context.contentResolver.openInputStream(sourceUri).use { input ->
+        appContext.contentResolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Cannot open gallery input stream" }
             FileOutputStream(out).use { output -> input.copyTo(output) }
         }
         AppLogger.d(
-            "photo.pipeline.gallery.import.done projectId=$projectId objectCode=$objectCode file=${out.absolutePath}"
+            "photo.pipeline.gallery.import.done projectId=${storageRef.id} objectCode=$objectCode file=${out.absolutePath}"
         )
         return out
     }
@@ -176,67 +187,11 @@ class PhotoPipelineService @Inject constructor(
         return File(File(root, category), storageManager.sanitizeFolderName(objectCode)).apply { mkdirs() }
     }
 
-    override fun createThumbnail(projectId: String, sourceFile: File): File {
+    override fun createThumbnail(storageRef: ProjectStorageRef, sourceFile: File): File {
         AppLogger.d(
-            "photo.pipeline.thumbnail.start projectId=$projectId source=${sourceFile.absolutePath}"
+            "photo.pipeline.thumbnail.skip.original_used projectId=${storageRef.id} source=${sourceFile.absolutePath}"
         )
-        val isVideo = sourceFile.name.endsWith(".mp4", ignoreCase = true)
-        val thumbsDir = File(storageManager.privateProjectRoot(projectId), "thumbs").apply { mkdirs() }
-        val out = File(thumbsDir, "${sourceFile.nameWithoutExtension}_thumb.jpg")
-
-        if (isVideo) {
-            val retriever = android.media.MediaMetadataRetriever()
-            var bitmap: Bitmap? = null
-            try {
-                retriever.setDataSource(sourceFile.absolutePath)
-                bitmap = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-            } catch (e: Exception) {
-                AppLogger.e(e, "photo.pipeline.thumbnail.video.retriever.fail file=${sourceFile.absolutePath}")
-            } finally {
-                try { retriever.release() } catch (_: Exception) {}
-            }
-            val targetBitmap = bitmap ?: Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888).apply {
-                Canvas(this).drawColor(Color.GRAY)
-            }
-            val scale = thumbLongEdgePx.toFloat() / maxOf(targetBitmap.width, targetBitmap.height).toFloat()
-            val targetWidth = (targetBitmap.width * scale).toInt().coerceAtLeast(1)
-            val targetHeight = (targetBitmap.height * scale).toInt().coerceAtLeast(1)
-            val scaled = Bitmap.createScaledBitmap(targetBitmap, targetWidth, targetHeight, true)
-            if (scaled !== targetBitmap && bitmap != null) {
-                targetBitmap.recycle()
-            }
-            FileOutputStream(out).use { fos ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, thumbJpegQuality, fos)
-            }
-            scaled.recycle()
-            AppLogger.d(
-                "photo.pipeline.thumbnail.video.done projectId=$projectId source=${sourceFile.absolutePath} thumb=${out.absolutePath}"
-            )
-            return out
-        }
-
-        val bitmap = PhotoStampRenderer.loadMutableNormalizedBitmap(sourceFile)
-            ?: run {
-                AppLogger.d(
-                    "photo.pipeline.thumbnail.decode.fail projectId=$projectId source=${sourceFile.absolutePath}"
-                )
-                throw IllegalStateException("Cannot decode source image for thumbnail")
-            }
-        val scale = thumbLongEdgePx.toFloat() / maxOf(bitmap.width, bitmap.height).toFloat()
-        val targetWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
-        if (scaled !== bitmap) {
-            bitmap.recycle()
-        }
-        FileOutputStream(out).use { fos ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, thumbJpegQuality, fos)
-        }
-        scaled.recycle()
-        AppLogger.d(
-            "photo.pipeline.thumbnail.done projectId=$projectId source=${sourceFile.absolutePath} thumb=${out.absolutePath}"
-        )
-        return out
+        return sourceFile
     }
 
     /**
@@ -244,8 +199,8 @@ class PhotoPipelineService @Inject constructor(
      * @param photoFile Photo file to process
      * @return Material data extracted from the photo
      */
-    suspend fun extractMaterialDataFromPhoto(photoFile: File): MaterialDataResult {
-        return mlKitScannerService.extractMaterialData(photoFile.absolutePath)
+    suspend fun extractMaterialDataFromPhoto(photoFile: File): PhotoMaterialDataResult {
+        return ocrService.extractMaterialData(photoFile.absolutePath)
     }
 
     /**
@@ -253,31 +208,33 @@ class PhotoPipelineService @Inject constructor(
      * @param photoFile Photo file to process
      * @return Daily log data extracted from the photo
      */
-    suspend fun extractDailyLogDataFromPhoto(photoFile: File): DailyLogDataResult {
-        return mlKitScannerService.extractDailyLogData(photoFile.absolutePath)
+    suspend fun extractDailyLogDataFromPhoto(photoFile: File): PhotoDailyLogDataResult {
+        return ocrService.extractDailyLogData(photoFile.absolutePath)
     }
 
     override fun applyStamp(
         file: File,
         stamp: CaptureStamp,
         ratio: CameraAspectRatio,
-        tileBitmap: Bitmap?
+        tileBitmap: Any?
     ) {
         AppLogger.d(
             "photo.pipeline.stamp.start file=${file.absolutePath} lat=${stamp.latitude} lng=${stamp.longitude} bearingDeg=${stamp.bearingDeg}"
         )
-        PhotoStampRenderer.applyStamp(file, stamp, ratio, tileBitmap)
+        val bitmap = tileBitmap as? Bitmap
+        PhotoStampRenderer.applyStamp(file, stamp, ratio, bitmap)
         AppLogger.d("photo.pipeline.stamp.done file=${file.absolutePath}")
     }
 
-    @OptIn(UnstableApi::class)
-    override suspend fun exportVideoStamp(file: File, stamp: CaptureStamp, tileBitmap: Bitmap?) {
+    @OptIn(markerClass = [UnstableApi::class])
+    override suspend fun exportVideoStamp(file: File, stamp: CaptureStamp, tileBitmap: Any?) {
+        val bitmap = tileBitmap as? Bitmap
         val (frameWidth, frameHeight) = PhotoStampRenderer.resolveVideoOverlaySize(file)
         val overlayBitmap = PhotoStampRenderer.createStampOverlayBitmap(
             frameWidthPx = frameWidth,
             frameHeightPx = frameHeight,
             stamp = stamp,
-            tileBitmap = tileBitmap
+            tileBitmap = bitmap
         )
         try {
             exportVideoStampWithTempSwap(file) { tempOutput ->

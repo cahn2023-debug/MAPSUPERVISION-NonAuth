@@ -73,6 +73,7 @@ import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.TaskStatus
 import com.mapsupervision.gis.ui.GisLabelField
+import com.mapsupervision.app.ui.theme.extendedColors
 @Composable
 fun FieldChip(text: String, selected: Boolean, onClick: () -> Unit) {
     OutlinedButton(
@@ -120,8 +121,8 @@ fun NotesAndTasksBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xFF1E293B),
-        contentColor = Color(0xFFF8FAFC)
+        containerColor = MaterialTheme.extendedColors.panelBackgroundOverlay,
+        contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         Column(
             modifier = Modifier
@@ -138,17 +139,17 @@ fun NotesAndTasksBottomSheet(
                     text = "Ghi chú & CV: $objectCode",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFFF5A623)
+                    color = MaterialTheme.colorScheme.primary
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Đóng", tint = Color.White)
+                    Icon(Icons.Outlined.Close, contentDescription = "Đóng", tint = MaterialTheme.colorScheme.onBackground)
                 }
             }
 
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor = Color(0xFF0F172A),
-                contentColor = Color(0xFFF5A623),
+                containerColor = MaterialTheme.extendedColors.panelBackground,
+                contentColor = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).padding(bottom = 16.dp)
             ) {
                 tabTitles.forEachIndexed { index, title ->
@@ -156,8 +157,8 @@ fun NotesAndTasksBottomSheet(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
                         text = { Text(title, fontWeight = FontWeight.Bold) },
-                        selectedContentColor = Color(0xFFF5A623),
-                        unselectedContentColor = Color(0xFF94A3B8)
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -169,20 +170,20 @@ fun NotesAndTasksBottomSheet(
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (aiSummary.isNotBlank() || isAiLoading) {
                             ElevatedCard(
-                                colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF334155)),
+                                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.extendedColors.panelBackgroundAlt),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = Color(0xFFEAB308), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Tóm tắt ghi chú (AI)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFEAB308))
+                                        Text("Tóm tắt ghi chú (AI)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                                     }
                                     if (isAiLoading) {
-                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFFF5A623))
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                                     } else {
-                                        Text(aiSummary, fontSize = 12.sp, color = Color(0xFFF8FAFC))
+                                        Text(aiSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground)
                                     }
                                 }
                             }
@@ -201,13 +202,13 @@ fun NotesAndTasksBottomSheet(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("Chưa có ghi chú nào. Hãy thêm ghi chú đầu tiên!", color = Color(0xFF94A3B8), fontSize = 13.sp)
+                                        Text("Chưa có ghi chú nào. Hãy thêm ghi chú đầu tiên!", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                     }
                                 }
                             } else {
                                 itemsIndexed(notes, key = { index, note -> "${note.id}:$index" }) { _, note ->
                                     ElevatedCard(
-                                        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF262D3D)),
+                                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.extendedColors.panelBackgroundAlt),
                                         shape = RoundedCornerShape(8.dp),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
@@ -220,14 +221,14 @@ fun NotesAndTasksBottomSheet(
                                                 Text(
                                                     text = formatNoteTime(note.createdAtEpochMs),
                                                     fontSize = 10.sp,
-                                                    color = Color(0xFF94A3B8),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Spacer(modifier = Modifier.height(4.dp))
-                                                Text(note.content, fontSize = 13.sp, color = Color(0xFFF8FAFC))
+                                                Text(note.content, fontSize = 13.sp, color = MaterialTheme.colorScheme.onBackground)
                                             }
                                             IconButton(onClick = { onDeleteNote(note.id, objectCode) }) {
-                                                Icon(Icons.Outlined.Delete, contentDescription = "Xóa", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Outlined.Delete, contentDescription = "Xóa", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                             }
                                         }
                                     }
@@ -243,17 +244,17 @@ fun NotesAndTasksBottomSheet(
                             OutlinedTextField(
                                 value = noteText,
                                 onValueChange = { noteText = it },
-                                placeholder = { Text("Nhập ghi chú mới...", fontSize = 13.sp, color = Color(0xFF94A3B8)) },
+                                placeholder = { Text("Nhập ghi chú mới...", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 3,
                                 shape = RoundedCornerShape(24.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color(0xFFF5A623),
-                                    unfocusedBorderColor = Color(0xFF334155),
-                                    focusedContainerColor = Color(0xFF0F172A),
-                                    unfocusedContainerColor = Color(0xFF0F172A),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                    focusedContainerColor = MaterialTheme.extendedColors.panelBackground,
+                                    unfocusedContainerColor = MaterialTheme.extendedColors.panelBackground,
+                                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground
                                 )
                             )
                             IconButton(
@@ -264,17 +265,17 @@ fun NotesAndTasksBottomSheet(
                                     }
                                 },
                                 modifier = Modifier
-                                    .background(Color(0xFFF5A623), CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
                                     .size(48.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Gửi", tint = Color.Black, modifier = Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Gửi", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
                             }
                         }
 
                         if (notes.isNotEmpty() && !isAiLoading && aiSummary.isBlank()) {
                             Button(
                                 onClick = { onSummarize(objectCode) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155)),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.extendedColors.panelBackgroundAlt),
                                 modifier = Modifier.fillMaxWidth().height(40.dp),
                                 shape = RoundedCornerShape(20.dp)
                             ) {
@@ -300,7 +301,7 @@ fun NotesAndTasksBottomSheet(
                                 Box(
                                     modifier = Modifier
                                         .background(
-                                            if (selected) Color(0xFFF5A623) else Color(0xFF262D3D),
+                                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.extendedColors.panelBackgroundAlt,
                                             RoundedCornerShape(12.dp)
                                         )
                                         .clickable { filterState = key }
@@ -309,7 +310,7 @@ fun NotesAndTasksBottomSheet(
                                     Text(
                                         text = label,
                                         fontSize = 11.sp,
-                                        color = if (selected) Color.Black else Color(0xFF94A3B8),
+                                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -318,34 +319,34 @@ fun NotesAndTasksBottomSheet(
 
                         if (aiSuggestions.isNotEmpty() || isAiLoading) {
                             ElevatedCard(
-                                colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF334155)),
+                                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.extendedColors.panelBackgroundAlt),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = Color(0xFFF5A623), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("AI Đề xuất nhiệm vụ tiếp theo", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFF5A623))
+                                        Text("AI Đề xuất nhiệm vụ tiếp theo", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                                     }
                                     if (isAiLoading) {
-                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color(0xFFF5A623))
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                                     } else {
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             aiSuggestions.forEach { suggestion ->
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .background(Color(0xFF1E293B), RoundedCornerShape(6.dp))
+                                                        .background(MaterialTheme.extendedColors.panelBackground, RoundedCornerShape(6.dp))
                                                         .clickable {
                                                             onAddTask(objectCode, suggestion)
                                                         }
                                                         .padding(8.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(Icons.Outlined.AddCircle, contentDescription = null, tint = Color(0xFFF5A623), modifier = Modifier.size(14.dp))
+                                                    Icon(Icons.Outlined.AddCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(suggestion, fontSize = 11.sp, color = Color(0xFFF8FAFC))
+                                                    Text(suggestion, fontSize = 11.sp, color = MaterialTheme.colorScheme.onBackground)
                                                 }
                                             }
                                         }

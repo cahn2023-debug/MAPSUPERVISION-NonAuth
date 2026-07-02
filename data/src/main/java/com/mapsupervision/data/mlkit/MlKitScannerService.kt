@@ -10,6 +10,9 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.mapsupervision.domain.service.PhotoDailyLogDataResult
+import com.mapsupervision.domain.service.PhotoMaterialDataResult
+import com.mapsupervision.domain.service.PhotoOcrService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileInputStream
@@ -31,7 +34,7 @@ import kotlinx.coroutines.withContext
 @Singleton
 class MlKitScannerService @Inject constructor(
     @param:ApplicationContext private val context: Context
-) {
+) : PhotoOcrService {
     private val textRecognizer by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
@@ -103,10 +106,10 @@ class MlKitScannerService @Inject constructor(
         }
     }
 
-    suspend fun extractMaterialData(imageUri: String): MaterialDataResult {
+    override suspend fun extractMaterialData(imageUri: String): PhotoMaterialDataResult {
         val ocrResult = extractTextFromImage(imageUri)
         if (!ocrResult.success) {
-            return MaterialDataResult(
+            return PhotoMaterialDataResult(
                 success = false,
                 materialName = null,
                 quantity = null,
@@ -117,10 +120,10 @@ class MlKitScannerService @Inject constructor(
         return parseMaterialData(ocrResult.text, ocrResult.lines)
     }
 
-    suspend fun extractDailyLogData(imageUri: String): DailyLogDataResult {
+    override suspend fun extractDailyLogData(imageUri: String): PhotoDailyLogDataResult {
         val ocrResult = extractTextFromImage(imageUri)
         if (!ocrResult.success) {
-            return DailyLogDataResult(
+            return PhotoDailyLogDataResult(
                 success = false,
                 workItem = null,
                 manpower = null,
@@ -192,7 +195,7 @@ internal suspend fun <T> Task<T>.awaitResult(): T = suspendCancellableCoroutine 
     }
 }
 
-internal fun parseMaterialData(text: String, lines: List<String>): MaterialDataResult {
+internal fun parseMaterialData(text: String, lines: List<String>): PhotoMaterialDataResult {
     val cleanedLines = lines.map { it.trim() }.filter { it.isNotBlank() }
     val quantityMatch = quantityRegex.find(text.replace(',', '.'))
     val quantity = quantityMatch?.groupValues?.getOrNull(1)?.toDoubleOrNull()
@@ -208,7 +211,7 @@ internal fun parseMaterialData(text: String, lines: List<String>): MaterialDataR
         .takeIf { it.isNotBlank() }
 
     val success = materialName != null || quantity != null || unit != null
-    return MaterialDataResult(
+    return PhotoMaterialDataResult(
         success = success,
         materialName = materialName,
         quantity = quantity,
@@ -217,7 +220,7 @@ internal fun parseMaterialData(text: String, lines: List<String>): MaterialDataR
     )
 }
 
-internal fun parseDailyLogData(text: String, lines: List<String>): DailyLogDataResult {
+internal fun parseDailyLogData(text: String, lines: List<String>): PhotoDailyLogDataResult {
     val cleanedLines = lines.map { it.trim() }.filter { it.isNotBlank() }
     val normalizedText = normalizeForMatch(text.replace('\n', ' ').replace(Regex("\\s+"), " ").trim())
 
@@ -233,7 +236,7 @@ internal fun parseDailyLogData(text: String, lines: List<String>): DailyLogDataR
         ?: cleanedLines.drop(1).joinToString(" ").takeIf { it.isNotBlank() }
 
     val success = workItem != null || manpower != null || note != null
-    return DailyLogDataResult(
+    return PhotoDailyLogDataResult(
         success = success,
         workItem = workItem,
         manpower = manpower,
@@ -323,20 +326,4 @@ data class BarcodeData(
     val rawValue: String,
     val displayValue: String,
     val valueType: Int
-)
-
-data class MaterialDataResult(
-    val success: Boolean,
-    val materialName: String?,
-    val quantity: Double?,
-    val unit: String?,
-    val error: String?
-)
-
-data class DailyLogDataResult(
-    val success: Boolean,
-    val workItem: String?,
-    val manpower: Int?,
-    val note: String?,
-    val error: String?
 )

@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -8,20 +10,25 @@ plugins {
 
 android {
     namespace = "com.mapsupervision.reporting"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig { minSdk = 24 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures { compose = true }
 }
 
 dependencies {
     implementation(project(":core"))
     implementation(project(":domain"))
+    implementation(project(":ai-core"))
     implementation(project(":storage-core"))
 
     implementation("androidx.core:core-ktx:1.13.1")

@@ -19,7 +19,9 @@ data class Project(
     val metadataVersion: Int = CURRENT_METADATA_VERSION,
     val updatedAtEpochMs: Long = createdAtEpochMs,
     val storageMode: ProjectStorageMode = ProjectStorageMode.LEGACY_SHARED,
-    val projectDbPath: String = ""
+    val projectDbPath: String = "",
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
 
 const val CURRENT_METADATA_VERSION: Int = 3

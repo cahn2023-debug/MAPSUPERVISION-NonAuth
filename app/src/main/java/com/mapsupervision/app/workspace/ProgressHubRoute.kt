@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mapsupervision.domain.model.WorkPlan
 
 @Composable
 fun ProgressHubRoute(
@@ -14,16 +15,28 @@ fun ProgressHubRoute(
     dashboardState: DashboardState,
     progressUiState: ProgressUiState,
     workCategories: List<com.mapsupervision.domain.model.WorkCategory>,
+    workPlans: List<WorkPlan>,
     photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
     activeProjectName: String? = null,
+    initialDateMillis: Long? = null,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?) -> Unit,
-    onAddDailyLogBatch: (String, Int, String, String, Double, List<String>, Long, Double, String, String) -> Unit,
+    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?, Float?) -> Unit,
     onAddWorkCategory: (String, String) -> Unit,
+    onAddWorkPlanBatch: suspend (String, List<String>, List<String>, Double, String, String, Long) -> Boolean,
     onFetchWeatherAuto: (String?, String?, (String, Double) -> Unit) -> Unit,
     viewModel: ProgressHubViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(initialDateMillis) {
+        if (initialDateMillis != null) {
+            viewModel.updateSelectedDateMillis(initialDateMillis)
+            viewModel.setSubTab(ProgressHubSubTab.DIARY)
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = initialDateMillis }
+            viewModel.updateCurrentMonth(cal.get(java.util.Calendar.MONTH))
+            viewModel.updateCurrentYear(cal.get(java.util.Calendar.YEAR))
+        }
+    }
 
     LaunchedEffect(uiState.selectedNodeCodeForLog, uiState.selectedRouteCodeForLog, uiState.selectedDateMillis) {
         onFetchWeatherAuto(uiState.selectedNodeCodeForLog, uiState.selectedRouteCodeForLog) { cond, temp ->
@@ -36,13 +49,14 @@ fun ProgressHubRoute(
         activeProjectId = activeProjectId,
         constructionProgress = constructionProgress,
         dailyLogs = dailyLogs,
+        workPlans = workPlans,
         dashboardState = dashboardState,
         progressUiState = progressUiState,
         screenUiState = uiState,
         workCategories = workCategories,
         photos = photos,
         activeProjectName = activeProjectName,
-        onSetProgressTab = viewModel::setProgressTab,
+        onSetSubTab = viewModel::setSubTab,
         onUpdateGroupMode = viewModel::updateGroupMode,
         onUpdateFilterMode = viewModel::updateFilterMode,
         onSelectProgressNode = viewModel::selectProgressNode,
@@ -78,8 +92,35 @@ fun ProgressHubRoute(
         onResetLogForm = viewModel::resetLogForm,
         onAddConstruction = onAddConstruction,
         onAddDailyLog = onAddDailyLog,
-        onAddDailyLogBatch = onAddDailyLogBatch,
         onAddWorkCategory = onAddWorkCategory,
-        onEditDailyLog = viewModel::startEditingDailyLog
+        onEditDailyLog = { log ->
+            val nodeProgress = log.nodeCode?.let { code ->
+                progressUiState.progressByNodeCode[code]
+            }
+            val initialActual = nodeProgress?.actual?.let {
+                if (it > 0f) it.toString() else ""
+            } ?: ""
+            viewModel.startEditingDailyLog(log, initialActual)
+        },
+
+        // Plan actions
+        onAddWorkPlanBatch = onAddWorkPlanBatch,
+        onUpdateSelectedPlanWorkName = viewModel::updateSelectedPlanWorkName,
+        onUpdatePlanUnitInput = viewModel::updatePlanUnitInput,
+        onUpdatePlanQuantityInput = viewModel::updatePlanQuantityInput,
+        onUpdatePlanNoteInput = viewModel::updatePlanNoteInput,
+        onAddSelectedPlanNodeCode = viewModel::addSelectedPlanNodeCode,
+        onRemoveSelectedPlanNodeCode = viewModel::removeSelectedPlanNodeCode,
+        onAddSelectedPlanRouteCode = viewModel::addSelectedPlanRouteCode,
+        onRemoveSelectedPlanRouteCode = viewModel::removeSelectedPlanRouteCode,
+        onSetPlanNodeDropdownExpanded = viewModel::setPlanNodeDropdownExpanded,
+        onSetPlanRouteDropdownExpanded = viewModel::setPlanRouteDropdownExpanded,
+        onSetPlanWorkDropdownExpanded = viewModel::setPlanWorkDropdownExpanded,
+        onSetShowAddPlanWorkDialog = viewModel::setShowAddPlanWorkDialog,
+        onUpdateNewPlanWorkName = viewModel::updateNewPlanWorkName,
+        onUpdateNewPlanWorkUnit = viewModel::updateNewPlanWorkUnit,
+        onUpdatePlanFormError = viewModel::updatePlanFormError,
+        onSelectPlanWorkTemplate = viewModel::selectPlanWorkTemplate,
+        onResetPlanForm = viewModel::resetPlanForm
     )
 }

@@ -21,6 +21,10 @@ import androidx.camera.core.UseCaseGroup
 import com.mapsupervision.photo.worker.PhotoStampRenderer
 import com.mapsupervision.photo.worker.calculateAspectCropRect
 import com.mapsupervision.domain.model.CameraAspectRatio
+import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.GisRoute
+import com.mapsupervision.domain.model.ProjectStorageRef
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import android.graphics.Bitmap
@@ -103,6 +107,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
@@ -119,6 +125,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.domain.model.CaptureStamp
 import com.mapsupervision.domain.model.PhotoLocationSnapshot
+import com.mapsupervision.domain.model.RoundedLocationKey
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.CaptureFolderType
 import com.mapsupervision.domain.service.IPhotoPipelineService
@@ -127,7 +134,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class CaptureLensFacing { BACK, FRONT }
+internal enum class CaptureLensFacing { BACK, FRONT }
 
 internal enum class CameraFlashMode { AUTO, OFF, ON }
 
@@ -148,17 +155,63 @@ internal fun clampZoomRatio(requestedZoomRatio: Float, minZoomRatio: Float, maxZ
 internal fun buildCaptureStamp(
     timestampMs: Long,
     location: PhotoLocationSnapshot?,
-    address: String,
-    note: String,
-    bearingDeg: Float
-): CaptureStamp = CaptureStamp(
-    timestampMs = timestampMs,
-    latitude = location?.latitude,
-    longitude = location?.longitude,
-    address = address.trim(),
-    note = note.trim(),
-    bearingDeg = bearingDeg
-)
+    address: String = "",
+    note: String = "",
+    bearingDeg: Float,
+    nodes: List<GisNode> = emptyList(),
+    routes: List<GisRoute> = emptyList()
+): CaptureStamp {
+    val mapScene = if (nodes.isNotEmpty() || routes.isNotEmpty()) {
+        com.mapsupervision.domain.model.CaptureStampMapScene(
+            centerLatitude = location?.latitude,
+            centerLongitude = location?.longitude,
+            cameraLatitude = location?.latitude,
+            cameraLongitude = location?.longitude,
+            bearingDeg = bearingDeg,
+            nodes = nodes.map {
+                com.mapsupervision.domain.model.CaptureStampMapNode(
+                    code = it.code,
+                    latitude = it.latitude,
+                    longitude = it.longitude,
+                    label = it.code,
+                    highlighted = false
+                )
+            },
+            routes = routes.map {
+                com.mapsupervision.domain.model.CaptureStampMapRoute(
+                    code = it.code,
+                    points = it.points,
+                    highlighted = false
+                )
+            }
+        )
+    } else null
+
+    return CaptureStamp(
+        timestampMs = timestampMs,
+        latitude = location?.latitude,
+        longitude = location?.longitude,
+        address = address.trim(),
+        note = note.trim(),
+        bearingDeg = bearingDeg,
+        mapScene = mapScene
+    )
+}
+
+internal class PhotoCaptureSession {
+    var isCapturingPhoto by mutableStateOf(false)
+        private set
+
+    fun tryBeginCapture(): Boolean {
+        if (isCapturingPhoto) return false
+        isCapturingPhoto = true
+        return true
+    }
+
+    fun finishCapture() {
+        isCapturingPhoto = false
+    }
+}
 
 internal suspend fun postProcessRecordedVideo(
     videoFile: java.io.File,
@@ -204,11 +257,6 @@ internal fun snapshotBitmap(bitmap: Bitmap?): Bitmap? {
     return bitmap?.copy(Bitmap.Config.ARGB_8888, false)
 }
 
-internal data class RoundedLocationKey(
-    val latitudeE4: Int,
-    val longitudeE4: Int
-)
-
 internal data class PreviewStampRenderKey(
     val stampEnabled: Boolean,
     val isVideoMode: Boolean,
@@ -218,7 +266,8 @@ internal data class PreviewStampRenderKey(
     val locationKey: RoundedLocationKey?,
     val address: String,
     val note: String,
-    val tileKey: RoundedLocationKey?
+    val tileKey: RoundedLocationKey?,
+    val bearing: Float
 )
 
 private const val LOCATION_POLL_INTERVAL_MS = 8_000L
@@ -250,9 +299,10 @@ internal fun buildPreviewStampRenderKey(
     aspectRatio: CameraAspectRatio,
     viewport: com.mapsupervision.photo.worker.AspectCropRect?,
     location: PhotoLocationSnapshot?,
-    address: String,
-    note: String,
-    tileKey: RoundedLocationKey?
+    address: String = "",
+    note: String = "",
+    tileKey: RoundedLocationKey?,
+    bearing: Float
 ): PreviewStampRenderKey {
     return PreviewStampRenderKey(
         stampEnabled = stampEnabled,
@@ -263,7 +313,8 @@ internal fun buildPreviewStampRenderKey(
         locationKey = roundedLocationKey(location?.latitude, location?.longitude),
         address = address.trim(),
         note = note.trim(),
-        tileKey = tileKey
+        tileKey = tileKey,
+        bearing = bearing
     )
 }
 
@@ -273,11 +324,14 @@ internal fun buildPreviewStampRenderKey(
 fun CameraOverlay(
     nodeCode: String,
     projectId: String,
+    projectSlug: String,
     photoPipelineService: IPhotoPipelineService,
     locationProvider: IPhotoLocationProvider,
     onPhotoCaptured: () -> Unit,
     onSavePhoto: suspend (java.io.File) -> Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    nodes: List<GisNode> = emptyList(),
+    routes: List<GisRoute> = emptyList()
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -313,12 +367,13 @@ fun CameraOverlay(
                 runCatching {
                     val file = withContext(Dispatchers.IO) {
                         photoPipelineService.importFromGallery(
-                            context = context,
-                            projectId = projectId,
+                            storageRef = ProjectStorageRef(projectId, projectSlug),
+                            capturedAt = System.currentTimeMillis(),
+                            locationLabel = null,
+                            note = "Imported",
+                            folderType = resolveCaptureFolderType(nodeCode, routes),
                             objectCode = nodeCode,
-                            engineer = "Field",
-                            sourceUri = uri,
-                            folderType = CaptureFolderType.NODE
+                            sourceUri = uri.toString()
                         )
                     }
                     if (onSavePhoto(file)) {
@@ -381,6 +436,7 @@ fun CameraOverlay(
     var bearing by remember { mutableStateOf(0f) }
     var liveLocation by remember { mutableStateOf<PhotoLocationSnapshot?>(null) }
     var liveAddress by remember { mutableStateOf("") }
+    val photoCaptureSession = remember { PhotoCaptureSession() }
 
     var selectedAspectRatio by remember { mutableStateOf(CameraAspectRatio.RATIO_4_3) }
     val isKeyboardVisible = WindowInsets.isImeVisible
@@ -398,7 +454,6 @@ fun CameraOverlay(
     var cachedTileKey by remember { mutableStateOf<RoundedLocationKey?>(null) }
     val addressCache = remember { mutableMapOf<RoundedLocationKey, String>() }
     var previewSurfaceSize by remember { mutableStateOf(IntSize.Zero) }
-    var previewOverlayBitmap by remember { mutableStateOf<Bitmap?>(null) }
     val previewViewport = remember(previewSurfaceSize, selectedAspectRatio) {
         if (previewSurfaceSize.width <= 0 || previewSurfaceSize.height <= 0) {
             null
@@ -406,62 +461,15 @@ fun CameraOverlay(
             calculateAspectCropRect(previewSurfaceSize.width, previewSurfaceSize.height, selectedAspectRatio)
         }
     }
-    val previewRenderKey = remember(
-        stampEnabled,
-        isVideoMode,
-        selectedAspectRatio,
-        previewViewport,
-        liveLocation,
-        liveAddress,
-        noteText,
-        currentTileKey
-    ) {
-        buildPreviewStampRenderKey(
-            stampEnabled = stampEnabled,
-            isVideoMode = isVideoMode,
-            aspectRatio = selectedAspectRatio,
-            viewport = previewViewport,
-            location = liveLocation,
-            address = liveAddress,
-            note = noteText,
-            tileKey = currentTileKey
-        )
-    }
-
-    LaunchedEffect(previewRenderKey) {
-        previewOverlayBitmap?.recycle()
-        previewOverlayBitmap = null
-        val viewport = previewViewport ?: return@LaunchedEffect
-        if (!stampEnabled) return@LaunchedEffect
-        val previewStamp = buildCaptureStamp(
-            timestampMs = System.currentTimeMillis(),
-            location = liveLocation,
-            address = liveAddress,
-            note = noteText,
-            bearingDeg = bearing
-        )
-        val tileSnapshot = snapshotBitmap(currentTileBitmap)
-        val overlay = withContext(Dispatchers.Default) {
-            buildPreviewStampOverlayBitmap(
-                frameWidthPx = viewport.width,
-                frameHeightPx = viewport.height,
-                stamp = previewStamp,
-                tileBitmap = tileSnapshot
-            )
-        }
-        tileSnapshot?.recycle()
-        previewOverlayBitmap = overlay
-    }
 
     DisposableEffect(Unit) {
         onDispose {
-            previewOverlayBitmap?.recycle()
             currentTileBitmap?.recycle()
             cachedTileBitmap?.recycle()
         }
     }
 
-    val controlsEnabled = !isRecording && !isProcessingVideoStamp
+    val controlsEnabled = !isRecording && !isProcessingVideoStamp && !photoCaptureSession.isCapturingPhoto
 
     LaunchedEffect(stampEnabled) {
         if (!stampEnabled) {
@@ -502,7 +510,7 @@ fun CameraOverlay(
                     cachedTileKey == locationKey && cachedTileBitmap != null -> snapshotBitmap(cachedTileBitmap)
                     else -> {
                         val fetchedTile = withContext(Dispatchers.IO) {
-                            PhotoStampRenderer.fetchOsmTile(safeLat, safeLng, zoom = 17)
+                            PhotoStampRenderer.fetchOsmTile(safeLat, safeLng, zoom = PhotoStampRenderer.MINIMAP_MAX_ZOOM)
                         }
                         cachedTileBitmap?.takeIf { cachedTileKey != locationKey }?.recycle()
                         cachedTileBitmap = snapshotBitmap(fetchedTile)
@@ -698,15 +706,35 @@ fun CameraOverlay(
                 modifier = Modifier.fillMaxSize()
             )
             val viewport = previewViewport
-            if (previewOverlayBitmap != null && viewport != null) {
-                Image(
-                    bitmap = previewOverlayBitmap!!.asImageBitmap(),
-                    contentDescription = null,
+            if (stampEnabled && viewport != null) {
+                val previewStamp = remember(liveLocation, liveAddress, noteText, bearing) {
+                    buildCaptureStamp(
+                        timestampMs = System.currentTimeMillis(),
+                        location = liveLocation,
+                        address = liveAddress,
+                        note = noteText,
+                        bearingDeg = bearing,
+                        nodes = nodes,
+                        routes = routes
+                    )
+                }
+                Canvas(
                     modifier = Modifier
                         .offset { IntOffset(viewport.left, viewport.top) }
                         .width(with(density) { viewport.width.toDp() })
                         .height(with(density) { viewport.height.toDp() })
-                )
+                ) {
+                    drawIntoCanvas { canvas ->
+                        PhotoStampRenderer.drawStamp(
+                            canvas = canvas.nativeCanvas,
+                            frameWidth = size.width,
+                            frameHeight = size.height,
+                            stamp = previewStamp,
+                            tileBitmap = currentTileBitmap,
+                            missingLocationText = "Không có vị trí"
+                        )
+                    }
+                }
             }
         }
 
@@ -1101,13 +1129,23 @@ fun CameraOverlay(
                                             location = liveLocation,
                                             address = liveAddress,
                                             note = noteText,
-                                            bearingDeg = bearing
+                                            bearingDeg = bearing,
+                                            nodes = nodes,
+                                            routes = routes
                                         )
                                         val recordingTileBitmap = snapshotBitmap(currentTileBitmap)
+                                        val loc = liveLocation
+                                        val locationLabel = liveAddress.takeIf { it.isNotBlank() }
+                                            ?: if (loc?.latitude != null && loc?.longitude != null) {
+                                                "${loc.latitude}_${loc.longitude}"
+                                            } else null
                                         val videoFile = photoPipelineService.createCaptureVideoOutputFile(
-                                            projectId = projectId,
-                                            objectCode = nodeCode,
-                                            folderType = CaptureFolderType.NODE
+                                            storageRef = ProjectStorageRef(projectId, projectSlug),
+                                            capturedAt = System.currentTimeMillis(),
+                                            locationLabel = locationLabel,
+                                            note = noteText.takeIf { it.isNotBlank() },
+                                            folderType = CaptureFolderType.NODE,
+                                            objectCode = nodeCode
                                         )
                                         val outputOptions = FileOutputOptions.Builder(videoFile).build()
                                         var pending = videoCapture.output.prepareRecording(context, outputOptions)
@@ -1158,50 +1196,74 @@ fun CameraOverlay(
                                         location = liveLocation,
                                         address = liveAddress,
                                         note = noteText,
-                                        bearingDeg = bearing
+                                        bearingDeg = bearing,
+                                        nodes = nodes,
+                                        routes = routes
                                     )
                                     val capturedStampEnabled = stampEnabled
                                     val capturedTileBitmap = snapshotBitmap(currentTileBitmap)
-                                    val file = photoPipelineService.createCaptureOutputFile(
-                                        projectId = projectId,
-                                        objectCode = nodeCode,
-                                        folderType = CaptureFolderType.NODE
-                                    )
-                                    val output = ImageCapture.OutputFileOptions.Builder(file).build()
-                                    imageCapture.targetRotation = targetRotation
-                                    imageCapture.takePicture(
-                                        output,
-                                        ContextCompat.getMainExecutor(context),
-                                        object : ImageCapture.OnImageSavedCallback {
-                                            override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                                                coroutineScope.launch {
-                                                    try {
-                                                        if (capturedStampEnabled) {
-                                                            withContext(Dispatchers.IO) {
-                                                                photoPipelineService.applyStamp(
-                                                                    file,
-                                                                    capturedStamp,
-                                                                    selectedAspectRatio,
-                                                                    capturedTileBitmap
-                                                                )
+                                    val loc = liveLocation
+                                    val locationLabel = liveAddress.takeIf { it.isNotBlank() }
+                                        ?: if (loc?.latitude != null && loc?.longitude != null) {
+                                            "${loc.latitude}_${loc.longitude}"
+                                        } else null
+                                    if (photoCaptureSession.tryBeginCapture()) {
+                                        val file = photoPipelineService.createCaptureOutputFile(
+                                            storageRef = ProjectStorageRef(projectId, projectSlug),
+                                            capturedAt = System.currentTimeMillis(),
+                                            locationLabel = locationLabel,
+                                            note = noteText.takeIf { it.isNotBlank() },
+                                            folderType = CaptureFolderType.NODE,
+                                            objectCode = nodeCode
+                                        )
+                                        val output = ImageCapture.OutputFileOptions.Builder(file).build()
+                                        imageCapture.targetRotation = targetRotation
+                                        try {
+                                            imageCapture.takePicture(
+                                                output,
+                                                ContextCompat.getMainExecutor(context),
+                                                object : ImageCapture.OnImageSavedCallback {
+                                                    override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                                                        coroutineScope.launch {
+                                                            try {
+                                                                if (capturedStampEnabled) {
+                                                                    withContext(Dispatchers.IO) {
+                                                                        photoPipelineService.applyStamp(
+                                                                            file,
+                                                                            capturedStamp,
+                                                                            selectedAspectRatio,
+                                                                            capturedTileBitmap
+                                                                        )
+                                                                    }
+                                                                }
+                                                                if (onSavePhoto(file)) {
+                                                                    onPhotoCaptured()
+                                                                }
+                                                            } finally {
+                                                                photoCaptureSession.finishCapture()
+                                                                capturedTileBitmap?.recycle()
+                                                                onDismiss()
                                                             }
                                                         }
-                                                        if (onSavePhoto(file)) {
-                                                            onPhotoCaptured()
-                                                        }
-                                                    } finally {
+                                                    }
+
+                                                    override fun onError(e: ImageCaptureException) {
+                                                        AppLogger.e(e, "camera.overlay.capture.image.failed")
+                                                        photoCaptureSession.finishCapture()
                                                         capturedTileBitmap?.recycle()
                                                         onDismiss()
                                                     }
                                                 }
-                                            }
-
-                                            override fun onError(e: ImageCaptureException) {
-                                                AppLogger.e(e, "camera.overlay.capture.image.failed")
-                                                onDismiss()
-                                            }
+                                            )
+                                        } catch (e: Throwable) {
+                                            AppLogger.e(e, "camera.overlay.capture.image.failed")
+                                            photoCaptureSession.finishCapture()
+                                            capturedTileBitmap?.recycle()
+                                            onDismiss()
                                         }
-                                    )
+                                    } else {
+                                        capturedTileBitmap?.recycle()
+                                    }
                                 }
                             },
                         contentAlignment = Alignment.Center
@@ -1480,3 +1542,9 @@ private fun reverseGeocode(context: Context, lat: Double, lng: Double): String {
         ""
     }
 }
+
+private fun resolveCaptureFolderType(code: String, routes: List<GisRoute>): CaptureFolderType {
+    val isRoute = routes.any { it.code.equals(code, ignoreCase = true) }
+    return if (isRoute) CaptureFolderType.ROUTE else CaptureFolderType.NODE
+}
+

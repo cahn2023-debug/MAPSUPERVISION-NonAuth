@@ -5,20 +5,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.core.result.AppResult
-import com.mapsupervision.domain.ai.AiOrchestrator
-import com.mapsupervision.domain.ai.ReportDraftPayload
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.ai.core.AIFacade
+import com.mapsupervision.ai.core.ReportDraftPayload
+import com.mapsupervision.ai.core.ReportDraftResult
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
+import com.mapsupervision.domain.model.ReportWorkspaceSnapshot
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
-import com.mapsupervision.domain.repository.GisRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
-import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
+import com.mapsupervision.domain.usecase.GenerateReportUseCase
 import com.mapsupervision.reporting.docx.DocxReportGenerator
 import com.mapsupervision.reporting.pdf.PdfReportGenerator
 import com.mapsupervision.storage.ProjectPackageService
@@ -41,11 +40,9 @@ class ReportingViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val activeProjectRepository: ActiveProjectRepository,
     private val photoRepository: PhotoRepository,
-    private val progressRepository: ProgressRepository,
-    private val materialProgressRepository: MaterialProgressRepository,
     private val dailyLogRepository: DailyLogRepository,
-    private val gisRepository: GisRepository,
-    private val aiOrchestrator: AiOrchestrator,
+    private val aiFacade: AIFacade,
+    private val generateReportUseCase: GenerateReportUseCase,
     private val pdfReportGenerator: PdfReportGenerator,
     private val docxReportGenerator: DocxReportGenerator,
     private val projectPackageService: ProjectPackageService,
@@ -104,9 +101,9 @@ class ReportingViewModel @Inject constructor(
                 return@launch
             }
 
-            val snapshot = loadReportingSnapshot(projectId)
-            replaceReportingSnapshot(snapshot)
-        }
+        val snapshot = loadReportingSnapshot(projectId)
+        replaceReportingSnapshot(snapshot)
+    }
     }
 
     fun requestReportDraft(projectId: String, filterNodeCode: String? = null) {
@@ -186,7 +183,7 @@ class ReportingViewModel @Inject constructor(
                 context,
                 exportContent.targetId,
                 exportContent.lines,
-                exportContent.materialRows,
+                exportContent.workVolumeRows,
                 exportContent.photos,
                 exportContent.dailyLogLines
             )
@@ -205,7 +202,7 @@ class ReportingViewModel @Inject constructor(
                 context,
                 exportContent.targetId,
                 exportContent.lines,
-                exportContent.materialRows,
+                exportContent.workVolumeRows,
                 exportContent.photos,
                 filteredDailyLogs
             )
@@ -216,7 +213,9 @@ class ReportingViewModel @Inject constructor(
     fun exportPackageZip() {
         launchExport {
             val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launchExport
-            val zip = projectPackageService.exportProjectZip(projectId)
+            val projects = (projectRepository.list(true) as? AppResult.Success)?.data.orEmpty()
+            val slug = projects.firstOrNull { it.id == projectId }?.slug ?: projectId
+            val zip = projectPackageService.exportProjectZip(slug)
             _lastPackagePath.value = zip.absolutePath
         }
     }
@@ -234,35 +233,26 @@ class ReportingViewModel @Inject constructor(
     }
 
     private suspend fun loadReportingSnapshot(projectId: String): ReportingSnapshot = coroutineScope {
-        val projectsDeferred = async(Dispatchers.IO) { projectRepository.list(true) }
-        val photosDeferred = async(Dispatchers.IO) { photoRepository.byProject(projectId) }
-        val progressDeferred = async(Dispatchers.IO) { progressRepository.byProject(projectId) }
-        val materialsDeferred = async(Dispatchers.IO) { materialProgressRepository.byProject(projectId) }
-        val nodesDeferred = async(Dispatchers.IO) { gisRepository.searchNodes(projectId, "") }
-        val routesDeferred = async(Dispatchers.IO) { gisRepository.searchRoutes(projectId, "") }
-        val logsDeferred = async(Dispatchers.IO) { dailyLogRepository.byProject(projectId) }
-
-        val projects = (projectsDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val projectName = projects.firstOrNull { it.id == projectId }?.name ?: projectId
-        val photos = (photosDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val progress = (progressDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val materialRowsRaw = (materialsDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val nodes = (nodesDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val routes = (routesDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val dailyLogs = (logsDeferred.await() as? AppResult.Success)?.data.orEmpty()
-        val materialRows = withContext(Dispatchers.Default) { buildMaterialReportRows(nodes, routes, materialRowsRaw) }
+        val reportSnapshot = generateReportUseCase(projectId) ?: return@coroutineScope ReportingSnapshot.Empty
+        val workspace = reportSnapshot.workspace
+        val photos = workspace.sitePhotos
+        val progress = workspace.constructionProgress
+        val nodes = workspace.designNodes
+        val routes = workspace.designRoutes
+        val dailyLogs = workspace.dailyLogs
+        val workVolumeRows = withContext(Dispatchers.Default) { buildMaterialReportRows(nodes, routes, workspace.workVolumeRows) }
 
         ReportingSnapshot(
             projectId = projectId,
-            projectName = projectName,
+            projectName = reportSnapshot.projectName,
             version = System.nanoTime(),
             loadedAtEpochMs = System.currentTimeMillis(),
             nodes = nodes,
             routes = routes,
             photos = photos,
             progress = progress,
-            materialRowsRaw = materialRowsRaw,
-            materialRows = materialRows,
+            workVolumeRowsRaw = workspace.workVolumeRows,
+            workVolumeRows = workVolumeRows,
             dailyLogs = dailyLogs
         )
     }
@@ -351,7 +341,7 @@ class ReportingViewModel @Inject constructor(
             "- Hạng mục [${log.workItem}]${log.nodeCode?.let { " ($it)" } ?: ""}: ${log.note}"
         }
 
-        val result = aiOrchestrator.execute<ReportDraftResult>(
+        val result = aiFacade.execute<ReportDraftResult>(
             ReportDraftPayload(
                 projectId = snapshot.projectName.ifBlank { snapshot.projectId.orEmpty() },
                 totalNodes = totalNodesCount,
@@ -377,7 +367,7 @@ private data class ReportDraftRequest(
 )
 
 data class MaterialReportRow(
-    val materialName: String,
+    val workName: String,
     val nodeCount: Int = 0,
     val routeCount: Int = 0,
     val totalPlannedQty: Float,
@@ -385,3 +375,5 @@ data class MaterialReportRow(
     val completionPercent: Float,
     val isTotal: Boolean = false
 )
+
+

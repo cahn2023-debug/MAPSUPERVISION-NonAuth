@@ -23,7 +23,7 @@ import com.mapsupervision.domain.ai.TaskRecommendationPayload
 import com.mapsupervision.domain.ai.TaskRecommendationResult
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.model.createStoredSitePhoto
@@ -31,7 +31,7 @@ import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ImportedFileRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
 import com.mapsupervision.domain.repository.ProjectRepository
@@ -116,7 +116,8 @@ fun WorkspaceViewModel.addDailyLog(
     volume: Double = 0.0,
     unit: String = "",
     categoryName: String = "",
-    id: String? = null
+    id: String? = null,
+    actualProgressPercent: Float? = null
 ) {
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
@@ -124,39 +125,44 @@ fun WorkspaceViewModel.addDailyLog(
         val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
         val normalizedRouteCode = routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
         val categoryMatch = if (categoryName.isNotBlank()) {
-            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.materialRows)
+            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.workVolumeRows)
         } else null
         val normalizedCategory = categoryMatch?.first ?: categoryName
         val normalizedUnit = categoryMatch?.second ?: unit
 
+        var calculatedProgress: Float? = null
         if (!normalizedNodeCode.isNullOrBlank() && normalizedCategory.isNotBlank() && volume > 0.0) {
             val node = ensureIndexes().nodesByCode[normalizedNodeCode]
             val plannedVolume = extractPlannedQty(node, normalizedCategory)
-            val existingMaterials = _state.value.materialRows
+            val existingMaterials = _state.value.workVolumeRows
             val existing = existingMaterials.firstOrNull {
                 (it.nodeCode == normalizedNodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == normalizedNodeCode) &&
-                    it.materialName.equals(normalizedCategory, ignoreCase = true)
+                    it.workName.equals(normalizedCategory, ignoreCase = true)
             }
             val currentActual = volume.toFloat()
-            val newMaterial = MaterialProgress(
+            val newMaterial = WorkVolumeProgress(
                 id = existing?.id ?: UUID.randomUUID().toString(),
                 projectId = projectId,
                 nodeCode = normalizedNodeCode,
-                materialName = existing?.materialName ?: normalizedCategory,
+                workName = existing?.workName ?: normalizedCategory,
                 plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                 actualQty = currentActual,
                 updatedAtEpochMs = System.currentTimeMillis(),
                 unit = normalizedUnit
             )
-            materialProgressRepository.upsert(newMaterial)
+            workVolumeProgressRepository.upsert(newMaterial)
 
-            val calculatedProgress = if (newMaterial.plannedQty > 0f) {
+            calculatedProgress = if (newMaterial.plannedQty > 0f) {
                 (newMaterial.actualQty / newMaterial.plannedQty * 100f).coerceIn(0f, 100f)
             } else {
                 100f
             }
+        }
+
+        val progressToUpdate = actualProgressPercent ?: calculatedProgress
+        if (progressToUpdate != null && !normalizedNodeCode.isNullOrBlank()) {
             val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == normalizedNodeCode }
-            addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, calculatedProgress)
+            addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, progressToUpdate)
         }
 
         val finalId = if (!id.isNullOrBlank()) id else UUID.randomUUID().toString()
@@ -188,12 +194,12 @@ fun WorkspaceViewModel.addDailyLog(
     }
 }
 
-internal fun WorkspaceViewModel.extractPlannedQty(node: GisNode?, materialName: String): Float {
+internal fun WorkspaceViewModel.extractPlannedQty(node: GisNode?, workName: String): Float {
     if (node == null) return 100f
-    val lines = node.materialSummary.split("\n")
+    val lines = node.workVolumeSummary.split("\n")
     for (line in lines) {
         val parts = line.split(":", limit = 2)
-        if (parts.size == 2 && parts[0].trim().equals(materialName, ignoreCase = true)) {
+        if (parts.size == 2 && parts[0].trim().equals(workName, ignoreCase = true)) {
             return parts[1].trim().toFloatOrNull() ?: 100f
         }
     }
@@ -210,7 +216,11 @@ fun WorkspaceViewModel.addWorkCategory(name: String, unit: String) {
             unit = unit,
             createdAtEpochMs = System.currentTimeMillis()
         )
-        workCategoryRepository.add(category)
+        val result = workCategoryRepository.add(category)
+        if (result is AppResult.Error) {
+            showMessage(result.throwable.message ?: "Không thể lưu hạng mục công việc")
+            return@launch
+        }
         markProjectChanged(projectId, "work_category_added")
     }
 }
@@ -514,6 +524,23 @@ fun WorkspaceViewModel.onContractorColorChanged(contractor: String, hexColor: St
     }
 }
 
+fun WorkspaceViewModel.onToggleContractorVisibility(contractor: String, isHidden: Boolean) {
+    val hidden = _state.value.mapUi.hiddenContractors.toMutableSet()
+    if (isHidden) {
+        hidden.add(contractor)
+    } else {
+        hidden.remove(contractor)
+    }
+    _state.value = _state.value.copy(
+        mapUi = _state.value.mapUi.copy(hiddenContractors = hidden)
+    )
+    val projectId = _state.value.activeProjectId
+    if (projectId != null) {
+        saveContractorVisibility(projectId, contractor, isHidden)
+    }
+    updateFilteredMapData(FilteredMapUpdateReason.FILTER)
+}
+
 fun WorkspaceViewModel.onSearchQueryChanged(query: String) {
     val trimmed = query.trim()
     _state.value = _state.value.copy(
@@ -649,10 +676,10 @@ private val CATEGORY_SYNONYMS = mapOf(
     "daomong" to "Móng",
     "bemong" to "Móng",
     "lammong" to "Móng",
-    "lapthietbi" to "Lắp đặt thiết bị",
-    "lapdatthietbi" to "Lắp đặt thiết bị",
-    "lapcamera" to "Lắp đặt thiết bị",
-    "laptu" to "Lắp đặt thiết bị"
+    "lapthietbi" to "Thi công lắp đặt",
+    "lapdatthietbi" to "Thi công lắp đặt",
+    "lapcamera" to "Thi công lắp đặt",
+    "laptu" to "Thi công lắp đặt"
 )
 
 private fun WorkspaceViewModel.findBestMatchingNodeCode(inputCode: String, nodes: List<GisNode>): String {
@@ -739,7 +766,7 @@ private fun WorkspaceViewModel.findBestMatchingRouteCode(inputCode: String, rout
 private fun WorkspaceViewModel.findBestMatchingCategory(
     inputCategory: String,
     categories: List<WorkCategory>,
-    materials: List<MaterialProgress>
+    materials: List<WorkVolumeProgress>
 ): Pair<String, String>? {
     if (inputCategory.isBlank()) return null
     val cleanInput = inputCategory.trim().lowercase()
@@ -766,20 +793,20 @@ private fun WorkspaceViewModel.findBestMatchingCategory(
     if (directCat != null) return directCat.name to directCat.unit
 
     // 4. Check exact match in materials
-    val directMat = materials.firstOrNull { it.materialName.trim().equals(inputCategory.trim(), ignoreCase = true) }
+    val directMat = materials.firstOrNull { it.workName.trim().equals(inputCategory.trim(), ignoreCase = true) }
     if (directMat != null) {
-        val catUnit = categories.firstOrNull { it.name.trim().equals(directMat.materialName.trim(), ignoreCase = true) }?.unit ?: ""
-        return directMat.materialName to catUnit
+        val catUnit = categories.firstOrNull { it.name.trim().equals(directMat.workName.trim(), ignoreCase = true) }?.unit ?: ""
+        return directMat.workName to catUnit
     }
 
     // 5. Normalized matching (ignoring accents, spaces, special chars)
     val normCat = categories.firstOrNull { normalizeForMatching(it.name).equals(normInput, ignoreCase = true) }
     if (normCat != null) return normCat.name to normCat.unit
 
-    val normMat = materials.firstOrNull { normalizeForMatching(it.materialName).equals(normInput, ignoreCase = true) }
+    val normMat = materials.firstOrNull { normalizeForMatching(it.workName).equals(normInput, ignoreCase = true) }
     if (normMat != null) {
-        val catUnit = categories.firstOrNull { it.name.trim().equals(normMat.materialName.trim(), ignoreCase = true) }?.unit ?: ""
-        return normMat.materialName to catUnit
+        val catUnit = categories.firstOrNull { it.name.trim().equals(normMat.workName.trim(), ignoreCase = true) }?.unit ?: ""
+        return normMat.workName to catUnit
     }
 
     // 6. Similarity match using StringSimilarity
@@ -794,9 +821,9 @@ private fun WorkspaceViewModel.findBestMatchingCategory(
     }
     
     var bestMatScore = 0.0
-    var bestMat: MaterialProgress? = null
+    var bestMat: WorkVolumeProgress? = null
     materials.forEach { mat ->
-        val score = StringSimilarity.similarityScore(normalizeForMatching(mat.materialName), normInput)
+        val score = StringSimilarity.similarityScore(normalizeForMatching(mat.workName), normInput)
         if (score > bestMatScore) {
             bestMatScore = score
             bestMat = mat
@@ -807,8 +834,8 @@ private fun WorkspaceViewModel.findBestMatchingCategory(
         if (bestScore >= bestMatScore && bestCat != null) {
             return bestCat!!.name to bestCat!!.unit
         } else if (bestMat != null) {
-            val catUnit = categories.firstOrNull { it.name.trim().equals(bestMat!!.materialName.trim(), ignoreCase = true) }?.unit ?: ""
-            return bestMat!!.materialName to catUnit
+            val catUnit = categories.firstOrNull { it.name.trim().equals(bestMat!!.workName.trim(), ignoreCase = true) }?.unit ?: ""
+            return bestMat!!.workName to catUnit
         }
     }
 
@@ -946,7 +973,7 @@ fun WorkspaceViewModel.getRouteProperties(route: GisRoute): List<Pair<String, St
         
         val startNode = nodesByCode[route.startNodeCode]
         val endNode = nodesByCode[route.endNodeCode]
-        collectSummaryProperties(startNode?.materialSummary, endNode?.materialSummary).forEach { (k, v) ->
+        collectSummaryProperties(startNode?.workVolumeSummary, endNode?.workVolumeSummary).forEach { (k, v) ->
             add(k to v)
         }
     }
@@ -1024,29 +1051,29 @@ fun WorkspaceViewModel.getSelectedNodeMaterialLines(): List<PreparedMaterialLine
     val selectedNode = stateSnapshot.mapUi.selectedNode ?: return emptyList()
     val baseLines = ensureIndexes(stateSnapshot).parsedMaterialsByNodeKey[selectedNode.id].orEmpty()
     return baseLines.map { line ->
-        line.copy(actualText = resolveMaterialActualText(stateSnapshot.materialProgress, selectedNode, line.itemName))
+        line.copy(actualText = resolveMaterialActualText(stateSnapshot.workVolumeProgress, selectedNode, line.itemName))
     }
 }
 
-fun WorkspaceViewModel.getPreviewMaterialRows(previewNodeCode: String?): List<com.mapsupervision.reporting.ui.MaterialReportRow> {
+fun WorkspaceViewModel.getPreviewworkVolumeRows(previewNodeCode: String?): List<com.mapsupervision.reporting.ui.MaterialReportRow> {
     val stateSnapshot = _state.value
     val selectedNode = stateSnapshot.mapUi.selectedNode
     if (previewNodeCode == null || selectedNode == null || selectedNode.code != previewNodeCode) return emptyList()
     val rows = getSelectedNodeMaterialLines()
     if (rows.isEmpty()) return emptyList()
-    val materialRows = rows.map { line ->
+    val workVolumeRows = rows.map { line ->
         val actualQty = line.actualText.toFloatOrNull() ?: 0f
         com.mapsupervision.reporting.ui.MaterialReportRow(
-            materialName = line.itemName,
+            workName = line.itemName,
             totalPlannedQty = line.plannedQty,
             totalActualQty = actualQty,
             completionPercent = if (line.plannedQty <= 0f) 0f else (actualQty / line.plannedQty) * 100f
         )
     }
-    val plannedSum = materialRows.sumOf { it.totalPlannedQty.toDouble() }.toFloat()
-    val actualSum = materialRows.sumOf { it.totalActualQty.toDouble() }.toFloat()
-    return materialRows + com.mapsupervision.reporting.ui.MaterialReportRow(
-        materialName = "Tổng",
+    val plannedSum = workVolumeRows.sumOf { it.totalPlannedQty.toDouble() }.toFloat()
+    val actualSum = workVolumeRows.sumOf { it.totalActualQty.toDouble() }.toFloat()
+    return workVolumeRows + com.mapsupervision.reporting.ui.MaterialReportRow(
+        workName = "Tổng",
         totalPlannedQty = plannedSum,
         totalActualQty = actualSum,
         completionPercent = if (plannedSum <= 0f) 0f else (actualSum / plannedSum) * 100f,
@@ -1102,7 +1129,8 @@ suspend fun WorkspaceViewModel.savePhoto(file: java.io.File, nodeCode: String): 
             AppLogger.d(
                 "capture.save.io.start projectId=$projectId nodeCode=$targetCode file=${file.absolutePath}"
             )
-            val thumb = photoPipelineService.createThumbnail(projectId, file)
+            val storageRef = getProjectStorageRef(projectId)
+            val thumb = photoPipelineService.createThumbnail(storageRef, file)
             AppLogger.d(
                 "capture.save.thumbnail.ok projectId=$projectId nodeCode=$targetCode thumb=${thumb.absolutePath}"
             )
@@ -1173,14 +1201,14 @@ internal fun WorkspaceViewModel.ensureIndexes(state: WorkspaceState = _state.val
         cachedNodesRef !== state.designNodes ||
         cachedRoutesRef !== state.designRoutes ||
         cachedProgressRef !== state.constructionProgress ||
-        cachedMaterialRowsRef !== state.materialRows ||
+        cachedWorkVolumeRowsRef !== state.workVolumeRows ||
         cachedDailyLogsRef !== state.dailyLogs
     ) {
         cachedIndexes = buildWorkspaceIndexes(state)
         cachedNodesRef = state.designNodes
         cachedRoutesRef = state.designRoutes
         cachedProgressRef = state.constructionProgress
-        cachedMaterialRowsRef = state.materialRows
+        cachedWorkVolumeRowsRef = state.workVolumeRows
         cachedDailyLogsRef = state.dailyLogs
     }
     return cachedIndexes
@@ -1241,7 +1269,7 @@ internal fun buildMapDesignNodes(
     AppLogger.d("buildMapDesignNodes: filterContractor=${mapUi.filterContractor}, filterMaterialType=${mapUi.filterMaterialType}, searchQuery='${mapUi.searchQuery}', showNodes=${mapUi.showNodes}")
     AppLogger.d("buildMapDesignNodes: total designNodes=${state.designNodes.size}, total designRoutes=${state.designRoutes.size}")
     
-    if (mapUi.filterContractor.isNullOrBlank() && mapUi.filterMaterialType.isNullOrBlank() && mapUi.searchQuery.isBlank()) {
+    if (mapUi.filterContractor.isNullOrBlank() && mapUi.filterMaterialType.isNullOrBlank() && mapUi.searchQuery.isBlank() && mapUi.hiddenContractors.isEmpty()) {
         AppLogger.d("buildMapDesignNodes: No filter, returning all ${state.designNodes.size} nodes")
         return state.designNodes
     }
@@ -1252,15 +1280,16 @@ internal fun buildMapDesignNodes(
     val filteredNodes = state.designNodes.filter { node ->
         val byContractor = mapUi.filterContractor.isNullOrBlank() ||
             node.contractor.equals(mapUi.filterContractor, ignoreCase = true)
+        val byVisibility = !isContractorHidden(mapUi, node.contractor)
         val byQuery = mapUi.searchQuery.isBlank() ||
             indexes.normalizedNodeSearch[node.id].orEmpty().contains(normalizedQuery)
         val byMaterial = lowerMaterialType.isNullOrBlank() || run {
             val nodeMaterials = (indexes.parsedMaterialsByNodeKey[node.id].orEmpty().map { it.itemName } +
-                                 indexes.materialRowsByNodeKey[node.id].orEmpty().map { it.materialName })
+                                 indexes.workVolumeRowsByNodeKey[node.id].orEmpty().map { it.workName })
                                  .map { it.trim().lowercase() }
             nodeMaterials.contains(lowerMaterialType)
         }
-        byContractor && byQuery && byMaterial
+        byContractor && byVisibility && byQuery && byMaterial
     }
 
     AppLogger.d("buildMapDesignNodes: final result nodes=${filteredNodes.size}")
@@ -1371,16 +1400,18 @@ fun WorkspaceViewModel.importMediaFromGallery(
 
         var savedCount = 0
         withContext(Dispatchers.IO) {
+            val storageRef = getProjectStorageRef(projectId)
             uris.forEach { uri ->
                 runCatching {
                     val sourceMimeType = context.contentResolver.getType(uri)
                     val file = photoPipelineService.importFromGallery(
-                        context = context,
-                        projectId = projectId,
+                        storageRef = storageRef,
+                        capturedAt = System.currentTimeMillis(),
+                        locationLabel = null,
+                        note = null,
+                        folderType = folderType,
                         objectCode = normalizedObjectCode,
-                        engineer = engineer,
-                        sourceUri = uri,
-                        folderType = folderType
+                        sourceUri = uri.toString()
                     )
                     saveImportedMedia(projectId, normalizedObjectCode, engineer, file, sourceMimeType)
                     savedCount++
@@ -1455,7 +1486,8 @@ private suspend fun WorkspaceViewModel.saveImportedMedia(
     sourceMimeType: String?
 ) {
     val location = locationProvider.lastKnownLocation()
-    val thumb = photoPipelineService.createThumbnail(projectId, file)
+    val storageRef = getProjectStorageRef(projectId)
+    val thumb = photoPipelineService.createThumbnail(storageRef, file)
     val isRoute = _state.value.designRoutes.any { it.code == objectCode }
     val matchedNode = if (!isRoute) objectCode else null
     val matchedRoute = if (isRoute) objectCode else null
@@ -1529,7 +1561,7 @@ fun WorkspaceViewModel.addDailyLogBatch(
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
 
         val categoryMatch = if (categoryName.isNotBlank()) {
-            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.materialRows)
+            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.workVolumeRows)
         } else null
         val normalizedCategory = categoryMatch?.first ?: categoryName
         val normalizedUnit = categoryMatch?.second ?: unit
@@ -1541,23 +1573,23 @@ fun WorkspaceViewModel.addDailyLogBatch(
                 if (nodeCode.isBlank()) continue
                 val node = ensureIndexes().nodesByCode[nodeCode]
                 val plannedVolume = extractPlannedQty(node, normalizedCategory)
-                val existingMaterials = _state.value.materialRows
+                val existingMaterials = _state.value.workVolumeRows
                 val existing = existingMaterials.firstOrNull {
                     (it.nodeCode == nodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == nodeCode) &&
-                        it.materialName.equals(normalizedCategory, ignoreCase = true)
+                        it.workName.equals(normalizedCategory, ignoreCase = true)
                 }
                 val currentActual = volume.toFloat()
-                val newMaterial = MaterialProgress(
+        val newMaterial = WorkVolumeProgress(
                     id = existing?.id ?: UUID.randomUUID().toString(),
                     projectId = projectId,
                     nodeCode = nodeCode,
-                    materialName = existing?.materialName ?: normalizedCategory,
+                    workName = existing?.workName ?: normalizedCategory,
                     plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                     actualQty = currentActual,
                     updatedAtEpochMs = System.currentTimeMillis(),
                     unit = normalizedUnit
                 )
-                materialProgressRepository.upsert(newMaterial)
+                workVolumeProgressRepository.upsert(newMaterial)
 
                 val calculatedProgress = if (newMaterial.plannedQty > 0f) {
                     (newMaterial.actualQty / newMaterial.plannedQty * 100f).coerceIn(0f, 100f)
@@ -1680,4 +1712,149 @@ fun WorkspaceViewModel.addWorkPlanWithTask(
         }
     }
 }
+
+private suspend fun WorkspaceViewModel.getProjectStorageRef(projectId: String): com.mapsupervision.domain.model.ProjectStorageRef {
+    val projects = (projectRepository.list(true) as? AppResult.Success)?.data
+    val project = projects?.find { it.id == projectId }
+    val slug = project?.slug ?: projectId
+    return com.mapsupervision.domain.model.ProjectStorageRef(id = projectId, slug = slug)
+}
+
+fun buildWorkPlanBatchLocations(
+    nodeCodes: List<String>,
+    routeCodes: List<String>
+): List<Pair<String?, String?>> {
+    val result = mutableListOf<Pair<String?, String?>>()
+    for (node in nodeCodes) {
+        result.add(node to null)
+    }
+    for (route in routeCodes) {
+        result.add(null to route)
+    }
+    return result
+}
+
+fun buildWorkPlanBatchPlans(
+    projectId: String,
+    title: String,
+    note: String,
+    dateEpochDay: Long,
+    quantity: Double,
+    unit: String,
+    batchGroupId: String,
+    createdAtEpochMs: Long,
+    locations: List<Pair<String?, String?>>
+): List<com.mapsupervision.domain.model.WorkPlan> {
+    return locations.map { (nodeCode, routeCode) ->
+        com.mapsupervision.domain.model.WorkPlan(
+            id = java.util.UUID.randomUUID().toString(),
+            projectId = projectId,
+            title = title,
+            description = note,
+            plannedDateEpochDay = dateEpochDay,
+            nodeCode = nodeCode,
+            routeCode = routeCode,
+            taskId = null,
+            sourceRawInput = "",
+            createdAtEpochMs = createdAtEpochMs,
+            quantity = quantity,
+            unit = unit,
+            batchGroupId = batchGroupId
+        )
+    }
+}
+
+suspend fun WorkspaceViewModel.addWorkPlanBatch(
+    workName: String,
+    nodeCodes: List<String>,
+    routeCodes: List<String>,
+    qty: Double,
+    unit: String,
+    note: String,
+    dateEpochDay: Long
+): Boolean {
+    val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return false
+    val batchGroupId = UUID.randomUUID().toString()
+    val now = System.currentTimeMillis()
+    
+    val normalizedNodes = nodeCodes.map { findBestMatchingNodeCode(it, _state.value.designNodes) }
+    val normalizedRoutes = routeCodes.map { findBestMatchingRouteCode(it, _state.value.designRoutes) }
+    
+    val locations = buildWorkPlanBatchLocations(normalizedNodes, normalizedRoutes)
+    val plans = buildWorkPlanBatchPlans(
+        projectId = projectId,
+        title = workName,
+        note = note,
+        dateEpochDay = dateEpochDay,
+        quantity = qty,
+        unit = unit,
+        batchGroupId = batchGroupId,
+        createdAtEpochMs = now,
+        locations = locations
+    )
+    
+    var success = true
+    for (plan in plans) {
+        val res = workPlanRepository.add(plan)
+        if (res is AppResult.Error) {
+            success = false
+        }
+    }
+    
+    if (plans.isNotEmpty() && success) {
+        markProjectChanged(projectId, "work_plans_batch_added")
+    }
+    
+    return success
+}
+
+fun WorkspaceViewModel.importSharedMedia(
+    projectId: String,
+    objectCode: String,
+    uris: List<Uri>
+) {
+    viewModelScope.launch {
+        val normalizedObjectCode = normalizeMediaObjectCode(objectCode, _state.value.designNodes, _state.value.designRoutes)
+        if (normalizedObjectCode.isBlank()) {
+            showMessage("Vui lòng nhập mã đối tượng trước khi chọn media")
+            return@launch
+        }
+
+        val folderType = if (_state.value.designRoutes.any { it.code == normalizedObjectCode }) {
+            CaptureFolderType.ROUTE
+        } else {
+            CaptureFolderType.NODE
+        }
+
+        var savedCount = 0
+        withContext(Dispatchers.IO) {
+            val storageRef = getProjectStorageRef(projectId)
+            uris.forEach { uri ->
+                runCatching {
+                    val sourceMimeType = context.contentResolver.getType(uri)
+                    val file = photoPipelineService.importFromGallery(
+                        storageRef = storageRef,
+                        capturedAt = System.currentTimeMillis(),
+                        locationLabel = null,
+                        note = null,
+                        folderType = folderType,
+                        objectCode = normalizedObjectCode,
+                        sourceUri = uri.toString()
+                    )
+                    saveImportedMedia(projectId, normalizedObjectCode, "SharedImport", file, sourceMimeType)
+                    savedCount++
+                }.onFailure { error ->
+                    AppLogger.e(error, "media.import.shared.fail projectId=$projectId uri=$uri")
+                }
+            }
+        }
+
+        if (savedCount > 0) {
+            markProjectChanged(projectId, "shared_media_imported")
+            _state.value = _state.value.copy(photoSaveCount = _state.value.photoSaveCount + savedCount)
+        }
+        refresh()
+    }
+}
+
 

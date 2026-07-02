@@ -9,11 +9,19 @@ import androidx.test.core.app.ApplicationProvider
 import com.mapsupervision.data.db.entity.GisNodeEntity
 import com.mapsupervision.data.db.entity.GisRouteEntity
 import com.mapsupervision.data.db.entity.ImportedFileEntity
+import com.mapsupervision.data.db.entity.MaterialDeclarationEntity
+import com.mapsupervision.data.db.entity.MaterialHandoverEntity
+import com.mapsupervision.data.db.entity.MaterialProgressEntity
 import com.mapsupervision.data.db.entity.NodeProgressEntity
+import com.mapsupervision.data.db.entity.NoteEntity
 import com.mapsupervision.data.db.entity.ProjectEntity
+import com.mapsupervision.data.db.entity.SitePhotoEntity
+import com.mapsupervision.data.db.entity.WorkCategoryEntity
 import com.mapsupervision.domain.model.ProjectStorageMode
+import com.mapsupervision.storage.ProjectStorageManager
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -34,12 +42,18 @@ class ProjectScopedDatabaseProviderTest {
     private lateinit var context: Context
     private lateinit var tempDir: File
     private lateinit var sharedDatabase: MapSupervisionDatabase
+    private lateinit var storageManager: ProjectStorageManager
     private val openedDatabases = mutableListOf<MapSupervisionDatabase>()
 
     @Before
     fun setUp() {
         context = TestDatabaseContext(ApplicationProvider.getApplicationContext())
         tempDir = Files.createTempDirectory("project-scoped-db-test").toFile()
+        storageManager = object : ProjectStorageManager(context) {
+            override fun scopedProjectDbRootDirectory(projectSlug: String): File {
+                return File(tempDir, "scoped-private/$projectSlug")
+            }
+        }
         sharedDatabase = createDatabase(File(tempDir, "shared.sqlite"))
     }
 
@@ -74,7 +88,7 @@ class ProjectScopedDatabaseProviderTest {
                 latitude = 21.028,
                 longitude = 105.854,
                 mapNumberLabel = "229",
-                materialSummary = "Cable",
+                workVolumeSummary = "Cable",
                 importedFileId = "file-1"
             )
         )
@@ -94,7 +108,7 @@ class ProjectScopedDatabaseProviderTest {
             NodeProgressEntity(
                 id = "progress-1",
                 projectId = project.id,
-                nodeCode = "N-1",
+                nodeId = "node-1",
                 planned = 10f,
                 actual = 3f,
                 remain = 7f,
@@ -103,7 +117,7 @@ class ProjectScopedDatabaseProviderTest {
             )
         )
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         val scopedDatabase = provider.databaseFor(project.id)
         openedDatabases += scopedDatabase!!
 
@@ -112,6 +126,268 @@ class ProjectScopedDatabaseProviderTest {
         assertEquals(1, scopedDatabase.gisNodeDao().byProject(project.id).size)
         assertEquals(1, scopedDatabase.gisRouteDao().byProject(project.id).size)
         assertEquals(1, scopedDatabase.nodeProgressDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `databaseFor syncs legacy scoped db into shared db`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy/project.sqlite")
+        val project = projectEntity("project-sync", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+
+        createDatabase(scopedFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.importedFileDao().upsert(
+                ImportedFileEntity(
+                    id = "file-sync",
+                    projectId = project.id,
+                    fileName = "nodes.kml",
+                    fileType = "KML",
+                    storedPath = "/tmp/nodes.kml",
+                    summary = "seed",
+                    importedAtEpochMs = 100L
+                )
+            )
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "node-sync",
+                    projectId = project.id,
+                    code = "N-SYNC",
+                    contractor = "Nam Ky",
+                    latitude = 21.028,
+                    longitude = 105.854,
+                    mapNumberLabel = "229",
+                    workVolumeSummary = "Cable",
+                    importedFileId = "file-sync"
+                )
+            )
+            scopedSeed.sitePhotoDao().upsert(
+                SitePhotoEntity(
+                    id = "photo-sync",
+                    projectId = project.id,
+                    objectCode = "NODE-SYNC",
+                    tagCodesCsv = "",
+                    matchedNodeId = "node-sync",
+                    matchedRouteId = null,
+                    filePath = "/tmp/photo.jpg",
+                    thumbnailPath = "/tmp/photo-thumb.jpg",
+                    latitude = null,
+                    longitude = null,
+                    locationAccuracyM = null,
+                    isGpsMocked = false,
+                    locationStatus = com.mapsupervision.domain.model.PhotoLocationStatus.MISSING,
+                    engineer = "Field",
+                    capturedAtEpochMs = 600L,
+                    matchedAtEpochMs = 0L,
+                    matchingTimeOffsetMs = 0L
+                )
+            )
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        assertEquals(1, scopedDatabase.importedFileDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.gisNodeDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.sitePhotoDao().byProject(project.id).size)
+
+        assertEquals(1, sharedDatabase.importedFileDao().byProject(project.id).size)
+        assertEquals(1, sharedDatabase.gisNodeDao().byProject(project.id).size)
+        assertEquals(1, sharedDatabase.sitePhotoDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `databaseFor heals legacy public project db path to scoped private path`() = runBlocking {
+        val legacyFile = File(tempDir, "legacy-public/project.sqlite")
+        val project = projectEntity("project-heal", legacyFile)
+        sharedDatabase.projectDao().upsert(project)
+
+        createDatabase(legacyFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.importedFileDao().upsert(
+                ImportedFileEntity(
+                    id = "file-heal",
+                    projectId = project.id,
+                    fileName = "nodes.kml",
+                    fileType = "KML",
+                    storedPath = "/tmp/nodes.kml",
+                    summary = "seed",
+                    importedAtEpochMs = 100L
+                )
+            )
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val healedPath = storageManager.scopedProjectDbFile(project.slug).absolutePath
+        assertEquals(healedPath, sharedDatabase.projectDao().get(project.id)?.projectDbPath)
+        assertTrue(File(healedPath).exists())
+        assertEquals(1, scopedDatabase.importedFileDao().byProject(project.id).size)
+        assertEquals(1, sharedDatabase.importedFileDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `databaseFor hydrates auxiliary tables asynchronously after core seed`() = runBlocking {
+        val project = projectEntity("project-aux", File(tempDir, "staged/project.sqlite"))
+        sharedDatabase.projectDao().upsert(project)
+        sharedDatabase.importedFileDao().upsert(
+            ImportedFileEntity(
+                id = "file-aux",
+                projectId = project.id,
+                fileName = "nodes.kml",
+                fileType = "KML",
+                storedPath = "/tmp/nodes.kml",
+                summary = "seed",
+                importedAtEpochMs = 100L
+            )
+        )
+        sharedDatabase.gisNodeDao().upsert(
+            GisNodeEntity(
+                id = "node-aux",
+                projectId = project.id,
+                code = "N-AUX",
+                contractor = "Nam Ky",
+                latitude = 21.028,
+                longitude = 105.854,
+                mapNumberLabel = "229",
+                workVolumeSummary = "Cable",
+                importedFileId = "file-aux"
+            )
+        )
+        sharedDatabase.workVolumeProgressDao().upsert(
+            MaterialProgressEntity(
+                id = "progress-aux",
+                projectId = project.id,
+                nodeCode = "N-AUX",
+                materialName = "Cable",
+                plannedQty = 10f,
+                actualQty = 2f,
+                updatedAtEpochMs = 200L,
+                unit = "m"
+            )
+        )
+        sharedDatabase.dailyLogDao().upsert(
+            com.mapsupervision.data.db.entity.DailyLogEntity(
+                id = "daily-aux",
+                projectId = project.id,
+                workItem = "Inspect",
+                manpower = 1,
+                note = "core",
+                createdAtEpochMs = 300L,
+                weather = "",
+                temperature = 20.0,
+                dateEpochDay = 20240621L,
+                volume = 1.0,
+                unit = "m",
+                categoryName = "",
+                batchGroupId = "",
+                photoMatchOffsetMinutes = 0,
+                nodeId = "node-aux",
+                routeId = null
+            )
+        )
+        sharedDatabase.workCategoryDao().upsert(
+            WorkCategoryEntity(
+                id = "category-aux",
+                projectId = project.id,
+                name = "Cable",
+                unit = "m",
+                createdAtEpochMs = 400L
+            )
+        )
+        sharedDatabase.noteDao().insert(
+            NoteEntity(
+                id = "note-aux",
+                projectId = project.id,
+                objectNodeId = "node-aux",
+                content = "aux note",
+                createdAtEpochMs = 500L
+            )
+        )
+        sharedDatabase.sitePhotoDao().upsert(
+            SitePhotoEntity(
+                id = "photo-aux",
+                projectId = project.id,
+                objectCode = "NODE-AUX",
+                tagCodesCsv = "",
+                matchedNodeId = "node-aux",
+                matchedRouteId = null,
+                filePath = "/tmp/photo.jpg",
+                thumbnailPath = "/tmp/photo-thumb.jpg",
+                latitude = null,
+                longitude = null,
+                locationAccuracyM = null,
+                isGpsMocked = false,
+                locationStatus = com.mapsupervision.domain.model.PhotoLocationStatus.MISSING,
+                engineer = "Field",
+                capturedAtEpochMs = 600L,
+                matchedAtEpochMs = 0L,
+                matchingTimeOffsetMs = 0L
+            )
+        )
+        sharedDatabase.materialDeclarationDao().insert(
+            MaterialDeclarationEntity(
+                id = "declaration-aux",
+                projectId = project.id,
+                workName = "Cable",
+                materialName = "Cable drum",
+                ratio = 1f,
+                unit = "m",
+                createdAtEpochMs = 700L,
+                workCategoryId = "category-aux"
+            )
+        )
+        sharedDatabase.materialHandoverDao().upsert(
+            MaterialHandoverEntity(
+                id = "handover-aux",
+                projectId = project.id,
+                nodeCode = "N-AUX",
+                nodeId = "node-aux",
+                workName = "Cable",
+                materialName = "Cable drum",
+                contractor = "Nam Ky",
+                quantity = 2f,
+                unit = "m",
+                handoverDateEpochDay = 20240621L,
+                note = "handover",
+                createdAtEpochMs = 800L,
+                materialDeclarationId = "declaration-aux",
+                workCategoryId = "category-aux"
+            )
+        )
+
+        println("DEBUG TEST: notes in sharedDatabase: ${sharedDatabase.noteDao().byProject(project.id).size}")
+        println("DEBUG TEST: photos in sharedDatabase: ${sharedDatabase.sitePhotoDao().byProject(project.id).size}")
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        assertEquals(1, scopedDatabase.importedFileDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.gisNodeDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.workVolumeProgressDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.dailyLogDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.workCategoryDao().byProject(project.id).size)
+        assertEquals(0, scopedDatabase.noteDao().byProject(project.id).size)
+        assertEquals(0, scopedDatabase.sitePhotoDao().byProject(project.id).size)
+        assertEquals(0, scopedDatabase.materialDeclarationDao().getByProject(project.id).size)
+        assertEquals(0, scopedDatabase.materialHandoverDao().byProject(project.id).size)
+
+        val startTime = System.currentTimeMillis()
+        while (scopedDatabase.materialHandoverDao().byProject(project.id).isEmpty() && System.currentTimeMillis() - startTime < 3000) {
+            delay(50)
+        }
+
+        assertEquals(1, scopedDatabase.noteDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.sitePhotoDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.materialDeclarationDao().getByProject(project.id).size)
+        assertEquals(1, scopedDatabase.materialHandoverDao().byProject(project.id).size)
     }
 
     @Test
@@ -128,7 +404,7 @@ class ProjectScopedDatabaseProviderTest {
                 latitude = 21.0,
                 longitude = 105.0,
                 mapNumberLabel = "1",
-                materialSummary = ""
+                workVolumeSummary = ""
             )
         )
 
@@ -144,13 +420,13 @@ class ProjectScopedDatabaseProviderTest {
                     latitude = 20.0,
                     longitude = 106.0,
                     mapNumberLabel = "2",
-                    materialSummary = ""
+                    workVolumeSummary = ""
                 )
             )
             scopedSeed.close()
         }
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         val scopedDatabase = provider.databaseFor(project.id)
         openedDatabases += scopedDatabase!!
 
@@ -177,7 +453,7 @@ class ProjectScopedDatabaseProviderTest {
                     latitude = 20.0,
                     longitude = 106.0,
                     mapNumberLabel = "2",
-                    materialSummary = ""
+                    workVolumeSummary = ""
                 )
             )
             scopedSeed.openHelper.writableDatabase.execSQL("PRAGMA foreign_keys = OFF")
@@ -186,7 +462,7 @@ class ProjectScopedDatabaseProviderTest {
             scopedSeed.close()
         }
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         val scopedDatabase = provider.databaseFor(project.id)
         openedDatabases += scopedDatabase!!
 
@@ -199,7 +475,7 @@ class ProjectScopedDatabaseProviderTest {
         val project = projectEntity("project-3", File(tempDir, "empty/project.sqlite"))
         sharedDatabase.projectDao().upsert(project)
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         val scopedDatabase = provider.databaseFor(project.id)
         openedDatabases += scopedDatabase!!
 
@@ -209,18 +485,18 @@ class ProjectScopedDatabaseProviderTest {
     }
 
     @Test
-    fun `databaseFor migrates legacy scoped db from version 24 to 26`() = runBlocking {
+    fun `databaseFor migrates legacy scoped db from version 24 to 44`() = runBlocking {
         val scopedFile = File(tempDir, "legacy-v24/project.sqlite")
         val project = projectEntity("project-legacy-24", scopedFile)
         sharedDatabase.projectDao().upsert(project)
         createLegacyVersion24Database(scopedFile)
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         val scopedDatabase = provider.databaseFor(project.id)
         openedDatabases += scopedDatabase!!
 
         val version = scopedDatabase.openHelper.readableDatabase.version
-        assertEquals(26, version)
+        assertEquals(44, version)
         scopedDatabase.openHelper.readableDatabase.query("PRAGMA table_info(`work_plan`)").use { cursor ->
             var found = false
             val nameIndex = cursor.getColumnIndex("name")
@@ -232,6 +508,27 @@ class ProjectScopedDatabaseProviderTest {
             }
             assertEquals(true, found)
         }
+        assertTrue(tableExists(scopedDatabase, "material_handover"))
+        assertTrue(tableExists(scopedDatabase, "material_declaration"))
+        assertTrue(tableExists(scopedDatabase, "rag_document_embedding"))
+    }
+
+    @Test
+    fun `databaseFor migrates legacy scoped db from version 23 to 44`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy-v23/project.sqlite")
+        val project = projectEntity("project-legacy-23", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+        createLegacyDatabaseFromSchema(scopedFile, 23)
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val version = scopedDatabase.openHelper.readableDatabase.version
+        assertEquals(44, version)
+        assertTrue(tableExists(scopedDatabase, "material_handover"))
+        assertTrue(tableExists(scopedDatabase, "material_declaration"))
+        assertTrue(tableExists(scopedDatabase, "rag_document_embedding"))
     }
 
     @Test
@@ -240,7 +537,7 @@ class ProjectScopedDatabaseProviderTest {
         val project = projectEntity("project-scheduler", scopedFile)
         sharedDatabase.projectDao().upsert(project)
 
-        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase)
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
         assertEquals(false, provider.isCleanupSchedulerRunningForTest())
 
         val scopedDatabase = provider.databaseFor(project.id)
@@ -257,13 +554,22 @@ class ProjectScopedDatabaseProviderTest {
     private fun createDatabase(file: File): MapSupervisionDatabase {
         file.parentFile?.mkdirs()
         return Room.databaseBuilder(context, MapSupervisionDatabase::class.java, file.absolutePath)
+            .addMigrations(*MapSupervisionDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
     }
 
     private fun createLegacyVersion24Database(dbFile: File) {
+        createLegacyDatabaseFromSchema(dbFile, 24)
+    }
+
+    private fun createLegacyDatabaseFromSchema(
+        dbFile: File,
+        schemaVersion: Int,
+        dbVersion: Int = schemaVersion
+    ) {
         dbFile.parentFile?.mkdirs()
-        val schema = loadSchema(24)
+        val schema = loadSchema(schemaVersion)
         SQLiteDatabase.openOrCreateDatabase(dbFile.absolutePath, null).use { db ->
             val entities = schema.getJSONObject("database").getJSONArray("entities")
             for (i in 0 until entities.length()) {
@@ -281,7 +587,7 @@ class ProjectScopedDatabaseProviderTest {
                     }
                 }
             }
-            db.setVersion(24)
+            db.setVersion(dbVersion)
         }
     }
 
@@ -294,6 +600,15 @@ class ProjectScopedDatabaseProviderTest {
         val schemaFile = candidates.firstOrNull { it.exists() }
             ?: error("Missing Room schema file for version $version")
         return JSONObject(schemaFile.readText(Charsets.UTF_8))
+    }
+
+    private fun tableExists(database: MapSupervisionDatabase, tableName: String): Boolean {
+        database.openHelper.readableDatabase.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            arrayOf(tableName)
+        ).use { cursor ->
+            return cursor.moveToFirst()
+        }
     }
 
     private fun projectEntity(projectId: String, scopedFile: File) = ProjectEntity(
@@ -342,3 +657,4 @@ class ProjectScopedDatabaseProviderTest {
         }
     }
 }
+

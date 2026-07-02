@@ -10,14 +10,15 @@ import com.mapsupervision.domain.ai.OpsRecommendationPayload
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
+import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.model.WorkspaceSnapshot
 import com.mapsupervision.domain.repository.ActiveProjectRepository
 import com.mapsupervision.domain.repository.DailyLogRepository
 import com.mapsupervision.domain.repository.GisRepository
 import com.mapsupervision.domain.repository.ImportedFileRepository
-import com.mapsupervision.domain.repository.MaterialProgressRepository
+import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.NoteRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
@@ -25,6 +26,8 @@ import com.mapsupervision.domain.repository.ProjectRepository
 import com.mapsupervision.domain.repository.ProjectSyncRepository
 import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
+import com.mapsupervision.domain.repository.MaterialDeclarationRepository
+import com.mapsupervision.domain.repository.MaterialHandoverRepository
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService
 import com.mapsupervision.domain.service.WeatherService
@@ -71,7 +74,7 @@ class WorkspaceViewModel @Inject constructor(
     internal val activeProjectRepository: ActiveProjectRepository,
     internal val importedFileRepository: ImportedFileRepository,
     internal val progressRepository: ProgressRepository,
-    internal val materialProgressRepository: MaterialProgressRepository,
+    internal val workVolumeProgressRepository: WorkVolumeProgressRepository,
     internal val projectRepository: ProjectRepository,
     internal val projectSyncRepository: ProjectSyncRepository,
     internal val gisRepository: GisRepository,
@@ -87,7 +90,10 @@ class WorkspaceViewModel @Inject constructor(
     internal val workPlanRepository: com.mapsupervision.domain.repository.WorkPlanRepository,
     internal val weatherService: WeatherService,
     internal val reportDraftRepository: com.mapsupervision.domain.repository.ReportDraftRepository,
-    private val observeWorkspaceSnapshot: ObserveWorkspaceSnapshotUseCase
+    internal val materialDeclarationRepository: MaterialDeclarationRepository,
+    internal val materialHandoverRepository: MaterialHandoverRepository,
+    private val observeWorkspaceSnapshot: ObserveWorkspaceSnapshotUseCase,
+    private val migrationService: com.mapsupervision.domain.service.ProjectStorageMigrationService
 ) : ViewModel() {
 
     internal val _state = MutableStateFlow(WorkspaceState())
@@ -102,14 +108,23 @@ class WorkspaceViewModel @Inject constructor(
     internal var mapSearchJob: Job? = null
     internal var aiOpsJob: Job? = null
     internal var filteredMapUpdateJob: Job? = null
-    internal val materialProgressPersistJobs = mutableMapOf<String, Job>()
+    internal val workVolumeProgressPersistJobs = mutableMapOf<String, Job>()
     internal var cachedIndexes = WorkspaceIndexes()
     internal var cachedNodesRef: List<GisNode> = emptyList()
     internal var cachedRoutesRef: List<GisRoute> = emptyList()
     internal var cachedProgressRef: List<NodeProgress> = emptyList()
-    internal var cachedMaterialRowsRef: List<MaterialProgress> = emptyList()
+    internal var cachedWorkVolumeRowsRef: List<WorkVolumeProgress> = emptyList()
     internal var cachedDailyLogsRef: List<DailyLog> = emptyList()
     private var lastAiOpsInput: AiOpsInput? = null
+    private var lastMigrationProjectId: String? = null
+    internal val directCaptureSaveDeduper = DirectCaptureSaveDeduper()
+
+    // Keep StateFlows for filtered nodes/routes to avoid filtering on every recomposition in the UI.
+    private val _filteredNodesForMap = MutableStateFlow<List<GisNode>>(emptyList())
+    val filteredNodesForMap: StateFlow<List<GisNode>> = _filteredNodesForMap.asStateFlow()
+
+    private val _filteredRoutesForMap = MutableStateFlow<List<GisRoute>>(emptyList())
+    val filteredRoutesForMap: StateFlow<List<GisRoute>> = _filteredRoutesForMap.asStateFlow()
 
     private val colorPrefs by lazy {
         context.getSharedPreferences("contractor_colors", Context.MODE_PRIVATE)
@@ -131,6 +146,28 @@ class WorkspaceViewModel @Inject constructor(
                 null
             }
         }.toMap()
+    }
+
+    internal val visibilityPrefs by lazy {
+        context.getSharedPreferences("hidden_contractors", Context.MODE_PRIVATE)
+    }
+
+    internal fun saveContractorVisibility(projectId: String, contractor: String, isHidden: Boolean) {
+        visibilityPrefs.edit().putBoolean("${projectId}_$contractor", isHidden).apply()
+    }
+
+    internal fun loadHiddenContractors(projectId: String): Set<String> {
+        val all = visibilityPrefs.all as? Map<*, *> ?: return emptySet()
+        val prefix = "${projectId}_"
+        return all.entries.mapNotNull { entry ->
+            val key = entry.key as? String ?: return@mapNotNull null
+            val value = entry.value as? Boolean ?: return@mapNotNull null
+            if (key.startsWith(prefix) && value) {
+                key.substring(prefix.length)
+            } else {
+                null
+            }
+        }.toSet()
     }
 
     init {
@@ -155,6 +192,15 @@ class WorkspaceViewModel @Inject constructor(
                     showReportPreview = false,
                     previewNodeCode = null
                 )
+            }
+            is WorkspaceAction.SetPendingSharedImport -> {
+                _state.value = _state.value.copy(pendingSharedImport = action.pendingSharedImport)
+            }
+            is WorkspaceAction.UpdatePendingSharedImport -> {
+                _state.value = _state.value.copy(pendingSharedImport = action.pendingSharedImport)
+            }
+            WorkspaceAction.ClearPendingSharedImport -> {
+                _state.value = _state.value.copy(pendingSharedImport = null)
             }
         }
     }
@@ -189,8 +235,17 @@ class WorkspaceViewModel @Inject constructor(
             activeProjectRepository.activeProjectId
                 .flatMapLatest { projectId ->
                     if (projectId.isNullOrBlank()) {
+                        lastMigrationProjectId = null
                         flowOf<WorkspaceSnapshot?>(null)
                     } else {
+                        val projectResult = projectRepository.list(true)
+                        if (projectResult is com.mapsupervision.core.result.AppResult.Success) {
+                            val activeProj = projectResult.data.find { it.id == projectId }
+                            if (activeProj != null && lastMigrationProjectId != projectId) {
+                                lastMigrationProjectId = projectId
+                                migrationService.migrateProjectIfNeeded(activeProj)
+                            }
+                        }
                         observeWorkspaceSnapshot(projectId)
                     }
                 }
@@ -223,13 +278,6 @@ class WorkspaceViewModel @Inject constructor(
         }
     }
 
-    // Keep StateFlows for filtered nodes/routes to avoid filtering on every recomposition in the UI.
-    private val _filteredNodesForMap = MutableStateFlow<List<GisNode>>(emptyList())
-    val filteredNodesForMap: StateFlow<List<GisNode>> = _filteredNodesForMap.asStateFlow()
-
-    private val _filteredRoutesForMap = MutableStateFlow<List<GisRoute>>(emptyList())
-    val filteredRoutesForMap: StateFlow<List<GisRoute>> = _filteredRoutesForMap.asStateFlow()
-
     internal fun updateFilteredMapData(reason: FilteredMapUpdateReason = FilteredMapUpdateReason.SNAPSHOT) {
         val delayMs = resolveFilteredMapUpdateDelayMs(reason)
         filteredMapUpdateJob?.cancel()
@@ -249,14 +297,14 @@ class WorkspaceViewModel @Inject constructor(
 
     private fun applySnapshot(snapshot: WorkspaceSnapshot) {
         viewModelScope.launch(Dispatchers.Default) {
-            val loadedMaterialProgress = snapshot.materialRows.associate { row ->
-                "${row.nodeCode}_${row.materialName}" to row.actualQty.toInt().toString()
+            val loadedWorkVolumeProgress = snapshot.workVolumeRows.associate { row ->
+                "${row.nodeCode}_${row.workName}" to row.actualQty.toInt().toString()
             }
             val dashboard = buildDashboard(
                 snapshot.designNodes,
                 snapshot.designRoutes,
                 snapshot.constructionProgress,
-                snapshot.materialRows
+                snapshot.workVolumeRows
             )
             val coordSummary = summarizeNodeCoordinates(snapshot.designNodes)
             AppLogger.d("map.refresh nodes=${snapshot.designNodes.size} routes=${snapshot.designRoutes.size} project=${snapshot.projectId}")
@@ -274,25 +322,18 @@ class WorkspaceViewModel @Inject constructor(
             }
 
             val savedColors = loadContractorColors(snapshot.projectId)
+            val savedHidden = loadHiddenContractors(snapshot.projectId)
 
-            val nextState = current.copy(
-                activeProjectId = snapshot.projectId,
-                importedFiles = snapshot.importedFiles,
-                designNodes = snapshot.designNodes,
-                designRoutes = snapshot.designRoutes,
-                constructionProgress = snapshot.constructionProgress,
+            val nextState = applyWorkspaceSnapshotToState(
+                current = current,
+                snapshot = snapshot,
                 dashboard = dashboard,
-                mapUi = keepMapSelection(current.mapUi, snapshot.designNodes, snapshot.designRoutes).copy(
-                    contractorColors = savedColors
-                ),
-                materialRows = snapshot.materialRows,
-                materialProgress = loadedMaterialProgress,
-                dailyLogs = snapshot.dailyLogs,
-                workCategories = snapshot.workCategories,
-                selectedNodePhotos = nextSelectedPhotos,
-                projectPhotos = snapshot.sitePhotos,
-                isRefreshing = false,
-                lastRefreshedAtEpochMs = System.currentTimeMillis()
+                savedColors = savedColors,
+                savedHidden = savedHidden,
+                loadedWorkVolumeProgress = loadedWorkVolumeProgress,
+                nextSelectedPhotos = nextSelectedPhotos,
+                selectedMapUi = keepMapSelection(current.mapUi, snapshot.designNodes, snapshot.designRoutes),
+                refreshedAtEpochMs = System.currentTimeMillis()
             )
 
             _state.value = nextState
@@ -378,10 +419,46 @@ class WorkspaceViewModel @Inject constructor(
         nodes: List<GisNode>,
         routes: List<GisRoute>,
         progress: List<NodeProgress>,
-        materialRows: List<MaterialProgress>
+        workVolumeRows: List<WorkVolumeProgress>
     ): DashboardState {
-        return WorkspaceProgressHelper.buildDashboard(nodes, routes, progress, materialRows)
+        return WorkspaceProgressHelper.buildDashboard(nodes, routes, progress, workVolumeRows)
     }
+}
+
+internal fun applyWorkspaceSnapshotToState(
+    current: WorkspaceState,
+    snapshot: WorkspaceSnapshot,
+    dashboard: DashboardState,
+    savedColors: Map<String, String>,
+    savedHidden: Set<String>,
+    loadedWorkVolumeProgress: Map<String, String>,
+    nextSelectedPhotos: List<SitePhoto>,
+    selectedMapUi: MapUiState,
+    refreshedAtEpochMs: Long
+): WorkspaceState {
+    return current.copy(
+        activeProjectId = snapshot.projectId,
+        importedFiles = snapshot.importedFiles,
+        designNodes = snapshot.designNodes,
+        designRoutes = snapshot.designRoutes,
+        constructionProgress = snapshot.constructionProgress,
+        dashboard = dashboard,
+        mapUi = selectedMapUi.copy(
+            contractorColors = savedColors,
+            hiddenContractors = savedHidden
+        ),
+        workVolumeRows = snapshot.workVolumeRows,
+        workVolumeProgress = loadedWorkVolumeProgress,
+        dailyLogs = snapshot.dailyLogs,
+        workCategories = snapshot.workCategories,
+        materialHandovers = snapshot.materialHandovers,
+        materialDeclarations = snapshot.materialDeclarations,
+        workPlans = snapshot.workPlans,
+        selectedNodePhotos = nextSelectedPhotos,
+        projectPhotos = snapshot.sitePhotos,
+        isRefreshing = false,
+        lastRefreshedAtEpochMs = refreshedAtEpochMs
+    )
 }
 
 private data class AiOpsInput(
@@ -423,10 +500,12 @@ internal fun filterRoutes(
     return routes.filter { route ->
         val byContractor = mapUi.filterContractor.isNullOrBlank() ||
             route.contractor.equals(mapUi.filterContractor, ignoreCase = true)
+        val byVisibility = !isContractorHidden(mapUi, route.contractor)
         val byQuery = mapUi.searchQuery.isBlank() ||
             indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
         val byLiveNodes = liveNodeCodesUpper.contains(route.startNodeCode.trim().uppercase()) ||
             liveNodeCodesUpper.contains(route.endNodeCode.trim().uppercase())
-        byContractor && byQuery && byLiveNodes
+        byContractor && byVisibility && byQuery && byLiveNodes
     }
 }
+

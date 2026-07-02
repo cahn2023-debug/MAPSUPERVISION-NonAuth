@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.application") version "8.10.0" apply false
-    id("com.android.library") version "8.10.0" apply false
+    id("com.android.application") version "8.13.2" apply false
+    id("com.android.library") version "8.13.2" apply false
     id("org.jetbrains.kotlin.android") version "2.2.21" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21" apply false
     id("com.google.devtools.ksp") version "2.2.21-2.0.5" apply false
@@ -13,24 +13,33 @@ import org.gradle.api.tasks.compile.JavaCompile
 
 val projectDependencyPattern = Regex("""project\("(:[^"]+)"\)""")
 val allowedProjectDependencies = mapOf(
-    ":app" to setOf(":core", ":domain", ":data", ":project", ":gis", ":gis-maplibre", ":photo", ":timeline", ":reporting", ":storage-core", ":storage-crypto", ":storage-import"),
+    ":app" to setOf(":core", ":domain", ":data", ":project", ":gis", ":gis-maplibre", ":photo", ":timeline", ":reporting", ":storage-core", ":storage-crypto", ":storage-import", ":ai-core", ":ai-agent", ":ai-model", ":ai-rag", ":ai-prompt"),
     ":core" to emptySet(),
-    ":data" to setOf(":core", ":domain", ":storage-core", ":storage-crypto", ":storage-import"),
+    ":data" to setOf(":core", ":domain", ":storage-core", ":storage-crypto", ":ai-core", ":ai-prompt", ":ai-rag"),
     ":domain" to setOf(":core"),
-    ":gis" to setOf(":core", ":domain", ":storage-core", ":storage-crypto"),
+    ":gis" to setOf(":core", ":domain"),
     ":gis-maplibre" to setOf(":gis", ":domain"),
-    ":photo" to setOf(":core", ":domain", ":data", ":storage-core", ":storage-crypto"),
-    ":project" to setOf(":core", ":domain", ":storage-core", ":storage-crypto", ":storage-import"),
-    ":reporting" to setOf(":core", ":domain", ":storage-core", ":storage-crypto"),
+    ":photo" to setOf(":core", ":domain", ":ai-core", ":storage-core"),
+    ":project" to setOf(":core", ":domain", ":storage-core"),
+    ":reporting" to setOf(":core", ":domain", ":ai-core", ":storage-core"),
     ":storage-core" to setOf(":core", ":domain"),
-    ":storage-crypto" to emptySet(),
+    ":storage-crypto" to setOf(":core"),
     ":storage-import" to setOf(":core", ":domain", ":storage-core", ":storage-crypto"),
-    ":timeline" to setOf(":core", ":domain", ":storage-core", ":storage-crypto")
+    ":timeline" to setOf(":core", ":domain", ":ai-core"),
+    ":ai-core" to setOf(":core", ":domain"),
+    ":ai-agent" to setOf(":core", ":domain", ":ai-core", ":ai-model", ":ai-prompt", ":ai-rag"),
+    ":ai-model" to setOf(":core", ":domain", ":ai-core", ":ai-prompt", ":storage-core"),
+    ":ai-rag" to setOf(":core", ":domain", ":ai-core", ":ai-prompt"),
+    ":ai-prompt" to setOf(":core", ":domain", ":ai-core")
 )
 
 subprojects {
     tasks.withType<JavaCompile>().configureEach {
         exclude("**/byRounds/**")
+        options.encoding = "UTF-8"
+    }
+    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+        compilerOptions.freeCompilerArgs.add("-Xannotation-default-target=param-property")
     }
 }
 

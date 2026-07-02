@@ -12,18 +12,32 @@ import androidx.room.PrimaryKey
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
         ),
         ForeignKey(
             entity = ImportedFileEntity::class,
             parentColumns = ["id"],
             childColumns = ["importedFileId"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["startNodeId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["endNodeId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index("importedFileId"),
-        Index(value = ["projectId", "code"], unique = true)
+        Index(value = ["projectId", "code"], unique = true),
+        Index("startNodeId"),
+        Index("endNodeId")
     ]
 )
 data class GisRouteEntity(
@@ -35,5 +49,10 @@ data class GisRouteEntity(
     val endNodeCode: String,
     val points: List<Pair<Double, Double>>,
     val importedFileId: String? = null,
-    val designLength: String? = null
+    val designLength: String? = null,
+    val startNodeId: String? = null,
+    val endNodeId: String? = null,
+    val updatedAtEpochMs: Long = 0L,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )

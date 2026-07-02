@@ -1,11 +1,13 @@
 package com.mapsupervision.domain.repository
 
 import com.mapsupervision.core.result.AppResult
-import com.mapsupervision.domain.model.MaterialProgress
+import com.mapsupervision.domain.model.WorkVolumeProgress
 import kotlinx.coroutines.flow.Flow
 
-interface MaterialProgressRepository {
-    suspend fun upsert(progress: MaterialProgress): AppResult<Unit>
-    suspend fun byProject(projectId: String): AppResult<List<MaterialProgress>>
-    fun observeByProject(projectId: String): Flow<List<MaterialProgress>>
+interface WorkVolumeProgressRepository {
+    suspend fun upsert(progress: WorkVolumeProgress): AppResult<Unit>
+    suspend fun byProject(projectId: String): AppResult<List<WorkVolumeProgress>>
+    fun observeByProject(projectId: String): Flow<List<WorkVolumeProgress>>
 }
+
+typealias MaterialProgressRepository = WorkVolumeProgressRepository

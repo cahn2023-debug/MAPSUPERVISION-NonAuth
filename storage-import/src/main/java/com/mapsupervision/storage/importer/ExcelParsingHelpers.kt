@@ -3,6 +3,9 @@ package com.mapsupervision.storage.importer
 import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
+import com.mapsupervision.domain.model.ExcelClassificationMode
+import com.mapsupervision.domain.model.ExcelColumnMapping
+import com.mapsupervision.domain.model.ExcelMappingSuggestion
 import java.io.File
 import java.io.InputStream
 import java.io.InputStreamReader

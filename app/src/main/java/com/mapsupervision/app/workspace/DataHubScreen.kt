@@ -88,7 +88,7 @@ fun DataHubScreen(
     onUpdateMapVisualOptions: (Boolean?, Boolean?) -> Unit,
     onParseExcelToDesign: () -> Unit,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onUpdateMaterialProgress: (String, String, String) -> Unit,
+    onUpdateWorkVolumeProgress: (String, String, String) -> Unit,
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
     onDeleteImportedFile: (String) -> Unit,
@@ -253,7 +253,7 @@ fun DataHubScreen(
                 val isSelected = !screenUiState.isDesignTab
                 val buttonModifier = Modifier
                     .weight(1f)
-                    .height(40.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .let {
                         if (isSelected) it.background(brush = NeonCyberOrangeGradient)
@@ -284,7 +284,7 @@ fun DataHubScreen(
                 val isDesignSelected = screenUiState.isDesignTab
                 val designBtnModifier = Modifier
                     .weight(1f)
-                    .height(40.dp)
+                    .height(48.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .let {
                         if (isDesignSelected) it.background(brush = NeonCyberOrangeGradient)
@@ -315,6 +315,11 @@ fun DataHubScreen(
             
             Spacer(modifier = Modifier.height(12.dp))
 
+            ImportStatusBanner(
+                importUi = state.importUi,
+                onRetryFailedImports = onRetryFailedImports
+            )
+
             DesignTabContent(
                 state = state,
                 dataHubUiState = dataHubUiState,
@@ -333,7 +338,7 @@ fun DataHubScreen(
                 onUpdateSortOrder = onUpdateSortOrder,
                 onSetSortMenuExpanded = onSetSortMenuExpanded,
                 isDesignTab = screenUiState.isDesignTab,
-                onUpdateMaterialProgress = onUpdateMaterialProgress,
+                onUpdateWorkVolumeProgress = onUpdateWorkVolumeProgress,
                 onOpenNodeOnMap = onOpenNodeOnMap,
                 onOpenRouteOnMap = onOpenRouteOnMap,
                 onShowNotesAndTasks = onShowNotesAndTasks,
@@ -350,6 +355,71 @@ fun DataHubScreen(
             )
         }
         }
+    }
+}
+
+@Composable
+private fun ImportStatusBanner(
+    importUi: ImportUiState,
+    onRetryFailedImports: () -> Unit
+) {
+    when (importUi.status) {
+        ImportStatus.IDLE -> Unit
+        ImportStatus.PICKING -> WorkspaceLoadingState("Đang mở trình chọn dữ liệu...")
+        ImportStatus.IMPORTING -> {
+            val progressText = if (importUi.totalFiles > 0) {
+                "${importUi.processedFiles}/${importUi.totalFiles} file"
+            } else {
+                "Đang xử lý file"
+            }
+            WorkspaceLoadingState("Đang import dữ liệu: $progressText")
+        }
+        ImportStatus.DONE -> {
+            AppPanelCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = importUi.message.ifBlank { "Import hoàn tất" },
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (importUi.warnings.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = importUi.warnings.take(2).joinToString("\n"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+        ImportStatus.PARTIAL_FAILED,
+        ImportStatus.FAILED -> {
+            val failureDetail = buildString {
+                if (importUi.message.isNotBlank()) append(importUi.message)
+                val visibleFailures = importUi.failures.take(2)
+                if (visibleFailures.isNotEmpty()) {
+                    if (isNotBlank()) append("\n")
+                    append(visibleFailures.joinToString("\n"))
+                }
+            }
+            WorkspaceErrorState(
+                message = ScreenUiMessage(
+                    title = if (importUi.status == ImportStatus.PARTIAL_FAILED) {
+                        "Import một phần dữ liệu thất bại"
+                    } else {
+                        "Import dữ liệu thất bại"
+                    },
+                    detail = failureDetail.ifBlank { null },
+                    actionLabel = "Thử import lại"
+                ),
+                onRetry = onRetryFailedImports
+            )
+        }
+    }
+    if (importUi.status != ImportStatus.IDLE) {
+        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -373,7 +443,7 @@ private fun DesignTabContent(
     onUpdateSortOrder: (String) -> Unit,
     onSetSortMenuExpanded: (Boolean) -> Unit,
     isDesignTab: Boolean,
-    onUpdateMaterialProgress: (String, String, String) -> Unit,
+    onUpdateWorkVolumeProgress: (String, String, String) -> Unit,
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
     onShowNotesAndTasks: (String) -> Unit,
@@ -875,26 +945,7 @@ private fun DesignTabContent(
                                         color = secondaryTextColor,
                                         fontSize = 11.sp
                                     )
-                                    val markerIndex = if (item.route.code.contains("#pm")) item.route.code.lastIndexOf("_s") else item.route.code.lastIndexOf("_R")
-                                    val prefix = if (markerIndex >= 0) item.route.code.substring(0, markerIndex) else item.route.code
-                                    val segments = state.designRoutes.filter { r ->
-                                        val rMarker = if (r.code.contains("#pm")) r.code.lastIndexOf("_s") else r.code.lastIndexOf("_R")
-                                        val rPrefix = if (rMarker >= 0) r.code.substring(0, rMarker) else r.code
-                                        rPrefix == prefix
-                                    }
-                                    var totalDistM = 0.0
-                                    segments.forEach { seg ->
-                                        val s = state.designNodes.firstOrNull { it.code == seg.startNodeCode }
-                                        val e = state.designNodes.firstOrNull { it.code == seg.endNodeCode }
-                                        if (s != null && e != null) {
-                                            totalDistM += com.mapsupervision.domain.util.Haversine.distanceInMeters(
-                                                s.latitude, s.longitude,
-                                                e.latitude, e.longitude
-                                            )
-                                        }
-                                    }
-                                    if (totalDistM > 0.0) {
-                                        val distText = if (totalDistM >= 1000) "${"%.2f".format(totalDistM / 1000)} km" else "${totalDistM.toInt()} m"
+                                    item.routeDistanceText?.let { distText ->
                                         Text(
                                             text = "Chiều dài: $distText",
                                             color = orangeColor,
@@ -933,11 +984,11 @@ private fun DesignTabContent(
                         Text("Tuyến kết nối", color = secondaryTextColor, fontSize = 12.sp)
                     } else {
                         val node = item.node!!
-                        val materialLines = node.materialSummary.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+                        val materialLines = item.materialLines
                         var materialsExpanded by remember(item.id) { mutableStateOf(false) }
 
                         if (materialLines.isEmpty()) {
-                            Text("Chưa có dữ liệu vật tư/thiết bị", color = secondaryTextColor, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                            Text("Chưa có dữ liệu công việc/khối lượng công việc", color = secondaryTextColor, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                         } else {
                             // Header row — tap to expand/collapse
                             Row(
@@ -949,7 +1000,7 @@ private fun DesignTabContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Vật tư / Thiết bị (${materialLines.size})",
+                                    text = "Công việc / khối lượng công việc (${materialLines.size})",
                                     color = secondaryTextColor,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold
@@ -965,9 +1016,8 @@ private fun DesignTabContent(
                             if (materialsExpanded) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     materialLines.forEach { line ->
-                                        val parts = line.split(":", limit = 2)
-                                        val itemName = parts.getOrNull(0)?.trim() ?: ""
-                                        val itemCount = parts.getOrNull(1)?.trim() ?: ""
+                                        val itemName = line.itemName.trim()
+                                        val itemCount = line.plannedText.trim()
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -992,7 +1042,7 @@ private fun DesignTabContent(
                                             } else {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     val key = "${node.id}_$itemName"
-                                                    val currentValue = state.materialProgress[key] ?: ""
+                                                    val currentValue = state.workVolumeProgress[key] ?: ""
                                                     Box(
                                                         modifier = Modifier.border(1.dp, orangeColor, RoundedCornerShape(4.dp)).padding(vertical = 4.dp).width(36.dp),
                                                         contentAlignment = Alignment.Center
@@ -1002,7 +1052,7 @@ private fun DesignTabContent(
                                                             value = currentValue,
                                                             onValueChange = { newValue ->
                                                                 if (newValue.all { it.isDigit() } && newValue.length <= 4) {
-                                                                    onUpdateMaterialProgress(node.id, itemName, newValue)
+                                                                    onUpdateWorkVolumeProgress(node.id, itemName, newValue)
                                                                 }
                                                             },
                                                             textStyle = TextStyle(color = orangeColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
@@ -1072,3 +1122,4 @@ private fun DesignTabContent(
         )
     }
 }
+

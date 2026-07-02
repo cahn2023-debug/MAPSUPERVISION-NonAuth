@@ -55,6 +55,7 @@ fun MapSupervisionTheme(
     val extendedColors = MapSupervisionExtendedColors(
         panelBackground = SurfaceDark,
         panelBackgroundAlt = SurfaceVariantDark,
+        panelBackgroundOverlay = SurfaceOverlayDark,
         accent = PrimaryContainer,
         success = SuccessColor,
         mapAccent = MapAccentColor,
@@ -69,8 +70,8 @@ fun MapSupervisionTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = android.graphics.Color.parseColor("#060814")
-            window.navigationBarColor = android.graphics.Color.parseColor("#060814")
+            window.statusBarColor = android.graphics.Color.parseColor("#000000")
+            window.navigationBarColor = android.graphics.Color.parseColor("#000000")
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
         }
     }

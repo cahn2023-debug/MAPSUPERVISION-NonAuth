@@ -12,21 +12,29 @@ import androidx.room.PrimaryKey
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["nodeId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
-        Index(value = ["projectId", "nodeCode"]),
-        Index("nodeCode")
+        Index(value = ["projectId", "nodeId"], unique = true),
+        Index("nodeId")
     ]
 )
 data class NodeProgressEntity(
     @PrimaryKey val id: String,
     val projectId: String,
-    val nodeCode: String,
     val planned: Float,
     val actual: Float,
     val remain: Float,
     val delayed: Boolean,
-    val updatedAtEpochMs: Long = 0L
+    val updatedAtEpochMs: Long = 0L,
+    val nodeId: String? = null,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )

@@ -1,6 +1,7 @@
 package com.mapsupervision.gis.maplibre
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
@@ -386,8 +387,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
             add(LocationManager.NETWORK_PROVIDER)
             add(LocationManager.PASSIVE_PROVIDER)
         }
-        val best: Location? = providers
-            .mapNotNull { provider -> runCatching { lm.getLastKnownLocation(provider) }.getOrNull() }
+        val best: Location? = lastKnownLocations(lm, providers)
             .maxByOrNull { it.time }
 
         val point = best ?: return false
@@ -397,6 +397,16 @@ private class MapLibreGisMapBridge : GisMapBridge {
             CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), 15.5)
         )
         return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun lastKnownLocations(
+        locationManager: LocationManager,
+        providers: List<String>
+    ): List<Location> {
+        return providers.mapNotNull { provider ->
+            runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull()
+        }
     }
 
     override fun setLayerVisibility(showNodes: Boolean, showRoutes: Boolean) {
@@ -872,7 +882,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         if (!didFitBoundsOnce) {
             loadedMap.cameraPosition = CameraPosition.Builder()
                 .target(LatLng(13.8, 109.8))
-                .zoom(4.8)
+                .zoom(12.0)
                 .build()
         }
 

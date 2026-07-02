@@ -15,6 +15,10 @@ data class Note(
     val projectId: String,
     val objectCode: String,
     val content: String,
-    val createdAtEpochMs: Long
+    val createdAtEpochMs: Long,
+    val objectNodeId: String? = null,
+    val objectRouteId: String? = null,
+    val updatedAtEpochMs: Long = createdAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
-

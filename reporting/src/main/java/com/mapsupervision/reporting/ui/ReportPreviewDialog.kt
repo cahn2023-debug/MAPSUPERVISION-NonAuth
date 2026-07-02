@@ -52,8 +52,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.rememberAsyncImagePainter
-import com.mapsupervision.domain.ai.ReportDraftResult
+import com.mapsupervision.ai.core.ReportDraftResult
+import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
+import com.mapsupervision.domain.util.PhotoMatchEvaluation
+import com.mapsupervision.domain.util.evaluateSitePhotoMatch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -67,8 +71,10 @@ fun ReportPreviewDialog(
     isExporting: Boolean,
     onUpdatePhotoOffset: (SitePhoto, Int) -> Unit,
     onConfirmExport: (String) -> Unit,
+    nodes: List<GisNode>,
+    routes: List<GisRoute>,
     photos: List<SitePhoto>,
-    materialRows: List<MaterialReportRow>,
+    workVolumeRows: List<MaterialReportRow>,
     aiDraft: ReportDraftResult?
 ) {
     if (!showDialog) return
@@ -78,6 +84,9 @@ fun ReportPreviewDialog(
     }
     var showPhotos by remember { mutableStateOf(false) }
     val chunks = remember(photos) { photos.chunked(3) }
+    val photoEvaluations = remember(photos, nodes, routes) {
+        photos.associateWith { photo -> evaluateSitePhotoMatch(photo, nodes, routes) }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -193,15 +202,15 @@ fun ReportPreviewDialog(
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("BẢNG TỔNG HỢP VẬT TƯ THI CÔNG", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text("BẢNG TỔNG HỢP CÔNG VIỆC THI CÔNG", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text("Nội dung", modifier = Modifier.weight(0.5f), fontWeight = FontWeight.Bold)
                                     Text("Tổng thiết kế", modifier = Modifier.weight(0.2f), fontWeight = FontWeight.Bold)
                                     Text("Tổng thi công", modifier = Modifier.weight(0.2f), fontWeight = FontWeight.Bold)
                                     Text("%", modifier = Modifier.weight(0.1f), fontWeight = FontWeight.Bold)
                                 }
-                                if (materialRows.isEmpty()) {
-                                    Text("Không có dữ liệu vật tư.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (workVolumeRows.isEmpty()) {
+                                    Text("Không có dữ liệu công việc.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
                                     LazyColumn(
                                         modifier = Modifier
@@ -209,12 +218,12 @@ fun ReportPreviewDialog(
                                             .heightIn(max = 280.dp)
                                     ) {
                                         itemsIndexed(
-                                            items = materialRows,
-                                            key = { index, row -> "${row.materialName}_${index}_${row.isTotal}" }
+                                            items = workVolumeRows,
+                                            key = { index, row -> "${row.workName}_${index}_${row.isTotal}" }
                                         ) { _, row ->
                                             val textStyle = if (row.isTotal) MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodyMedium
                                             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                                Text(row.materialName, modifier = Modifier.weight(0.5f), style = textStyle)
+                                                Text(row.workName, modifier = Modifier.weight(0.5f), style = textStyle)
                                                 Text(row.totalPlannedQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
                                                 Text(row.totalActualQty.toInt().toString(), modifier = Modifier.weight(0.2f), style = textStyle)
                                                 Text("${row.completionPercent.toInt()}%", modifier = Modifier.weight(0.1f), style = textStyle)
@@ -236,7 +245,10 @@ fun ReportPreviewDialog(
                             )
                         }
 
-                        itemsIndexed(chunks) { _, rowPhotos ->
+                        itemsIndexed(
+                            items = chunks,
+                            key = { index, rowPhotos -> rowPhotos.joinToString(prefix = "$index:") { it.id } }
+                        ) { _, rowPhotos ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -244,6 +256,7 @@ fun ReportPreviewDialog(
                                 rowPhotos.forEach { photo ->
                                     PhotoItem(
                                         photo = photo,
+                                        evaluation = photoEvaluations.getValue(photo),
                                         onUpdatePhotoOffset = onUpdatePhotoOffset,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -286,10 +299,10 @@ fun ReportPreviewDialog(
         }
     }
 }
-
 @Composable
 private fun PhotoItem(
     photo: SitePhoto,
+    evaluation: PhotoMatchEvaluation,
     onUpdatePhotoOffset: (SitePhoto, Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -335,15 +348,14 @@ private fun PhotoItem(
             verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.End
         ) {
-            val matched = photo.matchedNodeCode != null || photo.matchedRouteCode != null || photo.tagCodesCsv.isNotBlank()
             Text(
-                if (matched) "Khớp" else "Lệch",
+                if (evaluation.isMatched) "Khớp" else "Lệch",
                 color = Color.White,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .background(
-                        if (matched) Color(0xCC16A34A) else Color(0xCCDC2626),
+                        if (evaluation.isMatched) Color(0xCC16A34A) else Color(0xCCDC2626),
                         RoundedCornerShape(999.dp)
                     )
                     .padding(horizontal = 6.dp, vertical = 2.dp)

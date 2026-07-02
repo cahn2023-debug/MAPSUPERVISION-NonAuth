@@ -1,35 +1,51 @@
 package com.mapsupervision.project.ui
 
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.runtime.collectAsState
 
 @Composable
 fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
+    val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
     var name by remember { mutableStateOf("") }
+    var customPath by remember { mutableStateOf("") }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris ->
         if (uris.isNotEmpty()) viewModel.importFiles(uris)
+    }
+
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            val path = getPathFromTreeUri(context, uri)
+            if (path != null) {
+                customPath = path
+            }
+        }
     }
 
     Scaffold(
@@ -51,6 +67,7 @@ fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Tạo dự án mới", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                    
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
@@ -59,12 +76,36 @@ fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
                         singleLine = true,
                         shape = MaterialTheme.shapes.medium
                     )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = customPath,
+                            onValueChange = { customPath = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Thư mục lưu trữ (tùy chọn)") },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.medium
+                        )
+                        OutlinedButton(
+                            onClick = { folderPickerLauncher.launch(null) },
+                            shape = MaterialTheme.shapes.medium,
+                            contentPadding = PaddingValues(horizontal = 16.dp)
+                        ) {
+                            Text("Chọn...")
+                        }
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Button(
                             onClick = { 
                                 if (name.isNotBlank()) {
-                                    viewModel.createProject(name)
+                                    viewModel.createProject(name, customPath.takeIf { it.isNotBlank() })
                                     name = ""
+                                    customPath = ""
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -98,6 +139,7 @@ fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
                 items(state.projects) { p ->
                     val isActive = state.activeProjectId == p.id
+                    val projectRootDir = p.projectDbPath.substringBeforeLast("/db/")
                     ElevatedCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -117,9 +159,10 @@ fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
                     ) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium, color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-                                    Text(p.slug, style = MaterialTheme.typography.bodySmall, color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Slug: ${p.slug}", style = MaterialTheme.typography.bodySmall, color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Vị trí lưu: $projectRootDir", style = MaterialTheme.typography.bodySmall, color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 if (isActive) {
                                     Box(
@@ -164,5 +207,22 @@ fun ProjectScreen(viewModel: ProjectViewModel = hiltViewModel()) {
                 item { Spacer(modifier = Modifier.height(80.dp)) }
             }
         }
+    }
+}
+
+private fun getPathFromTreeUri(context: android.content.Context, uri: Uri): String? {
+    try {
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        val split = docId.split(":")
+        val type = split[0]
+        val relativePath = if (split.size > 1) split[1] else ""
+        
+        return if ("primary".equals(type, ignoreCase = true)) {
+            Environment.getExternalStorageDirectory().absolutePath + "/" + relativePath
+        } else {
+            "/storage/$type/$relativePath"
+        }
+    } catch (e: Exception) {
+        return uri.path
     }
 }

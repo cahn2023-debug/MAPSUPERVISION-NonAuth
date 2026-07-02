@@ -18,3 +18,7 @@ extracted_lines.txt
 match.json
 match.txt
 generate_code_html.ps1
+.gradle-local/
+.gradle-sharecheck/
+_gradle-photo/
+

@@ -469,12 +469,12 @@ fun CombineFilesDialog(
                                         else -> "${left.contractor} / ${right.contractor}"
                                     }
 
-                                    val mergedMaterialSummary = mergeMaterialSummaries(left.materialSummary, right.materialSummary)
+                                    val mergedworkVolumeSummary = mergeMaterialSummaries(left.workVolumeSummary, right.workVolumeSummary)
 
                                     left.copy(
                                         contractor = mergedContractor,
                                         mapNumberLabel = if (left.mapNumberLabel.isNotBlank()) left.mapNumberLabel else right.mapNumberLabel,
-                                        materialSummary = mergedMaterialSummary
+                                        workVolumeSummary = mergedworkVolumeSummary
                                     )
                                 } else {
                                     row.left ?: row.right!!
@@ -814,10 +814,10 @@ private fun NodeCard(
                 color = secondaryTextColor,
                 fontSize = 10.sp
             )
-            if (node.materialSummary.isNotBlank()) {
+            if (node.workVolumeSummary.isNotBlank()) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = "Vật tư: ${node.materialSummary.replace("\n", ", ")}",
+                    text = "Công việc: ${node.workVolumeSummary.replace("\n", ", ")}",
                     color = secondaryTextColor,
                     fontSize = 10.sp,
                     maxLines = 1,
@@ -983,3 +983,4 @@ private fun mergeMaterialSummaries(left: String, right: String): String {
         if (qty > 0f) "$name: ${if (qty % 1f == 0f) qty.toInt().toString() else qty.toString()}" else name
     }
 }
+

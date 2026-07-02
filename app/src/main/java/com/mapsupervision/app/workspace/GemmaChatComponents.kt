@@ -47,7 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.IconButton
@@ -135,7 +135,7 @@ fun GemmaChatSheet(
                     modifier = Modifier.padding(4.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.Chat,
+                        imageVector = Icons.AutoMirrored.Outlined.Chat,
                         contentDescription = "Menu lịch sử cuộc gọi",
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -495,7 +495,7 @@ fun GemmaChatSheet(
                 ) {
                     itemsIndexed(
                         state.messages,
-                        key = { index, message -> "${message.role}:${message.text.hashCode()}:$index" }
+                        key = { _, message -> message.id }
                     ) { _, message ->
                         MessageBubble(message = message)
                     }
@@ -580,6 +580,7 @@ fun GemmaChatSheet(
             while (parent != null) {
                 if (parent is DialogWindowProvider) {
                     val window = parent.window
+                    @Suppress("DEPRECATION")
                     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
                     WindowCompat.setDecorFitsSystemWindows(window, true)
                     break

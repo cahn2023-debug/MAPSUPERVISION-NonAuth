@@ -56,7 +56,6 @@ internal object PhotoStampLayoutCalculator {
     const val noteIcon = "\uD83D\uDCDD"
 
     private const val addressMaxChars = 42
-    private const val noteMaxChars = 80
 
     fun formatTime(epochMs: Long): String =
         java.text.SimpleDateFormat("HH:mm  dd/MM/yyyy", java.util.Locale.US)
@@ -64,35 +63,36 @@ internal object PhotoStampLayoutCalculator {
 
     fun buildContent(
         timestampMs: Long,
-        address: String,
         latitude: Double?,
         longitude: Double?,
-        note: String,
         missingLocationText: String
     ): PhotoStampContent {
-        val fullAddress = when {
-            address.isNotBlank() -> address
-            latitude != null && longitude != null ->
-                "${"%.5f".format(java.util.Locale.US, latitude)}, ${"%.5f".format(java.util.Locale.US, longitude)}"
-            else -> missingLocationText
+        return buildContent(timestampMs, latitude, longitude, missingLocationText, null, null)
+    }
+
+    fun buildContent(
+        timestampMs: Long,
+        latitude: Double?,
+        longitude: Double?,
+        missingLocationText: String,
+        address: String?,
+        note: String? = null
+    ): PhotoStampContent {
+        val resolvedLocationText = if (!address.isNullOrBlank()) address else {
+            coordinateText(latitude, longitude) ?: missingLocationText
         }
         val rows = buildList {
             add(PhotoStampRow(timeIcon, listOf(formatTime(timestampMs))))
-            add(PhotoStampRow(locationIcon, wrapText(fullAddress, addressMaxChars)))
-            if (note.isNotBlank()) {
-                add(PhotoStampRow(noteIcon, wrapText(note.take(noteMaxChars), addressMaxChars)))
+            add(PhotoStampRow(locationIcon, wrapText(resolvedLocationText, addressMaxChars)))
+            if (!note.isNullOrBlank()) {
+                add(PhotoStampRow(noteIcon, wrapText(note, addressMaxChars)))
             }
-        }
-        val coordinateText = if (latitude != null && longitude != null) {
-            "${"%.4f".format(java.util.Locale.US, latitude)}, ${"%.4f".format(java.util.Locale.US, longitude)}"
-        } else {
-            null
         }
         return PhotoStampContent(
             rows = rows,
             latitude = latitude,
             longitude = longitude,
-            coordinateText = coordinateText
+            coordinateText = coordinateText(latitude, longitude)
         )
     }
 
@@ -100,18 +100,20 @@ internal object PhotoStampLayoutCalculator {
         stamp: CaptureStamp,
         missingLocationText: String
     ): PhotoStampContent {
+        val displayLatitude = stamp.latitude ?: stamp.mapScene?.cameraLatitude ?: stamp.mapScene?.centerLatitude
+        val displayLongitude = stamp.longitude ?: stamp.mapScene?.cameraLongitude ?: stamp.mapScene?.centerLongitude
         val rows = buildList {
             add(PhotoStampRow(timeIcon, listOf(stamp.formattedTime())))
             add(PhotoStampRow(locationIcon, wrapText(stamp.resolvedLocationText(missingLocationText = missingLocationText), addressMaxChars)))
             if (stamp.note.isNotBlank()) {
-                add(PhotoStampRow(noteIcon, wrapText(stamp.note.take(noteMaxChars), addressMaxChars)))
+                add(PhotoStampRow(noteIcon, wrapText(stamp.note, addressMaxChars)))
             }
         }
         return PhotoStampContent(
             rows = rows,
-            latitude = stamp.latitude,
-            longitude = stamp.longitude,
-            coordinateText = stamp.coordinateText()
+            latitude = displayLatitude,
+            longitude = displayLongitude,
+            coordinateText = coordinateText(displayLatitude, displayLongitude)
         )
     }
 
@@ -124,22 +126,21 @@ internal object PhotoStampLayoutCalculator {
         showMap: Boolean
     ): PhotoStampLayout {
         val scale = (frameWidth / 3000f) * 1.4f
-        val textScale = 1.5f
-        val mapScale = 2.0f
+        val textScale = 1.5f * 1.2f
+        val mapScale = 2.0f * 3f
         val margin = 40f * scale
-        val pillHeight = 68f * scale
-        val pillGap = 12f * scale
-        val pillPaddingHorizontal = 28f * scale
+        val pillHeight = 68f * scale * 1.2f
+        val pillGap = 12f * scale * 1.2f
+        val pillPaddingHorizontal = 28f * scale * 1.2f
         val textSize = 30f * scale * textScale
         val iconSize = 32f * scale * textScale
-        val lineGap = 6f * scale
+        val lineGap = 6f * scale * 1.2f
         val coordinateTextSize = 19f * scale * textScale
-        val mapCornerRadius = 20f * scale * mapScale
         val mapBorderWidth = 3.5f * scale * mapScale
         val mapCoordinateOffsetY = 16f * scale * mapScale
-        val mapDotOuterRadius = 26f * scale * mapScale
-        val mapDotInnerRadius = 16f * scale * mapScale
-        val mapDotCoreRadius = 7f * scale * mapScale
+        val mapDotOuterRadius = 26f * scale * 2.0f
+        val mapDotInnerRadius = 16f * scale * 2.0f
+        val mapDotCoreRadius = 7f * scale * 2.0f
         val bottomInset = 28f * scale
 
         fun rowHeight(row: PhotoStampRow): Float {
@@ -147,9 +148,11 @@ internal object PhotoStampLayoutCalculator {
             return pillHeight * linesCount + lineGap * (linesCount - 1)
         }
 
+        val maxIconWidth = rows.maxOfOrNull { iconWidth(it.icon) } ?: 0f
+
         fun rowWidth(row: PhotoStampRow): Float {
             val maxLineWidth = row.lines.maxOfOrNull(textWidth) ?: 0f
-            return maxLineWidth + iconWidth(row.icon) + pillPaddingHorizontal * 2 + 14f * scale
+            return maxLineWidth + maxIconWidth + pillPaddingHorizontal * 2 + 14f * scale
         }
 
         val totalRowsHeight = rows.sumOf { rowHeight(it).toDouble() }.toFloat() +
@@ -169,7 +172,7 @@ internal object PhotoStampLayoutCalculator {
         }
 
         val mapRect = if (showMap) {
-            val mapSize = totalRowsHeight * 3.0f
+            val mapSize = ((minOf(frameWidth, frameHeight) / 6f) * 1.5f).coerceAtLeast(120f)
             PhotoStampRect(
                 left = margin,
                 top = frameHeight - margin - bottomInset - mapSize,
@@ -179,6 +182,7 @@ internal object PhotoStampLayoutCalculator {
         } else {
             null
         }
+        val mapCornerRadius = (mapRect?.width ?: 0f) * 0.12f
 
         return PhotoStampLayout(
             scale = scale,
@@ -210,4 +214,13 @@ internal object PhotoStampLayoutCalculator {
         val line2 = text.substring(breakAt).trimStart(',', ' ')
         return listOf(line1, line2)
     }
+
+    private fun coordinateText(latitude: Double?, longitude: Double?): String? {
+        return if (latitude != null && longitude != null) {
+            "Vĩ độ: ${"%.4f".format(java.util.Locale.US, latitude)}\nKinh độ: ${"%.4f".format(java.util.Locale.US, longitude)}"
+        } else {
+            null
+        }
+    }
 }
+

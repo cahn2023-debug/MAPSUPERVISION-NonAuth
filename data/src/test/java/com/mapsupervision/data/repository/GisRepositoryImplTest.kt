@@ -9,6 +9,7 @@ import com.mapsupervision.data.db.ProjectScopedDatabaseProvider
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.repository.ActiveProjectRepository
+import com.mapsupervision.storage.ProjectStorageManager
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,7 +40,7 @@ class GisRepositoryImplTest {
             .allowMainThreadQueries()
             .build()
         repository = GisRepositoryImpl(
-            projectScopedDatabaseProvider = ProjectScopedDatabaseProvider(context, database),
+            projectScopedDatabaseProvider = ProjectScopedDatabaseProvider(context, database, ProjectStorageManager(context)),
             sharedDatabase = database,
             activeProjectRepository = FakeActiveProjectRepository()
         )
@@ -113,7 +114,7 @@ class GisRepositoryImplTest {
                     latitude = 10.0,
                     longitude = 106.0,
                     mapNumberLabel = "1",
-                    materialSummary = "summary"
+                    workVolumeSummary = "summary"
                 )
             ),
             routes = listOf(
@@ -147,7 +148,7 @@ class GisRepositoryImplTest {
             latitude = 10.0,
             longitude = 106.0,
             mapNumberLabel = "1",
-            materialSummary = "",
+            workVolumeSummary = "",
             importedFileId = importedFileId
         )
 
@@ -182,3 +183,4 @@ class GisRepositoryImplTest {
         override suspend fun getActive(): AppResult<String?> = AppResult.Success(activeId.value)
     }
 }
+

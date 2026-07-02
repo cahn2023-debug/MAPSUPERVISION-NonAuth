@@ -10,7 +10,9 @@ data class CaptureStamp(
     val longitude: Double?,
     val address: String,
     val note: String,
-    val bearingDeg: Float
+    val bearingDeg: Float,
+    val objectContext: CaptureStampObjectContext? = null,
+    val mapScene: CaptureStampMapScene? = null
 ) {
     fun formattedTime(locale: Locale = Locale.US): String =
         SimpleDateFormat("HH:mm  dd/MM/yyyy", locale).format(Date(timestampMs))

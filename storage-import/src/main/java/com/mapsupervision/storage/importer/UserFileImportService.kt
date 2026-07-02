@@ -29,20 +29,32 @@ import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 
+import com.mapsupervision.domain.model.ImportDraft
+import com.mapsupervision.domain.model.ConfirmedFieldFlags
+import com.mapsupervision.domain.model.ExcelColumnMapping
+import com.mapsupervision.domain.model.ExcelPreview
+import com.mapsupervision.domain.model.NonExcelFieldPreview
+import com.mapsupervision.domain.model.NonExcelImportMapping
+import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
+import com.mapsupervision.domain.model.ExcelClassificationMode
+import com.mapsupervision.domain.model.NonExcelPreview
+import com.mapsupervision.domain.repository.ImportRepository
+
 @Singleton
 class UserFileImportService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val storageManager: ProjectStorageManager
-) {
+) : ImportRepository {
     private val nonExcelDraftOverrides = HashMap<String, ImportedFileDraft>()
 
-    fun inspectNonExcelFields(uri: Uri): NonExcelFieldPreview {
-        val preview = inspectNonExcel(uri)
+    override suspend fun inspectNonExcelFields(uri: String): NonExcelFieldPreview {
+        val parsedUri = Uri.parse(uri)
+        val preview = inspectNonExcel(parsedUri)
         val ext = preview.fileType.lowercase(Locale.US)
         val candidates = when (ext) {
             "kml", "kmz" -> {
                 // Extract metadata keys from KML/KMZ
-                val metadataKeys = extractKmlMetadata(uri)
+                val metadataKeys = extractKmlMetadata(parsedUri)
                 NonExcelFieldCandidateSet(
                     positionOptions = listOf("Tên đối tượng (Placemark)", "Tự sinh mã") + metadataKeys,
                     coordinateOptions = listOf("Geometry coordinates"),
@@ -57,7 +69,7 @@ class UserFileImportService @Inject constructor(
             }
             "geojson", "json" -> {
                 // Extract metadata keys from GeoJSON
-                val metadataKeys = extractGeoJsonMetadata(uri)
+                val metadataKeys = extractGeoJsonMetadataStreaming(parsedUri)
                 NonExcelFieldCandidateSet(
                     positionOptions = listOf("properties.name", "properties.id", "Tự sinh mã") + metadataKeys,
                     coordinateOptions = listOf("geometry.coordinates"),
@@ -83,8 +95,8 @@ class UserFileImportService @Inject constructor(
             )
         }
         val sampleRows = when (ext) {
-            "kml", "kmz" -> extractKmlSampleRows(uri)
-            "geojson", "json" -> extractGeoJsonSampleRows(uri)
+            "kml", "kmz" -> extractKmlSampleRows(parsedUri)
+            "geojson", "json" -> extractGeoJsonSampleRowsStreaming(parsedUri)
             else -> emptyList()
         }
         return NonExcelFieldPreview(
@@ -98,22 +110,23 @@ class UserFileImportService @Inject constructor(
         )
     }
 
-    fun importNonExcelWithMapping(
+    override suspend fun importNonExcelWithMapping(
         projectId: String,
-        uri: Uri,
+        uri: String,
         mapping: NonExcelImportMapping,
         confirmed: ConfirmedFieldFlags
-    ): ImportedFileDraft {
+    ): ImportDraft {
         if (!confirmed.positionField) {
             throw IllegalArgumentException("E_PARSE: position field must be confirmed")
         }
-        persistReadPermission(uri)
-        val name = resolveDisplayName(uri)?.trim().orEmpty()
+        val parsedUri = Uri.parse(uri)
+        persistReadPermission(parsedUri)
+        val name = resolveDisplayName(parsedUri)?.trim().orEmpty()
         if (name.isBlank()) throw IllegalArgumentException("E_URI: missing display name")
-        val ext = resolveFileExtension(uri, name)
+        val ext = resolveFileExtension(parsedUri, name)
         if (ext.isBlank()) throw IllegalArgumentException("E_URI: unsupported extension")
 
-        val pendingFile = copyUriToImports(projectId, uri, name)
+        val pendingFile = copyUriToImports(projectId, parsedUri, name)
         val target = try {
             val parsedPreview = parseSummary(pendingFile, ext, name, projectId, mapping)
             moveImportFile(projectId, pendingFile, "processed") to parsedPreview
@@ -145,7 +158,7 @@ class UserFileImportService @Inject constructor(
                         node.contractor
                     } else "",
                     mapNumberLabel = if (confirmed.mapNumberField) node.mapNumberLabel else "",
-                    materialSummary = if (confirmed.itemFields) node.materialSummary else ""
+                    workVolumeSummary = if (confirmed.itemFields) node.workVolumeSummary else ""
                 )
             }
         }
@@ -168,10 +181,10 @@ class UserFileImportService @Inject constructor(
         // Don't store draft override for KML/KMZ files to ensure fresh import
         if (!isKmlOrKmz) {
             synchronized(nonExcelDraftOverrides) {
-                nonExcelDraftOverrides[uri.toString()] = mappedDraft
+                nonExcelDraftOverrides[uri] = mappedDraft
             }
         }
-        return mappedDraft
+        return mappedDraft.toDomainDraft()
     }
 
     private fun isKmlOrKmz(fileType: String): Boolean =
@@ -214,15 +227,16 @@ class UserFileImportService @Inject constructor(
         )
     }
 
-    fun inspectExcel(uri: Uri, sheetName: String? = null): ExcelPreview {
-        persistReadPermission(uri)
-        val name = resolveDisplayName(uri)?.trim().orEmpty()
+    override suspend fun inspectExcel(uri: String, sheetName: String?): ExcelPreview {
+        val parsedUri = Uri.parse(uri)
+        persistReadPermission(parsedUri)
+        val name = resolveDisplayName(parsedUri)?.trim().orEmpty()
         if (name.isBlank()) throw IllegalArgumentException("E_URI: missing display name")
-        val ext = resolveFileExtension(uri, name)
+        val ext = resolveFileExtension(parsedUri, name)
         if (ext != "xlsx") throw IllegalArgumentException("E_PARSE: only .xlsx is supported in Excel parser")
 
-        val temp = copyUriToTempFile(uri, name)
-        val sheets = listExcelSheets(uri)
+        val temp = copyUriToTempFile(parsedUri, name)
+        val sheets = listExcelSheets(parsedUri)
         val parsed = readXlsxTable(temp, sheetName)
         val headers = parsed.headers
         if (headers.isEmpty()) throw IllegalArgumentException("E_PARSE: excel has no header row")
@@ -240,18 +254,19 @@ class UserFileImportService @Inject constructor(
         )
     }
 
-    fun importExcelWithMapping(projectId: String, uri: Uri, mapping: ExcelColumnMapping, sheetName: String? = null): ImportedFileDraft {
-        persistReadPermission(uri)
-        val name = resolveDisplayName(uri)?.trim().orEmpty()
+    override suspend fun importExcelWithMapping(projectId: String, uri: String, mapping: ExcelColumnMapping, sheetName: String?): ImportDraft {
+        val parsedUri = Uri.parse(uri)
+        persistReadPermission(parsedUri)
+        val name = resolveDisplayName(parsedUri)?.trim().orEmpty()
         if (name.isBlank()) throw IllegalArgumentException("E_URI: missing display name")
-        val ext = resolveFileExtension(uri, name)
+        val ext = resolveFileExtension(parsedUri, name)
         if (ext != "xlsx") throw IllegalArgumentException("E_PARSE: only .xlsx is supported in Excel parser")
 
-        val pending = copyUriToImports(projectId, uri, name)
+        val pending = copyUriToImports(projectId, parsedUri, name)
         return try {
             val parsed = readXlsxTable(pending, sheetName)
             val processed = moveImportFile(projectId, pending, "processed")
-            buildExcelDraftFromTable(projectId, name, processed.absolutePath, parsed, mapping, autoDetected = false)
+            buildExcelDraftFromTable(projectId, name, processed.absolutePath, parsed, mapping, autoDetected = false).toDomainDraft()
         } catch (e: Exception) {
             moveImportFile(projectId, pending, "failed")
             throw e
@@ -352,7 +367,7 @@ class UserFileImportService @Inject constructor(
                 val idx = itemColumnIndexes[i]
                 if (idx < row.size && row[idx].isNotBlank()) itemFilledCount++
             }
-            val materialSummary = if (itemColumnIndexes.isEmpty()) {
+            val workVolumeSummary = if (itemColumnIndexes.isEmpty()) {
                 ""
             } else {
                 buildString {
@@ -397,7 +412,7 @@ class UserFileImportService @Inject constructor(
                     latitude = lat,
                     longitude = lon,
                     mapNumberLabel = mapNumberLabel,
-                    materialSummary = materialSummary
+                    workVolumeSummary = workVolumeSummary
                 )
             }
         }
@@ -424,20 +439,21 @@ class UserFileImportService @Inject constructor(
         )
     }
 
-    fun importFile(projectId: String, uri: Uri): ImportedFileDraft {
+    override suspend fun importFile(projectId: String, uri: String): ImportDraft {
         synchronized(nonExcelDraftOverrides) {
-            val override = nonExcelDraftOverrides.remove(uri.toString())
-            if (override != null) return override
+            val override = nonExcelDraftOverrides.remove(uri)
+            if (override != null) return override.toDomainDraft()
         }
-        persistReadPermission(uri)
+        val parsedUri = Uri.parse(uri)
+        persistReadPermission(parsedUri)
 
-        val name = resolveDisplayName(uri)?.trim().orEmpty()
+        val name = resolveDisplayName(parsedUri)?.trim().orEmpty()
         if (name.isBlank()) throw IllegalArgumentException("E_URI: missing display name")
 
-        val ext = resolveFileExtension(uri, name)
+        val ext = resolveFileExtension(parsedUri, name)
         if (ext.isBlank()) throw IllegalArgumentException("E_URI: unsupported extension")
 
-        val pending = copyUriToImports(projectId, uri, name)
+        val pending = copyUriToImports(projectId, parsedUri, name)
         val parsed = try {
             parseSummary(pending, ext, name, projectId)
         } catch (e: Exception) {
@@ -453,7 +469,7 @@ class UserFileImportService @Inject constructor(
             suggestedNodes = parsed.nodes,
             suggestedRoutes = parsed.routes,
             routeLengthMeters = parsed.routeLengthMeters
-        )
+        ).toDomainDraft()
     }
 
     private fun persistReadPermission(uri: Uri) {
@@ -516,7 +532,7 @@ class UserFileImportService @Inject constructor(
         when (ext) {
             "kml" -> parseKml(file.inputStream(), sourceName, projectId, mapping)
             "kmz" -> parseKmz(file, sourceName, projectId, mapping)
-            "geojson", "json" -> parseGeoJson(file, sourceName, mapping)
+            "geojson", "json" -> parseGeoJsonStreamed(file, sourceName, mapping)
             "xlsx" -> parseXlsxDesign(file, sourceName, projectId = projectId)
             "xls" -> ParsedImportResult("Excel (.xls) imported; parser fallback (metadata only).")
             "docx" -> ParsedImportResult(parseDocx(file))
@@ -541,6 +557,18 @@ class UserFileImportService @Inject constructor(
         mapping: NonExcelImportMapping? = null
     ): ParsedImportResult {
         return parseKmzContent(file, sourceName, projectId, mapping)
+    }
+
+    private fun parseGeoJsonStreamed(
+        file: File,
+        sourceName: String,
+        mapping: NonExcelImportMapping? = null
+    ): ParsedImportResult = file.inputStream().use { input ->
+        parseGeoJsonContentStreaming(
+            stream = input,
+            sourceName = sourceName,
+            mapping = mapping
+        )
     }
 
     private fun parseGeoJson(
@@ -586,30 +614,35 @@ class UserFileImportService @Inject constructor(
                     mappedKeys.add(cleanKey)
                     mappedKeys.add(mapping.positionField)
                 }
-                if (mapping.coordinateField?.isNotBlank() == true) {
-                    val cleanKey = mapping.coordinateField.removePrefix("properties.")
+                val coord = mapping.coordinateField
+                if (coord?.isNotBlank() == true) {
+                    val cleanKey = coord.removePrefix("properties.")
                     mappedKeys.add(cleanKey)
-                    mappedKeys.add(mapping.coordinateField)
+                    mappedKeys.add(coord)
                 }
-                if (mapping.contractorField?.isNotBlank() == true) {
-                    val cleanKey = mapping.contractorField.removePrefix("properties.")
+                val contr = mapping.contractorField
+                if (contr?.isNotBlank() == true) {
+                    val cleanKey = contr.removePrefix("properties.")
                     mappedKeys.add(cleanKey)
-                    mappedKeys.add(mapping.contractorField)
+                    mappedKeys.add(contr)
                 }
-                if (mapping.mapNumberField?.isNotBlank() == true) {
-                    val cleanKey = mapping.mapNumberField.removePrefix("properties.")
+                val mapNum = mapping.mapNumberField
+                if (mapNum?.isNotBlank() == true) {
+                    val cleanKey = mapNum.removePrefix("properties.")
                     mappedKeys.add(cleanKey)
-                    mappedKeys.add(mapping.mapNumberField)
+                    mappedKeys.add(mapNum)
                 }
-                if (mapping.objectTypeField?.isNotBlank() == true) {
-                    val cleanKey = mapping.objectTypeField.removePrefix("properties.")
+                val objType = mapping.objectTypeField
+                if (objType?.isNotBlank() == true) {
+                    val cleanKey = objType.removePrefix("properties.")
                     mappedKeys.add(cleanKey)
-                    mappedKeys.add(mapping.objectTypeField)
+                    mappedKeys.add(objType)
                 }
-                if (mapping.routeLengthField?.isNotBlank() == true) {
-                    val cleanKey = mapping.routeLengthField.removePrefix("properties.")
+                val routeLen = mapping.routeLengthField
+                if (routeLen?.isNotBlank() == true) {
+                    val cleanKey = routeLen.removePrefix("properties.")
                     mappedKeys.add(cleanKey)
-                    mappedKeys.add(mapping.routeLengthField)
+                    mappedKeys.add(routeLen)
                 }
                 mapping.itemFields.forEach {
                     mappedKeys.add(it)
@@ -663,8 +696,8 @@ class UserFileImportService @Inject constructor(
             // Determine custom (unmapped) fields from properties
             val customFields = propertiesMap.filterKeys { it !in mappedKeys }
 
-            // Build materialSummary
-            val materialSummary = buildString {
+            // Build workVolumeSummary
+            val workVolumeSummary = buildString {
                 // Include mapped items first
                 if (mapping != null && mapping.itemFields.isNotEmpty()) {
                     var hasItems = false
@@ -673,7 +706,7 @@ class UserFileImportService @Inject constructor(
                         val value = props.optString(itemKey).ifBlank { props.optString(cleanKey) }.trim()
                         if (value.isNotEmpty()) {
                             if (!hasItems) {
-                                append("Vật tư:\n")
+                                append("Công việc:\n")
                                 hasItems = true
                             }
                             append("  $cleanKey: $value\n")
@@ -706,7 +739,7 @@ class UserFileImportService @Inject constructor(
                         latitude = lat,
                         longitude = lon,
                         mapNumberLabel = extractedMapNumber,
-                        materialSummary = materialSummary
+                        workVolumeSummary = workVolumeSummary
                     )
                 }
                 "LineString" -> {
@@ -725,7 +758,7 @@ class UserFileImportService @Inject constructor(
                                 routeDisplayName = extractedCode,
                                 contractor = extractedContractor,
                                 mapNumber = extractedMapNumber,
-                                materialSummary = "",
+                                workVolumeSummary = "",
                                 description = "",
                                 points = points,
                                 extendedData = propertiesMap,
@@ -842,6 +875,19 @@ class UserFileImportService @Inject constructor(
         }
     }
 
+    private fun extractGeoJsonMetadataStreaming(uri: Uri): List<String> {
+        val name = resolveDisplayName(uri) ?: return emptyList()
+        val tempFile = copyUriToTempFile(uri, name)
+        return try {
+            tempFile.inputStream().use { input ->
+                scanGeoJsonPreview(input, name).metadataKeys
+            }
+        } catch (e: Exception) {
+            AppLogger.e(e, "extractGeoJsonMetadataStreaming parsing error")
+            emptyList()
+        }
+    }
+
     private fun extractKmlSampleRows(uri: Uri): List<Map<String, String>> {
         val name = resolveDisplayName(uri) ?: return emptyList()
         val tempFile = copyUriToTempFile(uri, name)
@@ -928,6 +974,18 @@ class UserFileImportService @Inject constructor(
                 samples.add(row)
             }
             samples
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun extractGeoJsonSampleRowsStreaming(uri: Uri): List<Map<String, String>> {
+        return try {
+            val name = resolveDisplayName(uri) ?: return emptyList()
+            val tempFile = copyUriToTempFile(uri, name)
+            tempFile.inputStream().use { input ->
+                scanGeoJsonPreview(input, name).sampleRows
+            }
         } catch (e: Exception) {
             emptyList()
         }
@@ -1046,5 +1104,15 @@ class UserFileImportService @Inject constructor(
         }
     }
 
+    private fun ImportedFileDraft.toDomainDraft(): ImportDraft = ImportDraft(
+        fileName = fileName,
+        fileType = fileType,
+        storedPath = storedPath,
+        summary = summary,
+        suggestedNodes = suggestedNodes,
+        suggestedRoutes = suggestedRoutes,
+        routeLengthMeters = routeLengthMeters
+    )
 }
+
 

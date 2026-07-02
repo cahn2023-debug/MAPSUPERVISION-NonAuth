@@ -33,6 +33,10 @@ data class Task(
     val description: String,
     val status: TaskStatus,
     val createdAtEpochMs: Long,
-    val completedAtEpochMs: Long? = null
+    val completedAtEpochMs: Long? = null,
+    val objectNodeId: String? = null,
+    val objectRouteId: String? = null,
+    val updatedAtEpochMs: Long = createdAtEpochMs,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
-

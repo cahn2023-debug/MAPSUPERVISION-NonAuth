@@ -12,7 +12,7 @@ interface ProjectDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ProjectEntity)
 
-    @Query("SELECT * FROM projects WHERE (:includeArchived = 1 OR isArchived = 0) ORDER BY createdAtEpochMs DESC")
+    @Query("SELECT * FROM projects WHERE isDeleted = 0 AND (:includeArchived = 1 OR isArchived = 0) ORDER BY createdAtEpochMs DESC")
     suspend fun list(includeArchived: Boolean): List<ProjectEntity>
 
     @Query("SELECT * FROM projects WHERE id = :projectId LIMIT 1")
@@ -21,50 +21,54 @@ interface ProjectDao {
     @Query("UPDATE projects SET metadataVersion = :metadataVersion, updatedAtEpochMs = :updatedAtEpochMs WHERE id = :projectId")
     suspend fun touch(projectId: String, metadataVersion: Int, updatedAtEpochMs: Long)
 
+    @Query("UPDATE projects SET projectDbPath = :projectDbPath WHERE id = :projectId")
+    suspend fun updateProjectDbPath(projectId: String, projectDbPath: String)
+
     @Query("UPDATE projects SET isArchived = 1 WHERE id = :projectId")
     suspend fun archive(projectId: String)
 
-    @Query("DELETE FROM gis_node WHERE projectId = :projectId")
-    suspend fun deleteGisNodes(projectId: String)
+    @Query("UPDATE gis_node SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markGisNodesDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM gis_route WHERE projectId = :projectId")
-    suspend fun deleteGisRoutes(projectId: String)
+    @Query("UPDATE gis_route SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markGisRoutesDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM note WHERE projectId = :projectId")
-    suspend fun deleteNotes(projectId: String)
+    @Query("UPDATE note SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markNotesDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM task WHERE projectId = :projectId")
-    suspend fun deleteTasks(projectId: String)
+    @Query("UPDATE task SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markTasksDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM material_progress WHERE projectId = :projectId")
-    suspend fun deleteMaterialProgress(projectId: String)
+    @Query("UPDATE work_volume_progress SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markWorkVolumeProgressDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM node_progress WHERE projectId = :projectId")
-    suspend fun deleteNodeProgress(projectId: String)
+    @Query("UPDATE node_progress SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markNodeProgressDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM site_photos WHERE projectId = :projectId")
-    suspend fun deleteSitePhotos(projectId: String)
+    @Query("UPDATE site_photos SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markSitePhotosDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM imported_files WHERE projectId = :projectId")
-    suspend fun deleteImportedFiles(projectId: String)
+    @Query("UPDATE imported_files SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markImportedFilesDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM daily_log WHERE projectId = :projectId")
-    suspend fun deleteDailyLogs(projectId: String)
+    @Query("UPDATE daily_log SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE projectId = :projectId AND isDeleted = 0")
+    suspend fun markDailyLogsDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
-    @Query("DELETE FROM projects WHERE id = :projectId")
-    suspend fun deleteProjectRecord(projectId: String)
+    @Query("UPDATE projects SET isDeleted = 1, deletedAtEpochMs = :deletedAtEpochMs, updatedAtEpochMs = :updatedAtEpochMs WHERE id = :projectId AND isDeleted = 0")
+    suspend fun markProjectDeleted(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long)
 
     @Transaction
-    suspend fun clearProjectData(projectId: String) {
-        deleteGisNodes(projectId)
-        deleteGisRoutes(projectId)
-        deleteNotes(projectId)
-        deleteTasks(projectId)
-        deleteMaterialProgress(projectId)
-        deleteNodeProgress(projectId)
-        deleteSitePhotos(projectId)
-        deleteImportedFiles(projectId)
-        deleteDailyLogs(projectId)
-        deleteProjectRecord(projectId)
+    suspend fun clearProjectData(projectId: String, updatedAtEpochMs: Long, deletedAtEpochMs: Long) {
+        markGisNodesDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markGisRoutesDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markNotesDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markTasksDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markWorkVolumeProgressDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markNodeProgressDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markSitePhotosDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markImportedFilesDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markDailyLogsDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
+        markProjectDeleted(projectId, updatedAtEpochMs, deletedAtEpochMs)
     }
 }
+

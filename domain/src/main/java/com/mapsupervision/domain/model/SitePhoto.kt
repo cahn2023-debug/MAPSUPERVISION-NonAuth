@@ -24,6 +24,7 @@ data class SitePhoto(
     val projectId: String,
     val objectCode: String,
     val tagCodesCsv: String = "",
+    val tagCodes: List<String> = emptyList(),
     val matchedNodeCode: String? = null,
     val matchedRouteCode: String? = null,
     val filePath: String,
@@ -39,6 +40,18 @@ data class SitePhoto(
     val matchingTimeOffsetMs: Long = 0L,
     val mediaType: MediaType = MediaType.IMAGE,
     val mimeType: String = "image/jpeg",
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val address: String? = null,
+    val captureNote: String? = null,
+    val matchedNodeId: String? = null,
+    val matchedRouteId: String? = null,
+    val updatedAtEpochMs: Long = capturedAtEpochMs,
+    val syncStatus: SitePhotoSyncStatus = SitePhotoSyncStatus.PENDING,
+    val remoteUrl: String? = null,
+    val lastSyncAttemptEpochMs: Long? = null,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
 
+val SitePhoto.resolvedTagCodes: List<String>
+    get() = if (tagCodes.isNotEmpty()) tagCodes else parseCsvList(tagCodesCsv)

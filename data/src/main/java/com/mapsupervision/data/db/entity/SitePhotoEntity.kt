@@ -6,6 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 import com.mapsupervision.domain.model.PhotoLocationStatus
+import com.mapsupervision.domain.model.SitePhotoSyncStatus
 
 @Entity(
     tableName = "site_photos",
@@ -14,15 +15,25 @@ import com.mapsupervision.domain.model.PhotoLocationStatus
             entity = ProjectEntity::class,
             parentColumns = ["id"],
             childColumns = ["projectId"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
+        ),
+        ForeignKey(
+            entity = GisNodeEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["matchedNodeId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = GisRouteEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["matchedRouteId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [
         Index(value = ["projectId", "capturedAtEpochMs"]),
-        Index(value = ["projectId", "objectCode", "capturedAtEpochMs"]),
-        Index("objectCode"),
-        Index(value = ["projectId", "matchedNodeCode"]),
-        Index(value = ["projectId", "matchedRouteCode"])
+        Index("matchedNodeId"),
+        Index("matchedRouteId")
     ]
 )
 data class SitePhotoEntity(
@@ -30,8 +41,6 @@ data class SitePhotoEntity(
     val projectId: String,
     val objectCode: String,
     val tagCodesCsv: String,
-    val matchedNodeCode: String?,
-    val matchedRouteCode: String?,
     val filePath: String,
     val thumbnailPath: String,
     val latitude: Double?,
@@ -45,6 +54,15 @@ data class SitePhotoEntity(
     val matchingTimeOffsetMs: Long,
     val mediaType: com.mapsupervision.domain.model.MediaType = com.mapsupervision.domain.model.MediaType.IMAGE,
     val mimeType: String = "image/jpeg",
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val address: String? = null,
+    val captureNote: String? = null,
+    val matchedNodeId: String? = null,
+    val matchedRouteId: String? = null,
+    val updatedAtEpochMs: Long = capturedAtEpochMs,
+    val syncStatus: SitePhotoSyncStatus = SitePhotoSyncStatus.PENDING,
+    val remoteUrl: String? = null,
+    val lastSyncAttemptEpochMs: Long? = null,
+    val isDeleted: Boolean = false,
+    val deletedAtEpochMs: Long? = null
 )
-

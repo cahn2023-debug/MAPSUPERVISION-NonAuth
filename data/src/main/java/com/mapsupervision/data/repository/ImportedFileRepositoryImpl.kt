@@ -22,7 +22,10 @@ class ImportedFileRepositoryImpl @Inject constructor(
     private val activeProjectRepository: com.mapsupervision.domain.repository.ActiveProjectRepository
 ) : ImportedFileRepository {
     override suspend fun upsert(file: ImportedFile): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        dao(file.projectId).upsert(file.toEntity())
+        val normalized = file.copy(
+            updatedAtEpochMs = if (file.updatedAtEpochMs == 0L) System.currentTimeMillis() else file.updatedAtEpochMs
+        )
+        dao(file.projectId).upsert(normalized.toEntity())
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to save imported file", it)) }
@@ -30,7 +33,9 @@ class ImportedFileRepositoryImpl @Inject constructor(
 
     override suspend fun upsertAll(files: List<ImportedFile>): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
         if (files.isEmpty()) return@runCatching
-        dao(files.first().projectId).upsertAll(files.map { it.toEntity() })
+        dao(files.first().projectId).upsertAll(files.map {
+            it.copy(updatedAtEpochMs = if (it.updatedAtEpochMs == 0L) System.currentTimeMillis() else it.updatedAtEpochMs).toEntity()
+        })
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to save imported files", it)) }
@@ -46,7 +51,8 @@ class ImportedFileRepositoryImpl @Inject constructor(
     override suspend fun deleteById(id: String): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
         val activeProjectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data
         val scopedDao = if (activeProjectId.isNullOrBlank()) dao else dao(activeProjectId)
-        scopedDao.deleteById(id)
+        val now = System.currentTimeMillis()
+        scopedDao.deleteById(id, now, now)
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to delete imported file", it)) }
@@ -63,7 +69,10 @@ class ImportedFileRepositoryImpl @Inject constructor(
         fileType = fileType,
         storedPath = storedPath,
         summary = summary,
-        importedAtEpochMs = importedAtEpochMs
+        importedAtEpochMs = importedAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
     )
 
     private fun ImportedFileEntity.toDomain() = ImportedFile(
@@ -73,7 +82,10 @@ class ImportedFileRepositoryImpl @Inject constructor(
         fileType = fileType,
         storedPath = storedPath,
         summary = summary,
-        importedAtEpochMs = importedAtEpochMs
+        importedAtEpochMs = importedAtEpochMs,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
     )
 
     private suspend fun dao(projectId: String): ImportedFileDao =
