@@ -32,3 +32,13 @@ jobs:
 
       - name: Run release gate
         run: sh ./scripts/release_gate.sh
+
+      - name: Dump hs_err log if present
+        if: always()
+        run: |
+          for f in $(find . -maxdepth 5 -type f -name 'hs_err_pid*.log' -print); do
+            echo "==== $f ===="
+            head -n 200 "$f"
+            echo "==== end ===="
+          done
+

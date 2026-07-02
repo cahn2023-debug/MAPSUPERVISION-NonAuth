@@ -10,6 +10,8 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.testing.Test
+
 
 val projectDependencyPattern = Regex("""project\("(:[^"]+)"\)""")
 val allowedProjectDependencies = mapOf(
@@ -40,6 +42,10 @@ subprojects {
     }
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions.freeCompilerArgs.add("-Xannotation-default-target=param-property")
+    }
+    tasks.withType<Test>().configureEach {
+        maxParallelForks = 1
+        jvmArgs("-Xmx1536m", "-Djava.awt.headless=true")
     }
 }
 
