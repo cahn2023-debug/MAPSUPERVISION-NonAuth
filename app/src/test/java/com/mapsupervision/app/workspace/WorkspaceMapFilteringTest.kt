@@ -195,5 +195,27 @@ class WorkspaceMapFilteringTest {
         val selectedResult = filterRoutes(selectedHiddenState.designRoutes, selectedHiddenState.mapUi, selectedIndexes, selectedLiveNodes)
         assertEquals(emptyList<String>(), selectedResult.map { it.code })
     }
+
+    @Test
+    fun routes_filtering_keeps_route_with_renderable_polyline_even_without_live_end_nodes() {
+        val routeOnly = GisRoute(
+            id = "r1",
+            projectId = "p1",
+            code = "R-POINTS",
+            contractor = "A",
+            startNodeCode = "",
+            endNodeCode = "",
+            points = listOf(10.0 to 106.0, 10.1 to 106.1, 10.2 to 106.2)
+        )
+        val state = WorkspaceState(
+            designRoutes = listOf(routeOnly),
+            mapUi = MapUiState()
+        )
+        val indexes = buildWorkspaceIndexes(state)
+
+        val result = filterRoutes(state.designRoutes, state.mapUi, indexes, liveNodes = emptyList())
+
+        assertEquals(listOf("R-POINTS"), result.map { it.code })
+    }
 }
 

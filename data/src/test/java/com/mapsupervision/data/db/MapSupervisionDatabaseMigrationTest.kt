@@ -108,7 +108,7 @@ class MapSupervisionDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 8 to 44 compiles and validates successfully`() {
+    fun `migration 8 to 45 compiles and validates successfully`() {
         val dbName = "legacy8.sqlite"
         val dbFile = File(tempDir, dbName)
         createLegacyVersion8Database(dbFile)
@@ -116,7 +116,7 @@ class MapSupervisionDatabaseMigrationTest {
         val database = migratingDatabase(dbName).build()
 
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertProjectsTableHasNormalizedDefaults(database)
             assertLatestSchema(database)
         } finally {
@@ -125,7 +125,7 @@ class MapSupervisionDatabaseMigrationTest {
     }
 
     @Test
-    fun `every legacy schema from 9 to 31 migrates to version 44`() {
+    fun `every legacy schema from 9 to 31 migrates to version 45`() {
         for (version in 9..31) {
             val dbName = "legacy-version-$version.sqlite"
             val dbFile = File(tempDir, dbName)
@@ -133,7 +133,7 @@ class MapSupervisionDatabaseMigrationTest {
 
             val database = migratingDatabase(dbName).build()
             try {
-                assertEquals("Legacy version $version did not migrate to 44", 44, database.openHelper.writableDatabase.version)
+                assertEquals("Legacy version $version did not migrate to 45", 45, database.openHelper.writableDatabase.version)
                 assertLatestSchema(database)
             } finally {
                 database.close()
@@ -443,8 +443,10 @@ class MapSupervisionDatabaseMigrationTest {
         val expectedCols = listOf(
             "id", "projectId", "workItem", "manpower", "note", "createdAtEpochMs",
             "weather", "temperature", "dateEpochDay", "volume", "unit",
-            "categoryName", "batchGroupId", "photoMatchOffsetMinutes",
-            "nodeId", "routeId", "updatedAtEpochMs", "isDeleted", "deletedAtEpochMs"
+            "categoryName", "batchGroupId", "linkedWorkPlanId", "plannedWorkName",
+            "plannedQuantity", "plannedUnit", "photoMatchOffsetMinutes",
+            "nodeId", "routeId", "plannedNodeId", "plannedRouteId",
+            "updatedAtEpochMs", "isDeleted", "deletedAtEpochMs"
         )
         for (col in expectedCols) {
             assertEquals("daily_log table missing column $col", true, columns.containsKey(col))
@@ -453,6 +455,17 @@ class MapSupervisionDatabaseMigrationTest {
         assertEquals(true, indexes.contains("index_daily_log_projectId_createdAtEpochMs"))
         assertEquals(true, indexes.contains("index_daily_log_projectId_dateEpochDay"))
         assertEquals(true, indexes.contains("index_daily_log_projectId_batchGroupId"))
+        val lineColumns = tableColumns(database, "daily_log_line")
+        val expectedLineCols = listOf(
+            "id", "projectId", "dailyLogId", "lineType", "workName", "categoryName",
+            "quantity", "unit", "linkedWorkPlanId", "nodeId", "routeId",
+            "createdAtEpochMs", "updatedAtEpochMs"
+        )
+        for (col in expectedLineCols) {
+            assertEquals("daily_log_line table missing column $col", true, lineColumns.containsKey(col))
+        }
+        val lineIndexes = tableIndexes(database, "daily_log_line")
+        assertEquals(true, lineIndexes.contains("index_daily_log_line_projectId_dailyLogId"))
     }
 
     private fun assertNoteTableHasNormalizedColumns(database: MapSupervisionDatabase) {
@@ -535,6 +548,7 @@ class MapSupervisionDatabaseMigrationTest {
                 "report_draft",
                 "ai_action_log",
                 "work_plan",
+                "daily_log_line",
                 "material_handover",
                 "material_declaration",
                 "rag_document_embedding"
@@ -545,6 +559,15 @@ class MapSupervisionDatabaseMigrationTest {
         assertColumnExists(database, "work_plan", "quantity")
         assertColumnExists(database, "work_plan", "unit")
         assertColumnExists(database, "work_plan", "batchGroupId")
+        assertColumnExists(database, "daily_log", "linkedWorkPlanId")
+        assertColumnExists(database, "daily_log", "plannedWorkName")
+        assertColumnExists(database, "daily_log", "plannedQuantity")
+        assertColumnExists(database, "daily_log", "plannedUnit")
+        assertColumnExists(database, "daily_log", "plannedNodeId")
+        assertColumnExists(database, "daily_log", "plannedRouteId")
+        assertColumnExists(database, "daily_log_line", "lineType")
+        assertColumnExists(database, "daily_log_line", "workName")
+        assertColumnExists(database, "daily_log_line", "linkedWorkPlanId")
     }
 
     private data class ColumnInfo(
@@ -978,7 +1001,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "ai_action_log"))
         } finally {
             database.close()
@@ -999,7 +1022,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "work_volume_progress"))
             val nodes = runBlocking { database.gisNodeDao().byProject("proj1") }
             assertEquals("Legacy summary", nodes.single().workVolumeSummary)
@@ -1020,7 +1043,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "material_handover"))
         } finally {
             database.close()
@@ -1035,7 +1058,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "material_declaration"))
         } finally {
             database.close()
@@ -1050,7 +1073,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "rag_document_embedding"))
         } finally {
             database.close()
@@ -1088,7 +1111,7 @@ class MapSupervisionDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 43 to 44 backfills material handover and work volume position links`() {
+    fun `migration 43 to 45 backfills material handover and work volume position links`() {
         val dbName = "legacy43.sqlite"
         val dbFile = File(tempDir, dbName)
         createLegacyDatabaseFromSchema(dbFile, 43)
@@ -1106,7 +1129,7 @@ class MapSupervisionDatabaseMigrationTest {
             .build()
 
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             database.openHelper.readableDatabase.query("SELECT `workName`, `materialName`, `nodeId` FROM `material_handover` WHERE `id` = 'ho1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("Work A", cursor.getString(0))
@@ -1143,7 +1166,7 @@ class MapSupervisionDatabaseMigrationTest {
             .build()
 
         try {
-            assertEquals(44, database.openHelper.writableDatabase.version)
+            assertEquals(45, database.openHelper.writableDatabase.version)
             database.openHelper.readableDatabase.query("SELECT `objectCode` FROM `site_photos` WHERE `id` = 'photo1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("N1", cursor.getString(0))

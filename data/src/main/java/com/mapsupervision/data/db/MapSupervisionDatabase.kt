@@ -8,6 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.mapsupervision.data.db.dao.AiDecisionCacheDao
 import com.mapsupervision.data.db.dao.ChatHistoryDao
 import com.mapsupervision.data.db.dao.DailyLogDao
+import com.mapsupervision.data.db.dao.DailyLogLineDao
 import com.mapsupervision.data.db.dao.DailyLogNodeDao
 import com.mapsupervision.data.db.dao.DailyLogPhotoDao
 import com.mapsupervision.data.db.dao.GisNodeDao
@@ -29,6 +30,7 @@ import com.mapsupervision.data.db.dao.ReportDraftDao
 import com.mapsupervision.data.db.dao.RagDocumentEmbeddingDao
 import com.mapsupervision.data.db.dao.WorkCategoryDao
 import com.mapsupervision.data.db.entity.DailyLogEntity
+import com.mapsupervision.data.db.entity.DailyLogLineEntity
 import com.mapsupervision.data.db.entity.DailyLogNodeEntity
 import com.mapsupervision.data.db.entity.DailyLogPhotoEntity
 import com.mapsupervision.data.db.entity.AiDecisionCacheEntity
@@ -69,6 +71,7 @@ import com.mapsupervision.data.db.dao.MaterialDeclarationDao
         NodeProgressEntity::class,
         SitePhotoEntity::class,
         DailyLogEntity::class,
+        DailyLogLineEntity::class,
         DailyLogNodeEntity::class,
         DailyLogPhotoEntity::class,
         GisNodeEntity::class,
@@ -93,7 +96,7 @@ import com.mapsupervision.data.db.dao.MaterialDeclarationDao
         MaterialDeclarationEntity::class,
         RagDocumentEmbeddingEntity::class
     ],
-    version = 44,
+    version = 45,
     exportSchema = true
 )
 @TypeConverters(DbTypeConverters::class)
@@ -102,6 +105,7 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
     abstract fun nodeProgressDao(): NodeProgressDao
     abstract fun sitePhotoDao(): SitePhotoDao
     abstract fun dailyLogDao(): DailyLogDao
+    abstract fun dailyLogLineDao(): DailyLogLineDao
     abstract fun dailyLogNodeDao(): DailyLogNodeDao
     abstract fun dailyLogPhotoDao(): DailyLogPhotoDao
     abstract fun gisNodeDao(): GisNodeDao
@@ -2866,6 +2870,44 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_44_45 = object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `linkedWorkPlanId` TEXT")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `plannedWorkName` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `plannedQuantity` REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `plannedUnit` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `plannedNodeId` TEXT")
+                db.execSQL("ALTER TABLE `daily_log` ADD COLUMN `plannedRouteId` TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `daily_log_line` (
+                        `id` TEXT NOT NULL,
+                        `projectId` TEXT NOT NULL,
+                        `dailyLogId` TEXT NOT NULL,
+                        `lineType` TEXT NOT NULL,
+                        `workName` TEXT NOT NULL,
+                        `categoryName` TEXT NOT NULL,
+                        `quantity` REAL NOT NULL,
+                        `unit` TEXT NOT NULL,
+                        `linkedWorkPlanId` TEXT,
+                        `nodeId` TEXT,
+                        `routeId` TEXT,
+                        `createdAtEpochMs` INTEGER NOT NULL,
+                        `updatedAtEpochMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`projectId`) REFERENCES `projects`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`dailyLogId`) REFERENCES `daily_log`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`nodeId`) REFERENCES `gis_node`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`routeId`) REFERENCES `gis_route`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_log_line_projectId_dailyLogId` ON `daily_log_line` (`projectId`, `dailyLogId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_log_line_nodeId` ON `daily_log_line` (`nodeId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_daily_log_line_routeId` ON `daily_log_line` (`routeId`)")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_8_9,
             MIGRATION_9_10,
@@ -2902,7 +2944,8 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
             MIGRATION_40_41,
             MIGRATION_41_42,
             MIGRATION_42_43,
-            MIGRATION_43_44
+            MIGRATION_43_44,
+            MIGRATION_44_45
         )
     }
 }

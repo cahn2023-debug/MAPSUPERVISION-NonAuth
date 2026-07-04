@@ -4,7 +4,6 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Description
@@ -35,9 +34,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -112,6 +111,7 @@ import com.mapsupervision.app.workspace.onPickerEmpty
 import com.mapsupervision.app.workspace.onSearchQueryChanged
 import com.mapsupervision.app.workspace.parseExcelToDesign
 import com.mapsupervision.app.workspace.parseNonExcelToDesign
+import com.mapsupervision.app.workspace.repairImportedGeometry
 import com.mapsupervision.app.workspace.retryFailedImports
 import com.mapsupervision.app.workspace.savePhoto
 import com.mapsupervision.app.workspace.selectMapNode
@@ -138,8 +138,6 @@ import com.mapsupervision.project.ui.ProjectViewModel
 import com.mapsupervision.reporting.ui.ReportPreviewDialog
 import com.mapsupervision.reporting.ui.ReportingScreen
 import com.mapsupervision.reporting.ui.ReportingViewModel
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import java.io.File
 
@@ -166,36 +164,23 @@ fun WorkspaceAppShell(
     onIncomingShareConsumed: () -> Unit = {}
 ) {
     val workspaceViewModel: WorkspaceViewModel = hiltViewModel()
-    val coroutineScope = rememberCoroutineScope()
-    val chatViewModel: GemmaChatViewModel = hiltViewModel()
     val projectViewModel: ProjectViewModel = hiltViewModel()
-    val reportingViewModel: ReportingViewModel = hiltViewModel()
 
     val workspaceState by workspaceViewModel.state.collectAsStateWithLifecycle()
     val workspaceUiState by workspaceViewModel.uiState.collectAsStateWithLifecycle()
-    val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
     val projectState by projectViewModel.uiState.collectAsStateWithLifecycle()
-    val reportingSnapshot by reportingViewModel.reportSnapshot.collectAsStateWithLifecycle()
-    val lastPdfPath by reportingViewModel.lastReportPath.collectAsStateWithLifecycle()
-    val lastWordPath by reportingViewModel.lastWordReportPath.collectAsStateWithLifecycle()
-    val reportExporting by reportingViewModel.isExporting.collectAsStateWithLifecycle()
     val mapDesignNodes by workspaceViewModel.filteredNodesForMap.collectAsStateWithLifecycle()
     val mapDesignRoutes by workspaceViewModel.filteredRoutesForMap.collectAsStateWithLifecycle()
-
-    LaunchedEffect(workspaceUiState.showReportPreview, projectState.activeProjectId) {
-        val pid = projectState.activeProjectId
-        if (workspaceUiState.showReportPreview && !pid.isNullOrBlank()) {
-            reportingViewModel.requestReportDraft(pid)
-        } else {
-            reportingViewModel.cancelReportDraft()
-        }
-    }
 
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val isExpanded = configuration.screenWidthDp >= 840
+    var chatSessionActive by rememberSaveable { mutableStateOf(false) }
+    var isChatVisible by rememberSaveable { mutableStateOf(false) }
+    var chatOpenRequestId by rememberSaveable { mutableStateOf(0) }
+    var reportingSessionActive by rememberSaveable { mutableStateOf(false) }
     val chatContextSummary = remember(
         workspaceState.activeProjectId,
         workspaceState.dashboard.totalDesignNodes,
@@ -256,24 +241,6 @@ fun WorkspaceAppShell(
         }
     }
 
-    LaunchedEffect(lastPdfPath) {
-        if (!lastPdfPath.isNullOrBlank()) {
-            workspaceViewModel.onReportExported(lastPdfPath!!)
-        }
-    }
-
-    LaunchedEffect(lastWordPath) {
-        if (!lastWordPath.isNullOrBlank()) {
-            workspaceViewModel.onReportExported(lastWordPath!!)
-        }
-    }
-
-    LaunchedEffect(workspaceState.activeProjectId) {
-        if (chatState.isOpen) {
-            chatViewModel.open(workspaceState.activeProjectId)
-        }
-    }
-
     LaunchedEffect(incomingSharePayload?.id) {
         val payload = incomingSharePayload ?: return@LaunchedEffect
         workspaceViewModel.dispatch(
@@ -303,8 +270,11 @@ fun WorkspaceAppShell(
         }
     }
 
-    val previewPhotos = reportingSnapshot.photos
-    val previewMaterialRows = reportingSnapshot.workVolumeRows
+    LaunchedEffect(workspaceUiState.showReportPreview, workspaceUiState.selectedTab) {
+        if (workspaceUiState.showReportPreview || workspaceUiState.selectedTab == WorkspaceTab.REPORTS) {
+            reportingSessionActive = true
+        }
+    }
 
     val navChrome: @Composable () -> Unit = {
         val theme = MaterialTheme.colorScheme
@@ -443,12 +413,11 @@ fun WorkspaceAppShell(
                     progressUiState = workspaceViewModel.getProgressUiState(),
                     workCategories = workspaceState.workCategories,
                     workPlans = workspaceState.workPlans,
-                    photos = reportingSnapshot.photos,
+                    projectTasks = workspaceState.projectTasks,
+                    photos = workspaceState.projectPhotos,
                     activeProjectName = projectState.projects.firstOrNull { it.id == projectState.activeProjectId }?.name,
                     onAddConstruction = workspaceViewModel::addConstructionProgress,
-                    onAddDailyLog = { workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId, actualProgressPercent ->
-                        workspaceViewModel.addDailyLog(workItem, manpower, note, weather, temp, nodeCode, routeCode, dateDay, volume, unit, categoryName, existingId, actualProgressPercent)
-                    },
+                    onAddDailyLog = { request -> workspaceViewModel.addDailyLog(request) },
                     onAddWorkCategory = workspaceViewModel::addWorkCategory,
                     onAddWorkPlanBatch = workspaceViewModel::addWorkPlanBatch,
                     onFetchWeatherAuto = { nodeCode, routeCode, onResult -> workspaceViewModel.fetchWeatherAuto(nodeCode, routeCode, onResult) }
@@ -484,6 +453,7 @@ fun WorkspaceAppShell(
                         workspaceViewModel.selectMapRoute(route)
                     },
                     onDeleteImportedFile = workspaceViewModel::deleteImportedFile,
+                    onRepairImportedGeometry = workspaceViewModel::repairImportedGeometry,
                     photoFilterNodeCode = workspaceState.photoFilterNodeCode,
                     onClearPhotoFilter = workspaceViewModel::clearPhotoNodeFilter,
                     onLoadNotesAndTasks = workspaceViewModel::loadNotesAndTasks,
@@ -544,7 +514,11 @@ fun WorkspaceAppShell(
         }
 
         FloatingChatBubble(
-            onClick = { chatViewModel.open(workspaceState.activeProjectId) },
+            onClick = {
+                chatSessionActive = true
+                isChatVisible = true
+                chatOpenRequestId += 1
+            },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 20.dp, bottom = 86.dp)
@@ -580,92 +554,28 @@ fun WorkspaceAppShell(
             )
         }
 
-    if (chatState.isOpen) {
-        GemmaChatSheet(
-            state = chatState,
-            contextSummary = chatContextSummary,
-            projectId = workspaceState.activeProjectId,
-            currentTab = workspaceUiState.selectedTab.name,
-            selectedNodeCode = workspaceState.mapUi.selectedNode?.code,
-            selectedRouteCode = workspaceState.mapUi.selectedRoute?.code,
-              onDismiss = chatViewModel::close,
-              onDownload = chatViewModel::downloadSelectedModel,
-              onConfirmCellularDownload = chatViewModel::confirmCellularDownload,
-              onDismissCellularWarning = chatViewModel::dismissCellularWarning,
-              onDeleteModel = chatViewModel::deleteModel,
-              onCancelDownload = chatViewModel::cancelDownload,
-              onOpenModelPicker = chatViewModel::openModelPicker,
-              onDismissModelPicker = chatViewModel::dismissModelPicker,
-              onSelectModel = chatViewModel::selectModel,
-              onInputChange = chatViewModel::updateInput,
-              onConfirmPendingAction = { chatViewModel.confirmPendingAction(workspaceViewModel) },
-              onDismissPendingAction = chatViewModel::dismissPendingAction,
-              onUpdatePendingDailyLogDraft = chatViewModel::updatePendingDailyLogDraft,
-              onUpdatePendingWorkPlanDraft = chatViewModel::updatePendingWorkPlanDraft,
-              onSelectClarificationOption = { option ->
-                  val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
-                  val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
-                  val inputHints = chatDictionaryResolver.buildInputHints(
-                      chatState.input,
-                      selectedNodeCode,
-                      selectedRouteCode
-                  )
-                  chatViewModel.selectClarificationOption(
-                      option = option,
-                      normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
-                      selectedNodeCode = selectedNodeCode,
-                      selectedRouteCode = selectedRouteCode
-                  )
-              },
-              onClearHistory = chatViewModel::clearChatHistory,
-              onReloadHistory = chatViewModel::reloadHistory,
-              onSend = {
-                  val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
-                  val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
-                  val canonicalUserMessage = chatDictionaryResolver.canonicalizeMessage(
-                    chatState.input,
-                    selectedNodeCode,
-                    selectedRouteCode
-                )
-                  val inputHints = chatDictionaryResolver.buildInputHints(
-                    chatState.input,
-                    selectedNodeCode,
-                    selectedRouteCode
-                )
-                  chatViewModel.sendMessage(
-                    contextSummary = chatContextSummary,
-                    normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
-                    canonicalUserMessage = canonicalUserMessage,
-                    projectId = workspaceState.activeProjectId,
-                    tab = workspaceUiState.selectedTab.name,
-                    selectedNodeCode = selectedNodeCode,
-                    selectedRouteCode = selectedRouteCode
-                )
-            }
+    if (chatSessionActive) {
+        ChatSheetHost(
+            isVisible = isChatVisible,
+            openRequestId = chatOpenRequestId,
+            workspaceViewModel = workspaceViewModel,
+            workspaceState = workspaceState,
+            workspaceUiState = workspaceUiState,
+            chatContextSummary = chatContextSummary,
+            chatNormalizationSummary = chatNormalizationSummary,
+            chatDictionaryResolver = chatDictionaryResolver,
+            onDismiss = { isChatVisible = false }
         )
     }
 
-    ReportPreviewDialog(
-        showDialog = workspaceUiState.showReportPreview,
-        onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview) },
-        projectId = projectState.activeProjectId ?: "",
-        selectedExportFormat = "PDF",
-        isExporting = reportExporting,
-        onUpdatePhotoOffset = reportingViewModel::updatePhotoOffset,
-        onConfirmExport = { format ->
-            if (format == "PDF") {
-                reportingViewModel.exportPdf()
-            } else {
-                reportingViewModel.exportWord()
-            }
-            workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview)
-        },
-        nodes = workspaceState.designNodes,
-        routes = workspaceState.designRoutes,
-        photos = previewPhotos,
-        workVolumeRows = previewMaterialRows,
-        aiDraft = reportingSnapshot.aiDraft
-    )
+    if (reportingSessionActive) {
+        ReportPreviewHost(
+            showDialog = workspaceUiState.showReportPreview,
+            projectId = projectState.activeProjectId,
+            workspaceViewModel = workspaceViewModel,
+            onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.DismissReportPreview) }
+        )
+    }
 
     workspaceState.pendingSharedImport?.let { pendingSharedImport ->
         ShareImportSheet(
@@ -677,6 +587,160 @@ fun WorkspaceAppShell(
             onDismiss = { workspaceViewModel.dispatch(WorkspaceAction.ClearPendingSharedImport) }
         )
     }
+}
+
+@Composable
+private fun ChatSheetHost(
+    isVisible: Boolean,
+    openRequestId: Int,
+    workspaceViewModel: WorkspaceViewModel,
+    workspaceState: com.mapsupervision.app.workspace.WorkspaceState,
+    workspaceUiState: com.mapsupervision.app.workspace.WorkspaceUiState,
+    chatContextSummary: String,
+    chatNormalizationSummary: String,
+    chatDictionaryResolver: ChatDictionaryResolver,
+    onDismiss: () -> Unit
+) {
+    val chatViewModel: GemmaChatViewModel = hiltViewModel()
+    val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(openRequestId) {
+        if (isVisible) {
+            chatViewModel.open(workspaceState.activeProjectId)
+        }
+    }
+
+    LaunchedEffect(workspaceState.activeProjectId) {
+        if (isVisible && chatState.isOpen) {
+            chatViewModel.open(workspaceState.activeProjectId)
+        }
+    }
+
+    if (!isVisible && !chatState.isOpen) {
+        return
+    }
+
+    GemmaChatSheet(
+        state = chatState,
+        contextSummary = chatContextSummary,
+        projectId = workspaceState.activeProjectId,
+        currentTab = workspaceUiState.selectedTab.name,
+        selectedNodeCode = workspaceState.mapUi.selectedNode?.code,
+        selectedRouteCode = workspaceState.mapUi.selectedRoute?.code,
+        onDismiss = {
+            chatViewModel.close()
+            onDismiss()
+        },
+        onDownload = chatViewModel::downloadSelectedModel,
+        onConfirmCellularDownload = chatViewModel::confirmCellularDownload,
+        onDismissCellularWarning = chatViewModel::dismissCellularWarning,
+        onDeleteModel = chatViewModel::deleteModel,
+        onCancelDownload = chatViewModel::cancelDownload,
+        onOpenModelPicker = chatViewModel::openModelPicker,
+        onDismissModelPicker = chatViewModel::dismissModelPicker,
+        onSelectModel = chatViewModel::selectModel,
+        onInputChange = chatViewModel::updateInput,
+        onConfirmPendingAction = { chatViewModel.confirmPendingAction(workspaceViewModel) },
+        onDismissPendingAction = chatViewModel::dismissPendingAction,
+        onUpdatePendingDailyLogDraft = chatViewModel::updatePendingDailyLogDraft,
+        onUpdatePendingWorkPlanDraft = chatViewModel::updatePendingWorkPlanDraft,
+        onSelectClarificationOption = { option ->
+            val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
+            val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
+            val inputHints = chatDictionaryResolver.buildInputHints(
+                chatState.input,
+                selectedNodeCode,
+                selectedRouteCode
+            )
+            chatViewModel.selectClarificationOption(
+                option = option,
+                normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
+                selectedNodeCode = selectedNodeCode,
+                selectedRouteCode = selectedRouteCode
+            )
+        },
+        onClearHistory = chatViewModel::clearChatHistory,
+        onReloadHistory = chatViewModel::reloadHistory,
+        onSend = {
+            val selectedNodeCode = workspaceState.mapUi.selectedNode?.code
+            val selectedRouteCode = workspaceState.mapUi.selectedRoute?.code
+            val canonicalUserMessage = chatDictionaryResolver.canonicalizeMessage(
+                chatState.input,
+                selectedNodeCode,
+                selectedRouteCode
+            )
+            val inputHints = chatDictionaryResolver.buildInputHints(
+                chatState.input,
+                selectedNodeCode,
+                selectedRouteCode
+            )
+            chatViewModel.sendMessage(
+                contextSummary = chatContextSummary,
+                normalizationContext = if (inputHints.isBlank()) chatNormalizationSummary else "$chatNormalizationSummary\n$inputHints",
+                canonicalUserMessage = canonicalUserMessage,
+                projectId = workspaceState.activeProjectId,
+                tab = workspaceUiState.selectedTab.name,
+                selectedNodeCode = selectedNodeCode,
+                selectedRouteCode = selectedRouteCode
+            )
+        }
+    )
+}
+
+@Composable
+private fun ReportPreviewHost(
+    showDialog: Boolean,
+    projectId: String?,
+    workspaceViewModel: WorkspaceViewModel,
+    onDismiss: () -> Unit
+) {
+    val reportingViewModel: ReportingViewModel = hiltViewModel()
+    val reportingSnapshot by reportingViewModel.reportSnapshot.collectAsStateWithLifecycle()
+    val lastPdfPath by reportingViewModel.lastReportPath.collectAsStateWithLifecycle()
+    val lastWordPath by reportingViewModel.lastWordReportPath.collectAsStateWithLifecycle()
+    val reportExporting by reportingViewModel.isExporting.collectAsStateWithLifecycle()
+
+    LaunchedEffect(showDialog, projectId) {
+        if (showDialog && !projectId.isNullOrBlank()) {
+            reportingViewModel.requestReportDraft(projectId)
+        } else {
+            reportingViewModel.cancelReportDraft()
+        }
+    }
+
+    LaunchedEffect(lastPdfPath) {
+        if (!lastPdfPath.isNullOrBlank()) {
+            workspaceViewModel.onReportExported(lastPdfPath!!)
+        }
+    }
+
+    LaunchedEffect(lastWordPath) {
+        if (!lastWordPath.isNullOrBlank()) {
+            workspaceViewModel.onReportExported(lastWordPath!!)
+        }
+    }
+
+    ReportPreviewDialog(
+        showDialog = showDialog,
+        onDismiss = onDismiss,
+        projectId = projectId ?: "",
+        selectedExportFormat = "PDF",
+        isExporting = reportExporting,
+        onUpdatePhotoOffset = reportingViewModel::updatePhotoOffset,
+        onConfirmExport = { format ->
+            if (format == "PDF") {
+                reportingViewModel.exportPdf()
+            } else {
+                reportingViewModel.exportWord()
+            }
+            onDismiss()
+        },
+        nodes = reportingSnapshot.nodes,
+        routes = reportingSnapshot.routes,
+        photos = reportingSnapshot.photos,
+        workVolumeRows = reportingSnapshot.workVolumeRows,
+        aiDraft = reportingSnapshot.aiDraft
+    )
 }
 
 private fun openExportedFile(context: android.content.Context, path: String) {

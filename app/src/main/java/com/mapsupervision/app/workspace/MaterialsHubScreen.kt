@@ -29,7 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.MaterialHandover
@@ -1735,7 +1736,7 @@ fun AddHandoverDialog(
                 OutlinedTextField(
                     value = receiver,
                     onValueChange = { receiver = it },
-                    label = { Text("NgÆ°á»i nháº­n") },
+                    label = { Text("Người nhận") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -1767,7 +1768,7 @@ fun AddHandoverDialog(
                         return@Button
                     }
                     if (receiver.isBlank()) {
-                        errorMessage = "Vui lÃ²ng nháº­p ngÆ°á»i nháº­n"
+                        errorMessage = "Vui lòng nhập người nhận"
                         return@Button
                     }
                     errorMessage = ""

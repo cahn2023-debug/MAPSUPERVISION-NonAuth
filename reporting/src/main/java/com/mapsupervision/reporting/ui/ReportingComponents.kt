@@ -64,6 +64,7 @@ import coil.compose.rememberAsyncImagePainter
 import com.mapsupervision.ai.core.ReportDraftResult
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.util.PhotoMatchEvaluation
+import com.mapsupervision.core.ui.theme.extendedColors
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -165,7 +166,7 @@ fun PhotoThumb(
 private fun MatchStatusBadge(evaluation: PhotoMatchEvaluation, modifier: Modifier = Modifier) {
     val isMatched = evaluation.isMatched
     val text = if (isMatched) "Khớp" else "Lệch"
-    val background = if (isMatched) Color(0xCC16A34A) else Color(0xCCDC2626)
+    val background = if (isMatched) MaterialTheme.extendedColors.success.copy(alpha = 0.8f) else MaterialTheme.extendedColors.danger.copy(alpha = 0.8f)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(999.dp))
@@ -296,12 +297,12 @@ fun RowScope.GridCell(
     alignment: Alignment = Alignment.CenterStart
 ) {
     val backgroundColor = when {
-        isTotal -> Color(0xFF1E293B)
+        isTotal -> MaterialTheme.extendedColors.panelBackgroundAlt
         else -> Color.Transparent
     }
     val textColor = when {
-        isTotal -> Color(0xFFF1F5F9)
-        else -> Color(0xFFCBD5E1)
+        isTotal -> MaterialTheme.colorScheme.onBackground
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val fontWeight = if (isTotal) FontWeight.Bold else FontWeight.Normal
     
@@ -335,7 +336,7 @@ fun RowScope.GridHeaderCell(
     Box(
         modifier = Modifier
             .weight(weight)
-            .background(Color(0xFF1E293B))
+            .background(MaterialTheme.extendedColors.panelBackgroundAlt)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 12.dp),
         contentAlignment = Alignment.CenterStart
@@ -346,7 +347,7 @@ fun RowScope.GridHeaderCell(
         ) {
             Text(
                 text = text,
-                color = if (isActive) Color(0xFFF5A623) else Color(0xFFF8FAFC),
+                color = if (isActive) MaterialTheme.extendedColors.warning else MaterialTheme.colorScheme.onBackground,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
@@ -354,7 +355,7 @@ fun RowScope.GridHeaderCell(
             if (isActive) {
                 Text(
                     text = if (isAscending) " ↑" else " ↓",
-                    color = Color(0xFFF5A623),
+                    color = MaterialTheme.extendedColors.warning,
                     fontSize = 10.sp
                 )
             }
@@ -376,28 +377,28 @@ fun MaterialReportTable(
             .then(modifier)
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF0F172A))
-            .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.extendedColors.panelBackground)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
     ) {
         // Table Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1E293B)),
+                .background(MaterialTheme.extendedColors.panelBackgroundAlt),
             verticalAlignment = Alignment.CenterVertically
         ) {
             GridHeaderCell("STT", 0.09f, SortKey.STT, sortBy, isAscending) { onHeaderClick(SortKey.STT) }
-            Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
             GridHeaderCell("Nội dung", 0.44f, SortKey.NAME, sortBy, isAscending) { onHeaderClick(SortKey.NAME) }
-            Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
             GridHeaderCell("Tổng thiết kế", 0.22f, SortKey.PLANNED, sortBy, isAscending) { onHeaderClick(SortKey.PLANNED) }
-            Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
             GridHeaderCell("Tổng thi công", 0.22f, SortKey.ACTUAL, sortBy, isAscending) { onHeaderClick(SortKey.ACTUAL) }
-            Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
             GridHeaderCell("%", 0.13f, SortKey.PERCENT, sortBy, isAscending) { onHeaderClick(SortKey.PERCENT) }
         }
         
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
 
         LazyColumn(
             modifier = Modifier
@@ -412,22 +413,22 @@ fun MaterialReportTable(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
+                        .background(if (row.isTotal) MaterialTheme.extendedColors.panelBackgroundAlt else if (index % 2 == 0) MaterialTheme.extendedColors.panelBackground else MaterialTheme.extendedColors.panelBackgroundAlt.copy(alpha = 0.2f)),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val sttText = if (row.isTotal) "" else (index + 1).toString()
                     GridCell(sttText, 0.09f, isTotal = row.isTotal, alignment = Alignment.Center)
-                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
                     GridCell(row.workName, 0.44f, isTotal = row.isTotal)
-                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
                     GridCell(row.totalPlannedQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
                     GridCell(row.totalActualQty.toInt().toString(), 0.22f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
-                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.width(1.dp).height(36.dp).background(MaterialTheme.colorScheme.outlineVariant))
                     GridCell("${row.completionPercent.toInt()}%", 0.13f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
                 }
                 if (!isLast) {
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 }
             }
         }
@@ -443,12 +444,12 @@ fun AiSummaryDetailTable(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFF1E293B)),
+                .background(MaterialTheme.extendedColors.panelBackgroundAlt),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AiSummaryDetailCell("Nội dung", 0.38f, isHeader = true)
@@ -458,7 +459,7 @@ fun AiSummaryDetailTable(
             AiSummaryDetailCell("%", 0.14f, isHeader = true, alignment = Alignment.CenterEnd)
         }
 
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
 
         LazyColumn(
             modifier = Modifier
@@ -472,7 +473,7 @@ fun AiSummaryDetailTable(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(if (row.isTotal) Color(0xFF1E293B) else if (index % 2 == 0) Color(0xFF0F172A) else Color(0xFF1E293B).copy(alpha = 0.2f)),
+                        .background(if (row.isTotal) MaterialTheme.extendedColors.panelBackgroundAlt else if (index % 2 == 0) MaterialTheme.extendedColors.panelBackground else MaterialTheme.extendedColors.panelBackgroundAlt.copy(alpha = 0.2f)),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     AiSummaryDetailCell(row.workName, 0.38f, isTotal = row.isTotal)
@@ -487,7 +488,7 @@ fun AiSummaryDetailTable(
                     AiSummaryDetailCell("${row.completionPercent.toInt()}%", 0.14f, isTotal = row.isTotal, alignment = Alignment.CenterEnd)
                 }
                 if (index != rows.lastIndex) {
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 }
             }
         }
@@ -503,9 +504,9 @@ fun RowScope.AiSummaryDetailCell(
     alignment: Alignment = Alignment.CenterStart
 ) {
     val textColor = when {
-        isHeader -> Color(0xFFF8FAFC)
-        isTotal -> Color(0xFFF1F5F9)
-        else -> Color(0xFFCBD5E1)
+        isHeader -> MaterialTheme.colorScheme.onBackground
+        isTotal -> MaterialTheme.colorScheme.onBackground
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Box(
         modifier = Modifier
@@ -527,11 +528,11 @@ fun RowScope.AiSummaryDetailCell(
 @Composable
 fun AiSummaryCard(draft: ReportDraftResult, rows: List<MaterialReportRow>) {
     ElevatedCard(
-        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF0F172A)),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.extendedColors.panelBackground),
         shape = MaterialTheme.shapes.large,
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, Color(0xFF334155), MaterialTheme.shapes.large)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.large)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -544,13 +545,13 @@ fun AiSummaryCard(draft: ReportDraftResult, rows: List<MaterialReportRow>) {
                 Icon(
                     Icons.Default.Info,
                     contentDescription = null,
-                    tint = Color(0xFFF5A623),
+                    tint = MaterialTheme.extendedColors.warning,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
                     "BẢNG TÓM TẮT TỔNG HỢP (AI)",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFFF8FAFC)
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             }
 
@@ -563,52 +564,52 @@ fun AiSummaryCard(draft: ReportDraftResult, rows: List<MaterialReportRow>) {
                 Text(
                     "I. TÌNH HÌNH NÚT GIAO, TUYẾN CÁP & NHÀ THẦU",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFF3B82F6)
+                    color = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = draft.executiveSummary,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFCBD5E1),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
                 )
             }
             
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
             
             // Section 2: Khó khăn vướng mắc
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     "II. KHÓ KHĂN, VƯỚNG MẮC THỰC ĐỊA",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFFEF4444)
+                    color = MaterialTheme.extendedColors.danger
                 )
                 Text(
                     text = draft.riskSection,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFCBD5E1),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
                 )
             }
             
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF334155)))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
             
             // Section 3: Kế hoạch thực hiện
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     "III. KẾ HOẠCH THỰC HIỆN & KHUYẾN NGHỊ",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                    color = Color(0xFF10B981)
+                    color = MaterialTheme.extendedColors.success
                 )
                 for (action in draft.recommendedActions) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text("+", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                        Text("+", color = MaterialTheme.extendedColors.success, fontWeight = FontWeight.Bold)
                         Text(
                             text = action,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFCBD5E1),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
                         )
                     }
@@ -706,24 +707,23 @@ fun SummaryTextBlock(title: String, content: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            color = Color(0xFFF8FAFC),
+            color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold
         )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E293B))
-                .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+                .background(MaterialTheme.extendedColors.panelBackgroundAlt)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                 .padding(12.dp)
         ) {
             Text(
                 text = content,
-                color = Color(0xFFCBD5E1),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 lineHeight = 19.sp
             )
         }
     }
 }
-

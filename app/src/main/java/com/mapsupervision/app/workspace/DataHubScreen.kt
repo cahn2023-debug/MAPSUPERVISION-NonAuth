@@ -46,7 +46,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.ImportedFile
@@ -92,6 +93,7 @@ fun DataHubScreen(
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
     onDeleteImportedFile: (String) -> Unit,
+    onRepairImportedGeometry: (ImportedFile) -> Unit,
     photoFilterNodeCode: String?,
     onClearPhotoFilter: () -> Unit,
     onLoadNotesAndTasks: (String) -> Unit,
@@ -343,6 +345,7 @@ fun DataHubScreen(
                 onOpenRouteOnMap = onOpenRouteOnMap,
                 onShowNotesAndTasks = onShowNotesAndTasks,
                 onDismissNotesAndTasks = onDismissNotesAndTasks,
+                onRepairImportedGeometry = onRepairImportedGeometry,
                 onLoadNotesAndTasks = onLoadNotesAndTasks,
                 onAddNote = onAddNote,
                 onDeleteNote = onDeleteNote,
@@ -446,6 +449,7 @@ private fun DesignTabContent(
     onUpdateWorkVolumeProgress: (String, String, String) -> Unit,
     onOpenNodeOnMap: (GisNode) -> Unit,
     onOpenRouteOnMap: (GisRoute) -> Unit,
+    onRepairImportedGeometry: (ImportedFile) -> Unit,
     onShowNotesAndTasks: (String) -> Unit,
     onDismissNotesAndTasks: () -> Unit,
     onLoadNotesAndTasks: (String) -> Unit,
@@ -665,6 +669,7 @@ private fun DesignTabContent(
                 val isDragged = draggedFile?.id == file.id
                 val isSelected = selectedFile?.id == file.id
                 val isCombineTarget = draggedFile != null && draggedFile?.id != file.id
+                val canRepairGeometry = file.fileType.lowercase(java.util.Locale.US) in setOf("kml", "kmz", "geojson", "json")
 
                 Column {
                     GlassmorphicCard(
@@ -772,6 +777,21 @@ private fun DesignTabContent(
                             modifier = Modifier.width(200.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            if (canRepairGeometry) {
+                                IconButton(
+                                    onClick = {
+                                        selectedFile = null
+                                        onRepairImportedGeometry(file)
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        containerColor = outlineColor,
+                                        contentColor = orangeColor
+                                    )
+                                ) {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = "Nhập lại geometry", modifier = Modifier.size(16.dp))
+                                }
+                            }
                             // Nút Xóa
                             Button(
                                 onClick = {

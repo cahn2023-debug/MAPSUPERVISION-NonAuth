@@ -2,8 +2,10 @@ package com.mapsupervision.data.repository
 
 import com.mapsupervision.core.error.DatabaseException
 import com.mapsupervision.core.result.AppResult
+import com.mapsupervision.data.db.MapSupervisionDatabase
 import com.mapsupervision.data.db.ProjectScopedDatabaseProvider
 import com.mapsupervision.data.db.dao.DailyLogDao
+import com.mapsupervision.data.db.dao.DailyLogLineDao
 import com.mapsupervision.data.db.dao.DailyLogNodeDao
 import com.mapsupervision.data.db.dao.DailyLogPhotoDao
 import com.mapsupervision.data.db.dao.WorkVolumeProgressDao
@@ -14,6 +16,7 @@ import com.mapsupervision.data.db.dao.SitePhotoProjection
 import com.mapsupervision.data.db.dao.MaterialProgressProjection
 import com.mapsupervision.data.db.dao.WorkPlanDao
 import com.mapsupervision.data.db.entity.DailyLogEntity
+import com.mapsupervision.data.db.entity.DailyLogLineEntity
 import com.mapsupervision.data.db.entity.DailyLogNodeEntity
 import com.mapsupervision.data.db.entity.DailyLogPhotoEntity
 import com.mapsupervision.data.db.entity.MaterialProgressEntity
@@ -27,6 +30,7 @@ import com.mapsupervision.domain.model.resolvedAppliedNodeIds
 import com.mapsupervision.domain.model.resolvedLinkedPhotoIds
 import com.mapsupervision.domain.model.resolvedTagCodes
 import com.mapsupervision.domain.model.DailyLog
+import com.mapsupervision.domain.model.DailyLogLine
 import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.SitePhoto
@@ -40,6 +44,7 @@ import com.mapsupervision.domain.repository.WorkPlanRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -295,38 +300,62 @@ class PhotoRepositoryImpl @Inject constructor(
 
 class DailyLogRepositoryImpl @Inject constructor(
     private val dao: DailyLogDao,
-    private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider
+    private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider,
+    private val sharedDatabase: MapSupervisionDatabase
 ) : DailyLogRepository {
     override suspend fun add(log: DailyLog): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        val database = scopedDatabase(log.projectId)
+        val projectDatabase = scopedDatabase(log.projectId)
         val normalized = log.normalizeForStorage()
-        val dailyLogDao = database?.dailyLogDao() ?: dao
-        dailyLogDao.upsert(normalized.toEntity())
-        database?.dailyLogNodeDao()?.deleteForLog(log.projectId, log.id)
-        if (database != null && normalized.resolvedAppliedNodeIds.isNotEmpty()) {
-            database.dailyLogNodeDao().upsertAll(normalized.resolvedAppliedNodeIds.mapIndexed { index, nodeId ->
-                DailyLogNodeEntity(
-                    id = "${log.id}:node:$index:$nodeId",
-                    projectId = log.projectId,
-                    dailyLogId = log.id,
-                    nodeId = nodeId,
-                    nodeCodeSnapshot = nodeId,
-                    createdAtEpochMs = normalized.updatedAtEpochMs
-                )
-            })
+        val lineEntities = (normalized.lines.ifEmpty { log.lines }).map { DailyLogLineEntity.fromDomain(it) }
+        val nodeEntities = normalized.resolvedAppliedNodeIds.mapIndexed { index, nodeId ->
+            DailyLogNodeEntity(
+                id = "${log.id}:node:$index:$nodeId",
+                projectId = log.projectId,
+                dailyLogId = log.id,
+                nodeId = nodeId,
+                nodeCodeSnapshot = nodeId,
+                createdAtEpochMs = normalized.updatedAtEpochMs
+            )
         }
-        database?.dailyLogPhotoDao()?.deleteForLog(log.projectId, log.id)
-        if (database != null && normalized.resolvedLinkedPhotoIds.isNotEmpty()) {
-            database.dailyLogPhotoDao().upsertAll(normalized.resolvedLinkedPhotoIds.mapIndexed { index, photoId ->
-                DailyLogPhotoEntity(
-                    id = "${log.id}:photo:$index:$photoId",
-                    projectId = log.projectId,
-                    dailyLogId = log.id,
-                    photoId = photoId,
-                    createdAtEpochMs = normalized.updatedAtEpochMs
-                )
-            })
+        val photoEntities = normalized.resolvedLinkedPhotoIds.mapIndexed { index, photoId ->
+            DailyLogPhotoEntity(
+                id = "${log.id}:photo:$index:$photoId",
+                projectId = log.projectId,
+                dailyLogId = log.id,
+                photoId = photoId,
+                createdAtEpochMs = normalized.updatedAtEpochMs
+            )
         }
+        writeToSharedAndScoped(
+            projectDatabase = projectDatabase,
+            sharedWrite = {
+                dao.upsert(normalized.toEntity())
+                writeDailyLogChildren(
+                    dailyLogLineDao = sharedDatabase.dailyLogLineDao(),
+                    dailyLogNodeDao = sharedDatabase.dailyLogNodeDao(),
+                    dailyLogPhotoDao = sharedDatabase.dailyLogPhotoDao(),
+                    projectId = log.projectId,
+                    logId = log.id,
+                    lineEntities = lineEntities,
+                    nodeEntities = nodeEntities,
+                    photoEntities = photoEntities
+                )
+            },
+            scopedWrite = {
+                val scopedDailyLogDao = projectDatabase?.dailyLogDao() ?: return@writeToSharedAndScoped
+                scopedDailyLogDao.upsert(normalized.toEntity())
+                writeDailyLogChildren(
+                    dailyLogLineDao = projectDatabase.dailyLogLineDao(),
+                    dailyLogNodeDao = projectDatabase.dailyLogNodeDao(),
+                    dailyLogPhotoDao = projectDatabase.dailyLogPhotoDao(),
+                    projectId = log.projectId,
+                    logId = log.id,
+                    lineEntities = lineEntities,
+                    nodeEntities = nodeEntities,
+                    photoEntities = photoEntities
+                )
+            }
+        )
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to add daily log", it)) }
@@ -363,6 +392,10 @@ class DailyLogRepositoryImpl @Inject constructor(
             ?.byLogIds(projectId, rows.map { it.id })
             ?.groupBy { it.dailyLogId }
             .orEmpty()
+        val linesByLogId = resolvedDatabase?.dailyLogLineDao()
+            ?.byLogIds(projectId, rows.map { it.id })
+            ?.groupBy { it.dailyLogId }
+            .orEmpty()
         val nodeDao = resolvedDatabase?.gisNodeDao()
         val routeDao = resolvedDatabase?.gisRouteDao()
         val nodeCodeMap = nodeDao?.byProject(projectId)?.associate { it.id to it.code }.orEmpty()
@@ -376,7 +409,15 @@ class DailyLogRepositoryImpl @Inject constructor(
                 photoIds = photoIds,
                 nodeCode = row.nodeId?.let { nodeCodeMap[it] },
                 routeCode = row.routeId?.let { routeCodeMap[it] },
-                resolvedNodeCodes = resolvedNodeCodes
+                plannedNodeCode = row.plannedNodeId?.let { nodeCodeMap[it] },
+                plannedRouteCode = row.plannedRouteId?.let { routeCodeMap[it] },
+                resolvedNodeCodes = resolvedNodeCodes,
+                lines = linesByLogId[row.id].orEmpty().map { line ->
+                    line.toDomain(
+                        nodeCode = line.nodeId?.let { nodeCodeMap[it] },
+                        routeCode = line.routeId?.let { routeCodeMap[it] }
+                    )
+                }
             )
         }
     }
@@ -390,6 +431,14 @@ class DailyLogRepositoryImpl @Inject constructor(
             linkedPhotoIdsCsv = joinCsvList(normalizedPhotoIds),
             appliedNodeIds = normalizedNodeIds,
             linkedPhotoIds = normalizedPhotoIds,
+            lines = if (lines.isNotEmpty()) {
+                lines.map { line ->
+                    val normalizedLineUpdatedAt = if (line.updatedAtEpochMs == 0L) normalizedUpdatedAt else line.updatedAtEpochMs
+                    line.copy(updatedAtEpochMs = normalizedLineUpdatedAt)
+                }
+            } else {
+                emptyList()
+            },
             updatedAtEpochMs = normalizedUpdatedAt
         )
     }
@@ -408,9 +457,15 @@ class DailyLogRepositoryImpl @Inject constructor(
         unit = unit,
         categoryName = categoryName,
         batchGroupId = batchGroupId,
+        linkedWorkPlanId = linkedWorkPlanId,
+        plannedWorkName = plannedWorkName,
+        plannedQuantity = plannedQuantity,
+        plannedUnit = plannedUnit,
         photoMatchOffsetMinutes = photoMatchOffsetMinutes,
         nodeId = nodeId,
         routeId = routeId,
+        plannedNodeId = plannedNodeId,
+        plannedRouteId = plannedRouteId,
         updatedAtEpochMs = updatedAtEpochMs,
         isDeleted = isDeleted,
         deletedAtEpochMs = deletedAtEpochMs
@@ -421,7 +476,10 @@ class DailyLogRepositoryImpl @Inject constructor(
         photoIds: List<String>,
         nodeCode: String?,
         routeCode: String?,
-        resolvedNodeCodes: List<String>
+        plannedNodeCode: String?,
+        plannedRouteCode: String?,
+        resolvedNodeCodes: List<String>,
+        lines: List<DailyLogLine>
     ) = DailyLog(
         id = id,
         projectId = projectId,
@@ -438,6 +496,12 @@ class DailyLogRepositoryImpl @Inject constructor(
         unit = unit,
         categoryName = categoryName,
         batchGroupId = batchGroupId,
+        linkedWorkPlanId = linkedWorkPlanId,
+        plannedWorkName = plannedWorkName,
+        plannedQuantity = plannedQuantity,
+        plannedUnit = plannedUnit,
+        plannedNodeCode = plannedNodeCode,
+        plannedRouteCode = plannedRouteCode,
         appliedNodeCodesCsv = joinCsvList(resolvedNodeCodes),
         linkedPhotoIdsCsv = joinCsvList(photoIds),
         appliedNodeIds = nodeIds,
@@ -445,6 +509,9 @@ class DailyLogRepositoryImpl @Inject constructor(
         photoMatchOffsetMinutes = photoMatchOffsetMinutes,
         nodeId = nodeId,
         routeId = routeId,
+        plannedNodeId = plannedNodeId,
+        plannedRouteId = plannedRouteId,
+        lines = lines,
         updatedAtEpochMs = updatedAtEpochMs,
         isDeleted = isDeleted,
         deletedAtEpochMs = deletedAtEpochMs
@@ -452,6 +519,50 @@ class DailyLogRepositoryImpl @Inject constructor(
 
     private suspend fun dao(projectId: String): DailyLogDao =
         scopedDatabase(projectId)?.dailyLogDao() ?: dao
+
+    private suspend fun writeDailyLogChildren(
+        dailyLogLineDao: DailyLogLineDao?,
+        dailyLogNodeDao: DailyLogNodeDao?,
+        dailyLogPhotoDao: DailyLogPhotoDao?,
+        projectId: String,
+        logId: String,
+        lineEntities: List<DailyLogLineEntity>,
+        nodeEntities: List<DailyLogNodeEntity>,
+        photoEntities: List<DailyLogPhotoEntity>
+    ) {
+        dailyLogLineDao?.deleteForLog(projectId, logId)
+        if (dailyLogLineDao != null && lineEntities.isNotEmpty()) {
+            dailyLogLineDao.upsertAll(lineEntities)
+        }
+        dailyLogNodeDao?.deleteForLog(projectId, logId)
+        if (dailyLogNodeDao != null && nodeEntities.isNotEmpty()) {
+            dailyLogNodeDao.upsertAll(nodeEntities)
+        }
+        dailyLogPhotoDao?.deleteForLog(projectId, logId)
+        if (dailyLogPhotoDao != null && photoEntities.isNotEmpty()) {
+            dailyLogPhotoDao.upsertAll(photoEntities)
+        }
+    }
+
+    private suspend fun writeToSharedAndScoped(
+        projectDatabase: com.mapsupervision.data.db.MapSupervisionDatabase?,
+        sharedWrite: suspend () -> Unit,
+        scopedWrite: suspend () -> Unit
+    ) {
+        val failures = mutableListOf<Throwable>()
+        var success = false
+        runCatching { sharedWrite() }
+            .onSuccess { success = true }
+            .onFailure { failures += it }
+        if (projectDatabase != null) {
+            runCatching { scopedWrite() }
+                .onSuccess { success = true }
+                .onFailure { failures += it }
+        }
+        if (!success && failures.isNotEmpty()) {
+            throw failures.first()
+        }
+    }
 }
 
 class WorkVolumeProgressRepositoryImpl @Inject constructor(
@@ -519,24 +630,58 @@ class WorkPlanRepositoryImpl @Inject constructor(
     private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider
 ) : WorkPlanRepository {
     override suspend fun add(workPlan: WorkPlan): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        dao(workPlan.projectId).insert(WorkPlanEntity.fromDomain(workPlan))
+        val entity = WorkPlanEntity.fromDomain(workPlan)
+        val projectDatabase = projectScopedDatabaseProvider.databaseFor(workPlan.projectId)
+        writeToSharedAndScoped(
+            sharedWrite = { dao.insert(entity) },
+            scopedWrite = { projectDatabase?.workPlanDao()?.insert(entity) }
+        )
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to add work plan", it)) }
     ) }
 
     override suspend fun byProject(projectId: String): AppResult<List<WorkPlan>> = withContext(Dispatchers.IO) { runCatching {
-        dao(projectId).byProject(projectId).map { it.toDomain() }
+        val rows = dao(projectId).byProject(projectId)
+        val resolvedRows = if (rows.isEmpty()) dao.byProject(projectId) else rows
+        resolvedRows.map { it.toDomain() }
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list work plans", it)) }
     ) }
 
     override fun observeByProject(projectId: String): Flow<List<WorkPlan>> = flow {
-        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+        val scopedDao = dao(projectId)
+        emitAll(
+            combine(
+                scopedDao.observeByProject(projectId),
+                dao.observeByProject(projectId)
+            ) { scopedRows, sharedRows ->
+                val resolvedRows = if (scopedRows.isEmpty()) sharedRows else scopedRows
+                resolvedRows.map { it.toDomain() }
+            }.distinctUntilChanged()
+        )
     }
 
     private suspend fun dao(projectId: String): WorkPlanDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.workPlanDao() ?: dao
+
+    private suspend fun writeToSharedAndScoped(
+        sharedWrite: suspend () -> Unit,
+        scopedWrite: suspend () -> Unit?
+    ) {
+        val failures = mutableListOf<Throwable>()
+        var success = false
+        runCatching { sharedWrite() }
+            .onSuccess { success = true }
+            .onFailure { failures += it }
+        runCatching { scopedWrite() }
+            .onSuccess { if (it != null) success = true }
+            .onFailure { failures += it }
+
+        if (!success && failures.isNotEmpty()) {
+            throw failures.first()
+        }
+    }
 }
 

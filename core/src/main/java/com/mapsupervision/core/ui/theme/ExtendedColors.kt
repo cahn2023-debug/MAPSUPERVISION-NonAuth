@@ -1,4 +1,4 @@
-package com.mapsupervision.app.ui.theme
+package com.mapsupervision.core.ui.theme
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable

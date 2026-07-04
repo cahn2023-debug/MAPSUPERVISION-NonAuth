@@ -86,4 +86,36 @@ class DailyLogRepositoryErrorHandlingTest {
         assertEquals("", log.batchGroupId)
         assertEquals("", log.appliedNodeCodesCsv)
     }
+
+    @Test
+    fun `DailyLog is invalid when both nodeCode and routeCode are null`() {
+        val log = DailyLog(
+            id = "1",
+            projectId = "p1",
+            workItem = "Thi cong",
+            manpower = 3,
+            note = "",
+            createdAtEpochMs = 1_000L,
+            nodeCode = null,
+            routeCode = null
+        )
+        val isValid = !log.nodeCode.isNullOrBlank() || !log.routeCode.isNullOrBlank()
+        assertTrue(!isValid)
+    }
+
+    @Test
+    fun `DailyLog is valid when nodeCode is present`() {
+        val log = DailyLog(
+            id = "1",
+            projectId = "p1",
+            workItem = "Thi cong",
+            manpower = 3,
+            note = "",
+            createdAtEpochMs = 1_000L,
+            nodeCode = "N1",
+            routeCode = null
+        )
+        val isValid = !log.nodeCode.isNullOrBlank() || !log.routeCode.isNullOrBlank()
+        assertTrue(isValid)
+    }
 }

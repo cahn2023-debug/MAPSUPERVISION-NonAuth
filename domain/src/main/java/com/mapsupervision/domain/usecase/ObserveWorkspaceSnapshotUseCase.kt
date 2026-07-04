@@ -7,6 +7,7 @@ import com.mapsupervision.domain.repository.ImportedFileRepository
 import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
+import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
 import com.mapsupervision.domain.repository.MaterialHandoverRepository
 import com.mapsupervision.domain.repository.MaterialDeclarationRepository
@@ -31,7 +32,8 @@ class ObserveWorkspaceSnapshotUseCase @Inject constructor(
         photoRepository: PhotoRepository,
         materialHandoverRepository: MaterialHandoverRepository,
         materialDeclarationRepository: MaterialDeclarationRepository,
-        workPlanRepository: com.mapsupervision.domain.repository.WorkPlanRepository
+        workPlanRepository: com.mapsupervision.domain.repository.WorkPlanRepository,
+        taskRepository: TaskRepository
     ) : this(
         observeWorkspaceGeometrySnapshot = ObserveWorkspaceGeometrySnapshotUseCase(
             importedFileRepository = importedFileRepository,
@@ -49,7 +51,8 @@ class ObserveWorkspaceSnapshotUseCase @Inject constructor(
         observeWorkspacePlanningSnapshot = ObserveWorkspacePlanningSnapshotUseCase(
             materialHandoverRepository = materialHandoverRepository,
             materialDeclarationRepository = materialDeclarationRepository,
-            workPlanRepository = workPlanRepository
+            workPlanRepository = workPlanRepository,
+            taskRepository = taskRepository
         )
     )
 
@@ -72,7 +75,8 @@ class ObserveWorkspaceSnapshotUseCase @Inject constructor(
                 sitePhotos = media.sitePhotos,
                 materialHandovers = planning.materialHandovers,
                 materialDeclarations = planning.materialDeclarations,
-                workPlans = planning.workPlans
+                workPlans = planning.workPlans,
+                projectTasks = planning.projectTasks
             )
         }.distinctUntilChanged()
     }

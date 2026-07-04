@@ -22,7 +22,9 @@
 
     <application
         android:name=".MapSupervisionApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -66,7 +68,7 @@
         <receiver
             android:name=".widget.DiaryWidgetReceiver"
             android:exported="true"
-            android:label="Nhật ký Lịch tháng">
+            android:label="@string/widget_title">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

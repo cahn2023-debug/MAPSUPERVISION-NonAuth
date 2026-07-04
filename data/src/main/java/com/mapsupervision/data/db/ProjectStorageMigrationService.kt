@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import com.mapsupervision.core.logging.AppLogger
 import com.mapsupervision.data.db.entity.DailyLogEntity
+import com.mapsupervision.data.db.entity.DailyLogLineEntity
 import com.mapsupervision.data.db.entity.GisNodeEntity
 import com.mapsupervision.data.db.entity.GisRouteEntity
 import com.mapsupervision.data.db.entity.ImportedFileEntity
@@ -50,6 +51,7 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
         "node_progress",
         "work_volume_progress",
         "daily_log",
+        "daily_log_line",
         "work_categories",
         "work_plan",
         "note",
@@ -355,20 +357,61 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
                 corePayload?.let { payload ->
                     if (payload.importedFiles.isNotEmpty()) scopedDatabase.importedFileDao().upsertAll(payload.importedFiles)
                     if (payload.nodes.isNotEmpty()) scopedDatabase.gisNodeDao().upsertAll(payload.nodes)
-                    if (payload.routes.isNotEmpty()) scopedDatabase.gisRouteDao().upsertAll(payload.routes)
-                    for (entity in payload.nodeProgress) scopedDatabase.nodeProgressDao().upsert(entity)
+                    val lookupBeforeRoutes = buildProjectBridgeLookup(
+                        sourceDatabase = sharedDatabase,
+                        targetDatabase = scopedDatabase,
+                        projectId = project.id
+                    )
+                    if (payload.routes.isNotEmpty()) {
+                        scopedDatabase.gisRouteDao().upsertAll(payload.routes.map { it.normalizeForBridge(lookupBeforeRoutes) })
+                    }
+                    val lookupAfterRoutes = buildProjectBridgeLookup(
+                        sourceDatabase = sharedDatabase,
+                        targetDatabase = scopedDatabase,
+                        projectId = project.id
+                    )
+                    for (entity in payload.nodeProgress.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                        scopedDatabase.nodeProgressDao().upsert(entity)
+                    }
                     for (entity in payload.workVolumeProgress) scopedDatabase.workVolumeProgressDao().upsert(entity)
-                    for (entity in payload.dailyLogs) scopedDatabase.dailyLogDao().upsert(entity)
+                    for (entity in payload.dailyLogs.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                        scopedDatabase.dailyLogDao().upsert(entity)
+                    }
+                    if (payload.dailyLogLines.isNotEmpty()) {
+                        scopedDatabase.dailyLogLineDao().upsertAll(payload.dailyLogLines.map { it.normalizeForBridge(lookupAfterRoutes) })
+                    }
                     for (entity in payload.workCategories) scopedDatabase.workCategoryDao().upsert(entity)
-                    for (entity in payload.workPlans) scopedDatabase.workPlanDao().insert(entity)
+                    for (entity in payload.workPlans.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                        scopedDatabase.workPlanDao().insert(entity)
+                    }
                 }
                 auxPayload?.let { payload ->
-                    for (entity in payload.notes) scopedDatabase.noteDao().insert(entity)
-                    for (entity in payload.tasks) scopedDatabase.taskDao().upsert(entity)
-                    for (entity in payload.sitePhotos) scopedDatabase.sitePhotoDao().upsert(entity)
+                    val auxLookup = buildProjectBridgeLookup(
+                        sourceDatabase = sharedDatabase,
+                        targetDatabase = scopedDatabase,
+                        projectId = project.id
+                    )
+                    for (entity in payload.notes.map { it.normalizeForBridge(auxLookup) }) {
+                        scopedDatabase.noteDao().insert(entity)
+                    }
+                    for (entity in payload.tasks.map { it.normalizeForBridge(auxLookup) }) {
+                        scopedDatabase.taskDao().upsert(entity)
+                    }
+                    for (entity in payload.sitePhotos.map { it.normalizeForBridge(auxLookup) }) {
+                        scopedDatabase.sitePhotoDao().upsert(entity)
+                    }
                     for (entity in payload.reportDrafts) scopedDatabase.reportDraftDao().upsert(entity)
-                    for (entity in payload.materialDeclarations) scopedDatabase.materialDeclarationDao().insert(entity)
-                    for (entity in payload.materialHandovers) scopedDatabase.materialHandoverDao().upsert(entity)
+                    for (entity in payload.materialDeclarations.map { it.normalizeForBridge(auxLookup) }) {
+                        scopedDatabase.materialDeclarationDao().insert(entity)
+                    }
+                    val materialLookup = buildProjectBridgeLookup(
+                        sourceDatabase = sharedDatabase,
+                        targetDatabase = scopedDatabase,
+                        projectId = project.id
+                    )
+                    for (entity in payload.materialHandovers.map { it.normalizeForBridge(materialLookup) }) {
+                        scopedDatabase.materialHandoverDao().upsert(entity)
+                    }
                 }
             }
         } finally {
@@ -420,6 +463,7 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
         val nodeProgress = database.nodeProgressDao().byProject(projectId)
         val workVolumeProgress = database.workVolumeProgressDao().byProject(projectId)
         val dailyLogs = database.dailyLogDao().byProject(projectId)
+        val dailyLogLines = database.dailyLogLineDao().byLogIds(projectId, dailyLogs.map { it.id })
         val workCategories = database.workCategoryDao().byProject(projectId)
         val workPlans = database.workPlanDao().byProject(projectId)
         if (
@@ -429,6 +473,7 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
             nodeProgress.isEmpty() &&
             workVolumeProgress.isEmpty() &&
             dailyLogs.isEmpty() &&
+            dailyLogLines.isEmpty() &&
             workCategories.isEmpty() &&
             workPlans.isEmpty()
         ) {
@@ -441,6 +486,7 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
             nodeProgress = nodeProgress,
             workVolumeProgress = workVolumeProgress,
             dailyLogs = dailyLogs,
+            dailyLogLines = dailyLogLines,
             workCategories = workCategories,
             workPlans = workPlans
         )
@@ -509,6 +555,7 @@ class ProjectStorageMigrationServiceImpl @Inject constructor(
         val nodeProgress: List<NodeProgressEntity>,
         val workVolumeProgress: List<MaterialProgressEntity>,
         val dailyLogs: List<DailyLogEntity>,
+        val dailyLogLines: List<DailyLogLineEntity>,
         val workCategories: List<WorkCategoryEntity>,
         val workPlans: List<WorkPlanEntity>
     )

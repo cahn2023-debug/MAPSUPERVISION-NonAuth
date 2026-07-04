@@ -101,10 +101,11 @@ fun mergeAndProcessLines(
                 }
             }
 
-            if (mergedPoints.size > 1) {
+            val normalizedLine = normalizeGeometryLine(mergedPoints)
+            if (normalizedLine.points.size > 1) {
                 var routeLength = 0.0
-                for (pointIndex in 1 until mergedPoints.size) {
-                    val dist = haversineMeters(mergedPoints[pointIndex], mergedPoints[pointIndex - 1])
+                for (pointIndex in 1 until normalizedLine.points.size) {
+                    val dist = haversineMeters(normalizedLine.points[pointIndex], normalizedLine.points[pointIndex - 1])
                     routeLength += dist
                     totalRouteLengthMeters += dist
                 }
@@ -139,7 +140,7 @@ fun mergeAndProcessLines(
                     contractor = firstLine.contractor,
                     startNodeCode = "",
                     endNodeCode = "",
-                    points = mergedPoints,
+                    points = normalizedLine.points,
                     designLength = designLength
                 )
             }
@@ -308,14 +309,15 @@ internal fun parseKmlContent(
     }
 
     val totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, projectId, mapping, nodes, routes, base)
+    val displayNodes = filterNodesMatchingRouteVertices(nodes, routes)
 
     val segmentCount = routes.size
-    val summary = if (nodes.isEmpty() && routes.isEmpty()) {
+    val summary = if (displayNodes.isEmpty() && routes.isEmpty()) {
         "KML parsed: ${placemarkNodes.size} placemarks, ${coordinateNodes.size} coordinate blocks; valid file but no supported geometry found"
     } else {
-        "KML parsed: ${placemarkNodes.size} placemarks, segments=$segmentCount, ${nodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
+        "KML parsed: ${placemarkNodes.size} placemarks, segments=$segmentCount, ${displayNodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
     }
-    return ParsedImportResult(summary = summary, nodes = nodes, routes = routes, routeLengthMeters = totalRouteLengthMeters)
+    return ParsedImportResult(summary = summary, nodes = displayNodes, routes = routes, routeLengthMeters = totalRouteLengthMeters)
 }
 
 internal fun parseKmzContent(
@@ -359,16 +361,17 @@ internal fun parseKmzContent(
             fileSummaries += "${entry.name}(${parsed.nodes.size}n/${parsed.routes.size}r)"
         }
 
+        val displayNodes = filterNodesMatchingRouteVertices(allNodes, allRoutes)
         return ParsedImportResult(
             summary = buildString {
                 append("KMZ parsed: ${kmlEntries.size} KML file(s) [")
                 append(fileSummaries.joinToString("; "))
                 append("]; ")
-                append("${allNodes.size} nodes, ${allRoutes.size} routes, routeLength=")
+                append("${displayNodes.size} nodes, ${allRoutes.size} routes, routeLength=")
                 append("%.2f".format(Locale.US, totalRouteLengthMeters))
                 append("m")
             },
-            nodes = allNodes,
+            nodes = displayNodes,
             routes = allRoutes,
             routeLengthMeters = totalRouteLengthMeters
         )
@@ -465,11 +468,8 @@ fun parseKmlCoordinates(text: String): List<Pair<Double, Double>> {
     return result
 }
 
-fun parseKmlCoordinatePair(p1: Double, p2: Double): Pair<Double, Double>? {
-    if (p2 in -90.0..90.0 && p1 in -180.0..180.0) return p2 to p1
-    if (p1 in -90.0..90.0 && p2 in -180.0..180.0) return p1 to p2
-    return null
-}
+fun parseKmlCoordinatePair(p1: Double, p2: Double): Pair<Double, Double>? =
+    normalizeKmlCoordinatePair(longitude = p1, latitude = p2)
 
 fun parseExtendedData(placemark: org.w3c.dom.Node): Map<String, String> {
     val result = mutableMapOf<String, String>()
@@ -660,7 +660,7 @@ internal fun parseKmlContentStreaming(
                     "simpledata" -> currentSimpleDataName = parser.getAttributeValue(null, "name")?.trim()
                 }
             }
-            org.xmlpull.v1.XmlPullParser.TEXT -> pendingText = parser.text.orEmpty()
+            org.xmlpull.v1.XmlPullParser.TEXT -> pendingText += parser.text.orEmpty()
             org.xmlpull.v1.XmlPullParser.END_TAG -> {
                 val tag = localTag(parser.name)
                 val text = pendingText.trim()
@@ -703,14 +703,15 @@ internal fun parseKmlContentStreaming(
     }
 
     totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, projectId, mapping, nodes, routes, base)
+    val displayNodes = filterNodesMatchingRouteVertices(nodes, routes)
 
     val segmentCount = routes.size
-    val summary = if (nodes.isEmpty() && routes.isEmpty()) {
+    val summary = if (displayNodes.isEmpty() && routes.isEmpty()) {
         "KML parsed: $placemarkCount placemarks, $coordinateBlocks coordinate blocks; valid file but no supported geometry found"
     } else {
-        "KML parsed: $placemarkCount placemarks, $geometryBlockCount geometry blocks, segments=$segmentCount, ${nodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
+        "KML parsed: $placemarkCount placemarks, $geometryBlockCount geometry blocks, segments=$segmentCount, ${displayNodes.size} nodes, ${routes.size} edges, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m"
     }
-    return ParsedImportResult(summary = summary, nodes = nodes, routes = routes, routeLengthMeters = totalRouteLengthMeters)
+    return ParsedImportResult(summary = summary, nodes = displayNodes, routes = routes, routeLengthMeters = totalRouteLengthMeters)
 }
 
 private data class StreamingPlacemark(

@@ -65,7 +65,6 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.13.1")
     // AI
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
     
@@ -75,7 +74,6 @@ dependencies {
     
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.17.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.5.0")
     implementation("com.google.mediapipe:tasks-text:0.10.32")
 

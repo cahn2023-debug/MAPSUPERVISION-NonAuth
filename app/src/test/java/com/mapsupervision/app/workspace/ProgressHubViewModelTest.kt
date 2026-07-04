@@ -65,6 +65,8 @@ class ProgressHubViewModelTest {
         assertEquals("", state.selectedCategoryName)
         assertEquals("", state.unitInput)
         assertEquals("", state.volumeInput)
+        assertEquals(1, state.actualLines.size)
+        assertNull(state.selectedPlanForLogId)
         assertEquals("5", state.manpowerInput)
         assertEquals("", state.logFormError)
     }
@@ -112,6 +114,68 @@ class ProgressHubViewModelTest {
         assertEquals(false, state.planRouteDropdownExpanded)
         assertEquals(false, state.planWorkDropdownExpanded)
         assertEquals("", state.planFormError)
+    }
+
+    @Test
+    fun `reset plan form clears selected task id`() {
+        val viewModel = ProgressHubViewModel()
+
+        viewModel.selectPlanWorkTemplate("Plan task", "m3", "task-1")
+        viewModel.resetPlanForm()
+
+        val state = viewModel.uiState.value
+        assertEquals("", state.selectedPlanWorkName)
+        assertNull(state.selectedPlanTaskId)
+    }
+
+    @Test
+    fun `apply plan to log pre-fills actual quantity fields`() {
+        val viewModel = ProgressHubViewModel()
+        val plan = com.mapsupervision.domain.model.WorkPlan(
+            id = "plan-1",
+            projectId = "p-1",
+            title = "Dao ranh",
+            description = "Lam trong ngay",
+            plannedDateEpochDay = 19700L,
+            nodeCode = "N-01",
+            routeCode = null,
+            taskId = "task-1",
+            sourceRawInput = "",
+            createdAtEpochMs = 1L,
+            quantity = 12.5,
+            unit = "m3",
+            batchGroupId = "batch-1"
+        )
+
+        viewModel.applyPlanToLog(plan)
+
+        val state = viewModel.uiState.value
+        assertEquals("plan-1", state.selectedPlanForLogId)
+        assertEquals("Dao ranh", state.workItemInput)
+        assertEquals("Dao ranh", state.selectedCategoryName)
+        assertEquals("12.5", state.volumeInput)
+        assertEquals("m3", state.unitInput)
+        assertEquals("N-01", state.selectedNodeCodeForLog)
+        assertNull(state.selectedRouteCodeForLog)
+        assertEquals("Lam trong ngay", state.noteInput)
+        assertEquals("plan-1", state.selectedPlanSnapshot?.linkedWorkPlanId)
+        assertEquals(1, state.actualLines.size)
+        assertEquals("Dao ranh", state.actualLines.first().workName)
+        assertEquals("12.5", state.actualLines.first().quantityInput)
+    }
+
+    @Test
+    fun `add and remove actual lines update draft list`() {
+        val viewModel = ProgressHubViewModel()
+
+        val initialLineId = viewModel.uiState.value.actualLines.first().id
+        viewModel.addActualLine()
+        val addedState = viewModel.uiState.value
+        assertEquals(2, addedState.actualLines.size)
+
+        viewModel.removeActualLine(initialLineId)
+        val removedState = viewModel.uiState.value
+        assertEquals(1, removedState.actualLines.size)
     }
 
     @Test

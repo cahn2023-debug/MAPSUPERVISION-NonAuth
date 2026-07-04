@@ -34,9 +34,10 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-import com.mapsupervision.app.ui.theme.SecondaryMint
-import com.mapsupervision.app.ui.theme.PrimaryPeach
-import com.mapsupervision.app.ui.theme.SuccessColor
+import com.mapsupervision.core.ui.theme.SecondaryMint
+import com.mapsupervision.core.ui.theme.PrimaryPeach
+import com.mapsupervision.core.ui.theme.SuccessColor
+import com.mapsupervision.core.ui.components.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

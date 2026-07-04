@@ -16,7 +16,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 
 @Composable
 fun DashboardHubScreen(

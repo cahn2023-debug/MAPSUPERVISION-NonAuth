@@ -71,7 +71,6 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         if (existing != null) {
             existing.lastAccessEpochMs = System.currentTimeMillis()
             ensureCleanupSchedulerLocked()
-            prepareOpenedProjectDatabase(resolvedProject, dbPath, existing.database, "holder")
             return existing.database
         }
 
@@ -90,9 +89,16 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             .addMigrations(*MapSupervisionDatabase.ALL_MIGRATIONS)
             .build()
         AppLogger.d("project.db.open path=${dbFile.absolutePath}")
-        holders[dbPath] = DatabaseHolder(database)
-        ensureCleanupSchedulerLocked()
-        prepareOpenedProjectDatabase(resolvedProject, dbPath, database, "open")
+        val holder = DatabaseHolder(database)
+        holders[dbPath] = holder
+        try {
+            ensureCleanupSchedulerLocked()
+            prepareOpenedProjectDatabase(resolvedProject, dbPath, holder, "open")
+        } catch (throwable: Throwable) {
+            holders.remove(dbPath)
+            runCatching { database.close() }
+            throw throwable
+        }
         database
     }
 
@@ -120,15 +126,21 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     private suspend fun prepareOpenedProjectDatabase(
         project: ProjectEntity,
         dbPath: String,
-        database: MapSupervisionDatabase,
+        holder: DatabaseHolder,
         source: String
     ) {
+        if (holder.isPrepared) {
+            return
+        }
+
+        val database = holder.database
         ensureProjectRow(project, database, source)
         if (shouldUseLegacyBridge(project, database)) {
             runLegacyBridge(project, dbPath, database)
         } else {
             AppLogger.d("project.db.bridge_skip projectId=${project.id} reason=cutover_complete")
         }
+        holder.isPrepared = true
     }
 
     private suspend fun runLegacyBridge(
@@ -188,13 +200,27 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 val list = sharedDatabase.gisNodeDao().byProject(projectId)
                 if (list.isNotEmpty()) projectDatabase.gisNodeDao().upsertAll(list)
             }
+            val lookupBeforeRoutes = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "gis_route")) {
                 val list = sharedDatabase.gisRouteDao().byProject(projectId)
-                if (list.isNotEmpty()) projectDatabase.gisRouteDao().upsertAll(list)
+                if (list.isNotEmpty()) {
+                    projectDatabase.gisRouteDao().upsertAll(list.map { it.normalizeForBridge(lookupBeforeRoutes) })
+                }
             }
+            val lookupAfterRoutes = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "node_progress")) {
                 val list = sharedDatabase.nodeProgressDao().byProject(projectId)
-                for (entity in list) projectDatabase.nodeProgressDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    projectDatabase.nodeProgressDao().upsert(entity)
+                }
             }
             if (isTableEmpty(projectDatabase, projectId, "work_volume_progress")) {
                 val list = sharedDatabase.workVolumeProgressDao().byProject(projectId)
@@ -202,7 +228,18 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(projectDatabase, projectId, "daily_log")) {
                 val list = sharedDatabase.dailyLogDao().byProject(projectId)
-                for (entity in list) projectDatabase.dailyLogDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    projectDatabase.dailyLogDao().upsert(entity)
+                }
+            }
+            if (isTableEmpty(projectDatabase, projectId, "daily_log_line")) {
+                val list = sharedDatabase.dailyLogLineDao().byLogIds(
+                    projectId,
+                    sharedDatabase.dailyLogDao().byProject(projectId).map { it.id }
+                )
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    projectDatabase.dailyLogLineDao().upsertAll(listOf(entity))
+                }
             }
             if (isTableEmpty(projectDatabase, projectId, "work_categories")) {
                 val list = sharedDatabase.workCategoryDao().byProject(projectId)
@@ -210,7 +247,9 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(projectDatabase, projectId, "work_plan")) {
                 val list = sharedDatabase.workPlanDao().byProject(projectId)
-                for (entity in list) projectDatabase.workPlanDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    projectDatabase.workPlanDao().insert(entity)
+                }
             }
         }
     }
@@ -235,13 +274,27 @@ class ProjectScopedDatabaseProvider @Inject constructor(
                 val list = projectDatabase.gisNodeDao().byProject(projectId)
                 if (list.isNotEmpty()) sharedDatabase.gisNodeDao().upsertAll(list)
             }
+            val lookupBeforeRoutes = buildProjectBridgeLookup(
+                sourceDatabase = projectDatabase,
+                targetDatabase = sharedDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(sharedDatabase, projectId, "gis_route")) {
                 val list = projectDatabase.gisRouteDao().byProject(projectId)
-                if (list.isNotEmpty()) sharedDatabase.gisRouteDao().upsertAll(list)
+                if (list.isNotEmpty()) {
+                    sharedDatabase.gisRouteDao().upsertAll(list.map { it.normalizeForBridge(lookupBeforeRoutes) })
+                }
             }
+            val lookupAfterRoutes = buildProjectBridgeLookup(
+                sourceDatabase = projectDatabase,
+                targetDatabase = sharedDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(sharedDatabase, projectId, "node_progress")) {
                 val list = projectDatabase.nodeProgressDao().byProject(projectId)
-                for (entity in list) sharedDatabase.nodeProgressDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    sharedDatabase.nodeProgressDao().upsert(entity)
+                }
             }
             if (isTableEmpty(sharedDatabase, projectId, "work_volume_progress")) {
                 val list = projectDatabase.workVolumeProgressDao().byProject(projectId)
@@ -249,7 +302,18 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(sharedDatabase, projectId, "daily_log")) {
                 val list = projectDatabase.dailyLogDao().byProject(projectId)
-                for (entity in list) sharedDatabase.dailyLogDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    sharedDatabase.dailyLogDao().upsert(entity)
+                }
+            }
+            if (isTableEmpty(sharedDatabase, projectId, "daily_log_line")) {
+                val list = projectDatabase.dailyLogLineDao().byLogIds(
+                    projectId,
+                    projectDatabase.dailyLogDao().byProject(projectId).map { it.id }
+                )
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    sharedDatabase.dailyLogLineDao().upsertAll(listOf(entity))
+                }
             }
             if (isTableEmpty(sharedDatabase, projectId, "work_categories")) {
                 val list = projectDatabase.workCategoryDao().byProject(projectId)
@@ -257,21 +321,34 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(sharedDatabase, projectId, "work_plan")) {
                 val list = projectDatabase.workPlanDao().byProject(projectId)
-                for (entity in list) sharedDatabase.workPlanDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(lookupAfterRoutes) }) {
+                    sharedDatabase.workPlanDao().insert(entity)
+                }
             }
 
             // Aux tables
+            val auxLookup = buildProjectBridgeLookup(
+                sourceDatabase = projectDatabase,
+                targetDatabase = sharedDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(sharedDatabase, projectId, "note")) {
                 val list = projectDatabase.noteDao().byProject(projectId)
-                for (entity in list) sharedDatabase.noteDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    sharedDatabase.noteDao().insert(entity)
+                }
             }
             if (isTableEmpty(sharedDatabase, projectId, "task")) {
                 val list = projectDatabase.taskDao().byProject(projectId)
-                for (entity in list) sharedDatabase.taskDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    sharedDatabase.taskDao().upsert(entity)
+                }
             }
             if (isTableEmpty(sharedDatabase, projectId, "site_photos")) {
                 val list = projectDatabase.sitePhotoDao().byProject(projectId)
-                for (entity in list) sharedDatabase.sitePhotoDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    sharedDatabase.sitePhotoDao().upsert(entity)
+                }
             }
             if (isTableEmpty(sharedDatabase, projectId, "report_draft")) {
                 val list = projectDatabase.reportDraftDao().byProject(projectId)
@@ -279,11 +356,20 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(sharedDatabase, projectId, "material_declaration")) {
                 val list = projectDatabase.materialDeclarationDao().getByProject(projectId)
-                for (entity in list) sharedDatabase.materialDeclarationDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    sharedDatabase.materialDeclarationDao().insert(entity)
+                }
             }
+            val materialLookup = buildProjectBridgeLookup(
+                sourceDatabase = projectDatabase,
+                targetDatabase = sharedDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(sharedDatabase, projectId, "material_handover")) {
                 val list = projectDatabase.materialHandoverDao().byProject(projectId)
-                for (entity in list) sharedDatabase.materialHandoverDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(materialLookup) }) {
+                    sharedDatabase.materialHandoverDao().upsert(entity)
+                }
             }
         }
     }
@@ -332,17 +418,28 @@ class ProjectScopedDatabaseProvider @Inject constructor(
         val projectId = project.id
         AppLogger.d("project.db.seed.aux_start projectId=${projectId}")
         projectDatabase.withTransaction {
+            val auxLookup = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "note")) {
                 val list = sharedDatabase.noteDao().byProject(projectId)
-                for (entity in list) projectDatabase.noteDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    projectDatabase.noteDao().insert(entity)
+                }
             }
             if (isTableEmpty(projectDatabase, projectId, "task")) {
                 val list = sharedDatabase.taskDao().byProject(projectId)
-                for (entity in list) projectDatabase.taskDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    projectDatabase.taskDao().upsert(entity)
+                }
             }
             if (isTableEmpty(projectDatabase, projectId, "site_photos")) {
                 val list = sharedDatabase.sitePhotoDao().byProject(projectId)
-                for (entity in list) projectDatabase.sitePhotoDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    projectDatabase.sitePhotoDao().upsert(entity)
+                }
             }
             if (isTableEmpty(projectDatabase, projectId, "report_draft")) {
                 val list = sharedDatabase.reportDraftDao().byProject(projectId)
@@ -350,11 +447,20 @@ class ProjectScopedDatabaseProvider @Inject constructor(
             }
             if (isTableEmpty(projectDatabase, projectId, "material_declaration")) {
                 val list = sharedDatabase.materialDeclarationDao().getByProject(projectId)
-                for (entity in list) projectDatabase.materialDeclarationDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(auxLookup) }) {
+                    projectDatabase.materialDeclarationDao().insert(entity)
+                }
             }
+            val materialLookup = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "material_handover")) {
                 val list = sharedDatabase.materialHandoverDao().byProject(projectId)
-                for (entity in list) projectDatabase.materialHandoverDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(materialLookup) }) {
+                    projectDatabase.materialHandoverDao().upsert(entity)
+                }
             }
         }
     }
@@ -365,13 +471,27 @@ class ProjectScopedDatabaseProvider @Inject constructor(
     ) {
         val projectId = project.id
         projectDatabase.withTransaction {
+            val materialLookup = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "material_declaration")) {
                 val list = sharedDatabase.materialDeclarationDao().getByProject(projectId)
-                for (entity in list) projectDatabase.materialDeclarationDao().insert(entity)
+                for (entity in list.map { it.normalizeForBridge(materialLookup) }) {
+                    projectDatabase.materialDeclarationDao().insert(entity)
+                }
             }
+            val handoverLookup = buildProjectBridgeLookup(
+                sourceDatabase = sharedDatabase,
+                targetDatabase = projectDatabase,
+                projectId = projectId
+            )
             if (isTableEmpty(projectDatabase, projectId, "material_handover")) {
                 val list = sharedDatabase.materialHandoverDao().byProject(projectId)
-                for (entity in list) projectDatabase.materialHandoverDao().upsert(entity)
+                for (entity in list.map { it.normalizeForBridge(handoverLookup) }) {
+                    projectDatabase.materialHandoverDao().upsert(entity)
+                }
             }
         }
     }
@@ -465,7 +585,8 @@ class ProjectScopedDatabaseProvider @Inject constructor(
 
     private class DatabaseHolder(
         val database: MapSupervisionDatabase,
-        var lastAccessEpochMs: Long = System.currentTimeMillis()
+        var lastAccessEpochMs: Long = System.currentTimeMillis(),
+        var isPrepared: Boolean = false
     )
 
     private data class CoreProjectPayload(

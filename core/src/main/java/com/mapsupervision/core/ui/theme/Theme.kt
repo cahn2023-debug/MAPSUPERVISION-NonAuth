@@ -1,4 +1,4 @@
-package com.mapsupervision.app.ui.theme
+package com.mapsupervision.core.ui.theme
 
 import android.app.Activity
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +46,6 @@ private val MidnightSlate = darkColorScheme(
 @Suppress("DEPRECATION")
 @Composable
 fun MapSupervisionTheme(
-    // Bỏ qua isSystemInDarkTheme vì ứng dụng này giờ sẽ ép chạy Dark Mode hoàn toàn giống hệ thống PREVIEW.
     darkTheme: Boolean = true,
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
@@ -69,10 +68,13 @@ fun MapSupervisionTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = android.graphics.Color.parseColor("#000000")
-            window.navigationBarColor = android.graphics.Color.parseColor("#000000")
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            val context = view.context
+            if (context is Activity) {
+                val window = context.window
+                window.statusBarColor = android.graphics.Color.parseColor("#000000")
+                window.navigationBarColor = android.graphics.Color.parseColor("#000000")
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            }
         }
     }
 

@@ -39,6 +39,7 @@ data class ProgressHubScreenUiState(
     val volumeInput: String = "",
     val unitInput: String = "",
     val selectedCategoryName: String = "",
+    val actualLines: List<DailyLogDraftLine> = listOf(defaultDailyLogDraftLine()),
     val categoryDropdownExpanded: Boolean = false,
     val showAddCategoryDialog: Boolean = false,
     val newCategoryName: String = "",
@@ -48,11 +49,22 @@ data class ProgressHubScreenUiState(
     val progressSheetValidationError: String = "",
     val progressSheetNote: String = "",
     val editingDailyLogId: String? = null,
+    val selectedPlanForLogId: String? = null,
+    val selectedPlanSnapshot: DailyLogPlanSnapshotDraft? = null,
     val isCalendarSyncEnabled: Boolean = false,
     val systemEvents: List<com.mapsupervision.app.sync.SystemEvent> = emptyList(),
+    val showExportDialog: Boolean = false,
+    val exportScope: DailyLogExportScope = DailyLogExportScope.DATE_RANGE,
+    val exportStartDateMillis: Long,
+    val exportEndDateMillis: Long,
+    val exportFormat: DailyLogExportFormat = DailyLogExportFormat.PDF,
+    val includePlanInExport: Boolean = true,
+    val isExporting: Boolean = false,
+    val exportValidationError: String = "",
 
     // Plan form state properties
     val selectedPlanWorkName: String = "",
+    val selectedPlanTaskId: String? = null,
     val planUnitInput: String = "",
     val planQuantityInput: String = "",
     val planNoteInput: String = "",
@@ -82,7 +94,9 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         ProgressHubScreenUiState(
             currentMonth = now.get(java.util.Calendar.MONTH),
             currentYear = now.get(java.util.Calendar.YEAR),
-            selectedDateMillis = defaultSelectedDateMillis
+            selectedDateMillis = defaultSelectedDateMillis,
+            exportStartDateMillis = defaultSelectedDateMillis,
+            exportEndDateMillis = defaultSelectedDateMillis
         )
     )
     val uiState: StateFlow<ProgressHubScreenUiState> = _uiState.asStateFlow()
@@ -132,7 +146,11 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
     }
 
     fun updateSelectedDateMillis(selectedDateMillis: Long) = updateState {
-        it.copy(selectedDateMillis = selectedDateMillis)
+        it.copy(
+            selectedDateMillis = selectedDateMillis,
+            exportStartDateMillis = if (!it.showExportDialog) selectedDateMillis else it.exportStartDateMillis,
+            exportEndDateMillis = if (!it.showExportDialog) selectedDateMillis else it.exportEndDateMillis
+        )
     }
 
     fun updateWeatherSelection(weatherSelected: String) = updateState {
@@ -193,6 +211,39 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
 
     fun updateUnitInput(unitInput: String) = updateState {
         it.copy(unitInput = unitInput)
+    }
+
+    fun addActualLine() = updateState {
+        it.copy(actualLines = it.actualLines + defaultDailyLogDraftLine())
+    }
+
+    fun removeActualLine(lineId: String) = updateState {
+        val updated = it.actualLines.filterNot { line -> line.id == lineId }
+        it.copy(actualLines = if (updated.isEmpty()) listOf(defaultDailyLogDraftLine()) else updated)
+    }
+
+    fun updateActualLineWorkName(lineId: String, workName: String) = updateState {
+        it.copy(actualLines = it.actualLines.map { line ->
+            if (line.id == lineId) line.copy(workName = workName) else line
+        })
+    }
+
+    fun updateActualLineCategoryName(lineId: String, categoryName: String) = updateState {
+        it.copy(actualLines = it.actualLines.map { line ->
+            if (line.id == lineId) line.copy(categoryName = categoryName) else line
+        })
+    }
+
+    fun updateActualLineQuantityInput(lineId: String, quantityInput: String) = updateState {
+        it.copy(actualLines = it.actualLines.map { line ->
+            if (line.id == lineId) line.copy(quantityInput = quantityInput) else line
+        })
+    }
+
+    fun updateActualLineUnit(lineId: String, unit: String) = updateState {
+        it.copy(actualLines = it.actualLines.map { line ->
+            if (line.id == lineId) line.copy(unit = unit) else line
+        })
     }
 
     fun selectWorkTemplate(name: String, unit: String) = updateState {
@@ -301,9 +352,10 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         it.copy(planFormError = error)
     }
 
-    fun selectPlanWorkTemplate(name: String, unit: String) = updateState {
+    fun selectPlanWorkTemplate(name: String, unit: String, taskId: String? = null) = updateState {
         it.copy(
             selectedPlanWorkName = name,
+            selectedPlanTaskId = taskId,
             planUnitInput = unit,
             planWorkDropdownExpanded = false,
             planFormError = ""
@@ -313,6 +365,7 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
     fun resetPlanForm() = updateState {
         it.copy(
             selectedPlanWorkName = "",
+            selectedPlanTaskId = null,
             planUnitInput = "",
             planQuantityInput = "",
             planNoteInput = "",
@@ -345,6 +398,7 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         updateState {
             it.copy(
                 editingDailyLogId = log.id,
+                selectedPlanForLogId = log.linkedWorkPlanId,
                 subTab = ProgressHubSubTab.DIARY,
                 selectedDateMillis = localMidnight,
                 selectedNodeCodeForLog = log.nodeCode,
@@ -359,6 +413,41 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
                 unitInput = log.unit,
                 selectedCategoryName = log.categoryName,
                 actualProgressInput = initialActualProgress,
+                actualLines = if (log.lines.isNotEmpty()) {
+                    log.lines.map { line ->
+                        DailyLogDraftLine(
+                            id = line.id,
+                            workName = line.workName,
+                            categoryName = line.categoryName,
+                            quantityInput = if (line.quantity > 0.0) line.quantity.toString() else "",
+                            unit = line.unit,
+                            nodeCode = line.nodeCode,
+                            routeCode = line.routeCode
+                        )
+                    }
+                } else {
+                    listOf(
+                        DailyLogDraftLine(
+                            id = java.util.UUID.randomUUID().toString(),
+                            workName = log.workItem,
+                            categoryName = log.categoryName,
+                            quantityInput = if (log.volume > 0.0) log.volume.toString() else "",
+                            unit = log.unit,
+                            nodeCode = log.nodeCode,
+                            routeCode = log.routeCode
+                        )
+                    )
+                },
+                selectedPlanSnapshot = log.linkedWorkPlanId?.let {
+                    DailyLogPlanSnapshotDraft(
+                        linkedWorkPlanId = it,
+                        plannedWorkName = log.plannedWorkName,
+                        plannedQuantity = log.plannedQuantity,
+                        plannedUnit = log.plannedUnit,
+                        plannedNodeCode = log.plannedNodeCode,
+                        plannedRouteCode = log.plannedRouteCode
+                    )
+                },
                 logFormError = "",
                 routeDropdownExpanded = false,
                 nodeDropdownExpanded = false,
@@ -377,8 +466,11 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
                 volumeInput = "",
                 unitInput = "",
                 selectedCategoryName = "",
+                actualLines = listOf(defaultDailyLogDraftLine()),
                 selectedNodeCodeForLog = null,
                 selectedRouteCodeForLog = null,
+                selectedPlanForLogId = null,
+                selectedPlanSnapshot = null,
                 routeDropdownExpanded = false,
                 nodeDropdownExpanded = false,
                 categoryDropdownExpanded = false,
@@ -388,8 +480,83 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         }
     }
 
+    fun applyPlanToLog(plan: com.mapsupervision.domain.model.WorkPlan) {
+        updateState {
+            it.copy(
+                selectedPlanForLogId = plan.id,
+                selectedPlanSnapshot = DailyLogPlanSnapshotDraft(
+                    linkedWorkPlanId = plan.id,
+                    plannedWorkName = plan.title,
+                    plannedQuantity = plan.quantity,
+                    plannedUnit = plan.unit,
+                    plannedNodeCode = plan.nodeCode,
+                    plannedRouteCode = plan.routeCode
+                ),
+                workItemInput = plan.title,
+                selectedCategoryName = plan.title,
+                volumeInput = if (plan.quantity > 0.0) plan.quantity.toString() else "",
+                unitInput = plan.unit,
+                selectedNodeCodeForLog = plan.nodeCode,
+                selectedRouteCodeForLog = plan.routeCode,
+                actualLines = listOf(
+                    DailyLogDraftLine(
+                        id = java.util.UUID.randomUUID().toString(),
+                        workName = plan.title,
+                        categoryName = plan.title,
+                        quantityInput = if (plan.quantity > 0.0) plan.quantity.toString() else "",
+                        unit = plan.unit,
+                        nodeCode = plan.nodeCode,
+                        routeCode = plan.routeCode
+                    )
+                ),
+                noteInput = it.noteInput.ifBlank { plan.description },
+                logFormError = "",
+                nodeDropdownExpanded = false,
+                routeDropdownExpanded = false,
+                categoryDropdownExpanded = false
+            )
+        }
+    }
+
     fun setCalendarSyncEnabled(enabled: Boolean) = updateState {
         it.copy(isCalendarSyncEnabled = enabled)
+    }
+
+    fun setShowExportDialog(show: Boolean) = updateState {
+        it.copy(
+            showExportDialog = show,
+            exportStartDateMillis = if (show) it.selectedDateMillis else it.exportStartDateMillis,
+            exportEndDateMillis = if (show) it.selectedDateMillis else it.exportEndDateMillis,
+            exportValidationError = if (show) "" else it.exportValidationError
+        )
+    }
+
+    fun updateExportScope(scope: DailyLogExportScope) = updateState {
+        it.copy(exportScope = scope, exportValidationError = "")
+    }
+
+    fun updateExportStartDateMillis(value: Long) = updateState {
+        it.copy(exportStartDateMillis = value, exportValidationError = "")
+    }
+
+    fun updateExportEndDateMillis(value: Long) = updateState {
+        it.copy(exportEndDateMillis = value, exportValidationError = "")
+    }
+
+    fun updateExportFormat(format: DailyLogExportFormat) = updateState {
+        it.copy(exportFormat = format)
+    }
+
+    fun updateIncludePlanInExport(include: Boolean) = updateState {
+        it.copy(includePlanInExport = include)
+    }
+
+    fun updateIsExporting(exporting: Boolean) = updateState {
+        it.copy(isExporting = exporting)
+    }
+
+    fun updateExportValidationError(error: String) = updateState {
+        it.copy(exportValidationError = error)
     }
 
     fun updateSystemEvents(events: List<com.mapsupervision.app.sync.SystemEvent>) = updateState {
@@ -400,3 +567,7 @@ class ProgressHubViewModel @Inject constructor() : ViewModel() {
         _uiState.update(transform)
     }
 }
+
+private fun defaultDailyLogDraftLine() = DailyLogDraftLine(
+    id = java.util.UUID.randomUUID().toString()
+)

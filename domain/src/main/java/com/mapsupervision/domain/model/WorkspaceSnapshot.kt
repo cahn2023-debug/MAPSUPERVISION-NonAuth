@@ -12,7 +12,8 @@ data class WorkspaceSnapshot(
     val sitePhotos: List<SitePhoto> = emptyList(),
     val materialHandovers: List<MaterialHandover> = emptyList(),
     val materialDeclarations: List<MaterialDeclaration> = emptyList(),
-    val workPlans: List<WorkPlan> = emptyList()
+    val workPlans: List<WorkPlan> = emptyList(),
+    val projectTasks: List<Task> = emptyList()
 )
 
 

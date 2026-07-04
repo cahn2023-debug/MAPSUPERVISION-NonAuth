@@ -1,4 +1,4 @@
-package com.mapsupervision.app.ui.theme
+package com.mapsupervision.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
@@ -41,4 +41,3 @@ val WarningSoftColor = Color(0x24F59E0B)
 val InfoColor = Color(0xFF06B6D4) // Bright Neon Cyan Info
 val DangerColor = Color(0xFFEF4444)
 val DangerSoftColor = Color(0x24EF4444)
-

@@ -58,6 +58,7 @@ import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
 import com.mapsupervision.domain.util.PhotoMatchEvaluation
 import com.mapsupervision.domain.util.evaluateSitePhotoMatch
+import com.mapsupervision.core.ui.theme.extendedColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,7 +129,7 @@ fun ReportPreviewDialog(
                         onClick = { format = "PDF" },
                         enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isPdf) Color(0xFFEF4444) else MaterialTheme.colorScheme.surfaceVariant,
+                            containerColor = if (isPdf) MaterialTheme.extendedColors.danger else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (isPdf) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         shape = MaterialTheme.shapes.medium,
@@ -141,7 +142,7 @@ fun ReportPreviewDialog(
                         onClick = { format = "WORD" },
                         enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!isPdf) Color(0xFF3B82F6) else MaterialTheme.colorScheme.surfaceVariant,
+                            containerColor = if (!isPdf) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (!isPdf) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         shape = MaterialTheme.shapes.medium,
@@ -288,7 +289,7 @@ fun ReportPreviewDialog(
                         shape = MaterialTheme.shapes.medium,
                         enabled = !isExporting,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (format == "PDF") Color(0xFFEF4444) else Color(0xFF3B82F6),
+                            containerColor = if (format == "PDF") MaterialTheme.extendedColors.danger else MaterialTheme.colorScheme.primary,
                             contentColor = Color.White
                         )
                     ) {
@@ -355,7 +356,7 @@ private fun PhotoItem(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
                     .background(
-                        if (evaluation.isMatched) Color(0xCC16A34A) else Color(0xCCDC2626),
+                        if (evaluation.isMatched) MaterialTheme.extendedColors.success.copy(alpha = 0.8f) else MaterialTheme.extendedColors.danger.copy(alpha = 0.8f),
                         RoundedCornerShape(999.dp)
                     )
                     .padding(horizontal = 6.dp, vertical = 2.dp)

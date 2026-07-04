@@ -47,8 +47,7 @@ class ProjectViewModel @Inject constructor(
     private val photoRepository: PhotoRepository,
     private val dailyLogRepository: DailyLogRepository,
     private val progressRepository: ProgressRepository,
-    private val projectSyncRepository: ProjectSyncRepository,
-    private val migrationService: com.mapsupervision.domain.service.ProjectStorageMigrationService
+    private val projectSyncRepository: ProjectSyncRepository
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProjectUiState())
     val uiState: StateFlow<ProjectUiState> = _uiState.asStateFlow()
@@ -80,12 +79,6 @@ class ProjectViewModel @Inject constructor(
             val current = _uiState.value
             var activeId = (activeProjectRepository.getActive() as? AppResult.Success)?.data
             val projects = (projectRepository.list(false) as? AppResult.Success)?.data.orEmpty()
-            
-            projects.forEach { project ->
-                launch {
-                    migrationService.migrateProjectIfNeeded(project)
-                }
-            }
 
             if (activeId == null && projects.isNotEmpty()) {
                 val defaultProjectId = projects.first().id

@@ -9,10 +9,10 @@ import com.mapsupervision.domain.model.MaterialHandover
 import com.mapsupervision.domain.repository.MaterialHandoverRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -26,8 +26,8 @@ class MaterialHandoverRepositoryImpl @Inject constructor(
             val entity = MaterialHandoverEntity.fromDomain(handover)
             val projectDatabase = projectScopedDatabaseProvider.databaseFor(handover.projectId)
             writeToSharedAndScoped(
-                sharedWrite = { dao.upsert(entity) },
-                scopedWrite = { projectDatabase?.materialHandoverDao()?.upsert(entity) }
+                sharedWrite = { upsertSafely(dao, entity) },
+                scopedWrite = { projectDatabase?.materialHandoverDao()?.let { upsertSafely(it, entity) } }
             )
         }.fold(
             onSuccess = { AppResult.Success(Unit) },
@@ -61,18 +61,39 @@ class MaterialHandoverRepositoryImpl @Inject constructor(
     }
 
     override fun observeByProject(projectId: String): Flow<List<MaterialHandover>> = flow {
+        val scopedDao = dao(projectId)
         emitAll(
-            dao(projectId).observeByProject(projectId)
-                .map { rows ->
-                    val resolvedRows = if (rows.isEmpty()) dao.byProject(projectId) else rows
-                    resolvedRows.map { it.toDomain() }
-                }
-                .distinctUntilChanged()
+            combine(
+                scopedDao.observeByProject(projectId),
+                dao.observeByProject(projectId)
+            ) { scopedRows, sharedRows ->
+                val resolvedRows = if (scopedRows.isEmpty()) sharedRows else scopedRows
+                resolvedRows.map { it.toDomain() }
+            }.distinctUntilChanged()
         )
     }
 
     private suspend fun dao(projectId: String): MaterialHandoverDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.materialHandoverDao() ?: dao
+
+    private suspend fun upsertSafely(
+        targetDao: MaterialHandoverDao,
+        entity: MaterialHandoverEntity
+    ) {
+        runCatching {
+            targetDao.upsert(entity)
+        }.getOrElse { failure ->
+            val withoutOptionalLinks = entity.copy(
+                nodeId = null,
+                materialDeclarationId = null,
+                workCategoryId = null
+            )
+            if (withoutOptionalLinks == entity) {
+                throw failure
+            }
+            targetDao.upsert(withoutOptionalLinks)
+        }
+    }
 
     private suspend fun writeToSharedAndScoped(
         sharedWrite: suspend () -> Unit,

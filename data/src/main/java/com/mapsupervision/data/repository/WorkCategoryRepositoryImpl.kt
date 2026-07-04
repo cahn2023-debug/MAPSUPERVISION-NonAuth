@@ -10,6 +10,7 @@ import com.mapsupervision.domain.repository.WorkCategoryRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -21,21 +22,37 @@ class WorkCategoryRepositoryImpl @Inject constructor(
     private val projectScopedDatabaseProvider: ProjectScopedDatabaseProvider
 ) : WorkCategoryRepository {
     override suspend fun add(category: WorkCategory): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
-        dao(category.projectId).upsert(category.toEntity())
+        val entity = category.toEntity()
+        val projectDatabase = projectScopedDatabaseProvider.databaseFor(category.projectId)
+        writeToSharedAndScoped(
+            sharedWrite = { dao.upsert(entity) },
+            scopedWrite = { projectDatabase?.workCategoryDao()?.upsert(entity) }
+        )
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to add work category", it)) }
     ) }
 
     override suspend fun byProject(projectId: String): AppResult<List<WorkCategory>> = withContext(Dispatchers.IO) { runCatching {
-        dao(projectId).byProject(projectId).map { it.toDomain() }
+        val rows = dao(projectId).byProject(projectId)
+        val resolvedRows = if (rows.isEmpty()) dao.byProject(projectId) else rows
+        resolvedRows.map { it.toDomain() }
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list work categories", it)) }
     ) }
 
     override fun observeByProject(projectId: String): Flow<List<WorkCategory>> = flow {
-        emitAll(dao(projectId).observeByProject(projectId).map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
+        val scopedDao = dao(projectId)
+        emitAll(
+            combine(
+                scopedDao.observeByProject(projectId),
+                dao.observeByProject(projectId)
+            ) { scopedRows, sharedRows ->
+                val resolvedRows = if (scopedRows.isEmpty()) sharedRows else scopedRows
+                resolvedRows.map { it.toDomain() }
+            }.distinctUntilChanged()
+        )
     }
 
     private fun WorkCategory.toEntity() = WorkCategoryEntity(id, projectId, name, unit, createdAtEpochMs)
@@ -43,4 +60,22 @@ class WorkCategoryRepositoryImpl @Inject constructor(
 
     private suspend fun dao(projectId: String): WorkCategoryDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.workCategoryDao() ?: dao
+
+    private suspend fun writeToSharedAndScoped(
+        sharedWrite: suspend () -> Unit,
+        scopedWrite: suspend () -> Unit?
+    ) {
+        val failures = mutableListOf<Throwable>()
+        var success = false
+        runCatching { sharedWrite() }
+            .onSuccess { success = true }
+            .onFailure { failures += it }
+        runCatching { scopedWrite() }
+            .onSuccess { if (it != null) success = true }
+            .onFailure { failures += it }
+
+        if (!success && failures.isNotEmpty()) {
+            throw failures.first()
+        }
+    }
 }

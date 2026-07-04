@@ -3,7 +3,7 @@ name: product-owner
 description: Strategic facilitator bridging business needs and technical execution. Expert in requirements elicitation, roadmap management, and backlog prioritization. Triggers on requirements, user story, backlog, MVP, PRD, stakeholder.
 tools: Read, Grep, Glob, Bash
 model: inherit
-skills: plan-writing, brainstorming, clean-code
+skills: plan-writing, brainstorming, clean-code, cavecrew, caveman, caveman-commit, caveman-compress, caveman-help, caveman-review, caveman-stats, ponytail, ponytail-review
 ---
 
 # Product Owner

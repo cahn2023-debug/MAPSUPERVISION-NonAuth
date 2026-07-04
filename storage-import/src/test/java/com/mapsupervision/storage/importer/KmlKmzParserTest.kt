@@ -85,6 +85,31 @@ class KmlKmzParserTest {
     }
 
     @Test
+    fun parse_kml_filters_point_placemarks_that_duplicate_route_vertices() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>RouteOnly</name>
+                  <LineString>
+                    <coordinates>106.1,10.1,0 106.2,10.2,0 106.3,10.3,0</coordinates>
+                  </LineString>
+                </Placemark>
+                <Placemark><name>V1</name><Point><coordinates>106.1,10.1,0</coordinates></Point></Placemark>
+                <Placemark><name>V2</name><Point><coordinates>106.2,10.2,0</coordinates></Point></Placemark>
+                <Placemark><name>V3</name><Point><coordinates>106.3,10.3,0</coordinates></Point></Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContentStreaming(kml.byteInputStream(), "route-only.kml", "test-project")
+
+        assertEquals(0, result.nodes.size)
+        assertEquals(1, result.routes.size)
+        assertEquals(3, result.routes.single().points.size)
+    }
+
+    @Test
     fun parse_kmz_with_nested_kml_entry() {
         val tempKmz = File.createTempFile("kml-test", ".kmz")
         tempKmz.deleteOnExit()
@@ -104,6 +129,42 @@ class KmlKmzParserTest {
 
         assertEquals(1, result.nodes.size)
         assertTrue(result.summary.startsWith("KMZ parsed:"))
+    }
+
+    @Test
+    fun parse_kmz_with_doc_kml_linestring_creates_renderable_route() {
+        val tempKmz = File.createTempFile("kml-route-test", ".kmz")
+        tempKmz.deleteOnExit()
+        ZipOutputStream(tempKmz.outputStream()).use { zos ->
+            zos.putNextEntry(ZipEntry("doc.kml"))
+            zos.write(
+                """
+                <kml xmlns="http://www.opengis.net/kml/2.2">
+                  <Document>
+                    <Placemark>
+                      <name>RouteInKmz</name>
+                      <LineString>
+                        <coordinates>
+                          106.1,10.1,0
+                          106.2,10.2,0
+                          106.3,10.3,0
+                        </coordinates>
+                      </LineString>
+                    </Placemark>
+                  </Document>
+                </kml>
+                """.trimIndent().toByteArray()
+            )
+            zos.closeEntry()
+        }
+
+        val result = parseKmzContent(tempKmz, "route.kmz", "test-project")
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.single()
+        assertEquals(3, route.points.size)
+        assertEquals(10.1, route.points.first().first, 0.000001)
+        assertEquals(106.1, route.points.first().second, 0.000001)
     }
 
     @Test
@@ -193,6 +254,54 @@ class KmlKmzParserTest {
 
         assertEquals(1, result.nodes.size)
         assertEquals(1, result.routes.size)
+    }
+
+    @Test
+    fun parse_kml_streaming_multiline_linestring_creates_lat_lon_route_points() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Document>
+                <Placemark>
+                  <name>StreamLine</name>
+                  <LineString>
+                    <coordinates>
+                      106.4,10.4,0
+                      106.5,10.5,0
+                    </coordinates>
+                  </LineString>
+                </Placemark>
+              </Document>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContentStreaming(kml.byteInputStream(), "stream.kml", "test-project")
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.single()
+        assertEquals(listOf(10.4 to 106.4, 10.5 to 106.5), route.points)
+    }
+
+    @Test
+    fun parse_kml_polygon_outer_ring_creates_route_outline() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>Boundary</name>
+                <Polygon>
+                  <outerBoundaryIs>
+                    <LinearRing>
+                      <coordinates>106.0,10.0,0 106.1,10.0,0 106.1,10.1,0 106.0,10.0,0</coordinates>
+                    </LinearRing>
+                  </outerBoundaryIs>
+                </Polygon>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContent(kml.byteInputStream(), "polygon.kml", "test-project")
+
+        assertEquals(1, result.routes.size)
+        assertTrue(result.routes.single().points.size >= 3)
     }
 
     @Test
@@ -407,6 +516,28 @@ class KmlKmzParserTest {
         assertEquals("250 m", route.designLength)
 
         assertEquals(0, result.nodes.size)
+    }
+
+    @Test
+    fun parse_kml_mapping_accepts_utf8_vietnamese_defaults() {
+        val kml = """
+            <kml xmlns="http://www.opengis.net/kml/2.2">
+              <Placemark>
+                <name>TuyenUtf8</name>
+                <LineString><coordinates>106.1,10.1,0 106.2,10.2,0</coordinates></LineString>
+              </Placemark>
+            </kml>
+        """.trimIndent()
+
+        val result = parseKmlContentStreaming(
+            kml.byteInputStream(),
+            "utf8.kml",
+            "test-project",
+            NonExcelImportMapping(positionField = "Tên đối tượng (Placemark)")
+        )
+
+        assertEquals(1, result.routes.size)
+        assertEquals("TUYENUTF8", result.routes.single().code)
     }
 
     @Test

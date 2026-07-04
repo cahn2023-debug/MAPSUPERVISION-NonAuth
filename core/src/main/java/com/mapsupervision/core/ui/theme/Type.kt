@@ -1,4 +1,4 @@
-package com.mapsupervision.app.ui.theme
+package com.mapsupervision.core.ui.theme
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -65,4 +65,3 @@ val Typography = Typography(
         letterSpacing = 0.3.sp
     )
 )
-

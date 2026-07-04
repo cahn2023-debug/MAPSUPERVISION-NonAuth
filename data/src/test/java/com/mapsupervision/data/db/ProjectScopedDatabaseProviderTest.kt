@@ -13,10 +13,13 @@ import com.mapsupervision.data.db.entity.MaterialDeclarationEntity
 import com.mapsupervision.data.db.entity.MaterialHandoverEntity
 import com.mapsupervision.data.db.entity.MaterialProgressEntity
 import com.mapsupervision.data.db.entity.NodeProgressEntity
+import com.mapsupervision.data.db.entity.DailyLogEntity
 import com.mapsupervision.data.db.entity.NoteEntity
 import com.mapsupervision.data.db.entity.ProjectEntity
 import com.mapsupervision.data.db.entity.SitePhotoEntity
+import com.mapsupervision.data.db.entity.TaskEntity
 import com.mapsupervision.data.db.entity.WorkCategoryEntity
+import com.mapsupervision.data.db.entity.WorkPlanEntity
 import com.mapsupervision.domain.model.ProjectStorageMode
 import com.mapsupervision.storage.ProjectStorageManager
 import java.io.File
@@ -28,6 +31,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -196,6 +200,387 @@ class ProjectScopedDatabaseProviderTest {
         assertEquals(1, sharedDatabase.importedFileDao().byProject(project.id).size)
         assertEquals(1, sharedDatabase.gisNodeDao().byProject(project.id).size)
         assertEquals(1, sharedDatabase.sitePhotoDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `databaseFor remaps route node foreign keys when syncing scoped db into shared db`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy-remap-route/project.sqlite")
+        val project = projectEntity("project-remap-route", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+        sharedDatabase.importedFileDao().upsert(
+            ImportedFileEntity(
+                id = "file-remap",
+                projectId = project.id,
+                fileName = "design.kml",
+                fileType = "KML",
+                storedPath = "/tmp/design.kml",
+                summary = "seed",
+                importedAtEpochMs = 100L
+            )
+        )
+        sharedDatabase.gisNodeDao().upsert(
+            GisNodeEntity(
+                id = "shared-start",
+                projectId = project.id,
+                code = "N-START",
+                contractor = "Shared",
+                latitude = 0.0,
+                longitude = 0.0,
+                mapNumberLabel = "1",
+                workVolumeSummary = ""
+            )
+        )
+        sharedDatabase.gisNodeDao().upsert(
+            GisNodeEntity(
+                id = "shared-end",
+                projectId = project.id,
+                code = "N-END",
+                contractor = "Shared",
+                latitude = 1.0,
+                longitude = 1.0,
+                mapNumberLabel = "2",
+                workVolumeSummary = ""
+            )
+        )
+
+        createDatabase(scopedFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.importedFileDao().upsert(
+                ImportedFileEntity(
+                    id = "file-remap",
+                    projectId = project.id,
+                    fileName = "design.kml",
+                    fileType = "KML",
+                    storedPath = "/tmp/design.kml",
+                    summary = "seed",
+                    importedAtEpochMs = 100L
+                )
+            )
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "scoped-start",
+                    projectId = project.id,
+                    code = "N-START",
+                    contractor = "Scoped",
+                    latitude = 10.0,
+                    longitude = 10.0,
+                    mapNumberLabel = "10",
+                    workVolumeSummary = ""
+                )
+            )
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "scoped-end",
+                    projectId = project.id,
+                    code = "N-END",
+                    contractor = "Scoped",
+                    latitude = 11.0,
+                    longitude = 11.0,
+                    mapNumberLabel = "11",
+                    workVolumeSummary = ""
+                )
+            )
+            scopedSeed.gisRouteDao().upsert(
+                GisRouteEntity(
+                    id = "scoped-route",
+                    projectId = project.id,
+                    code = "R-1",
+                    contractor = "Scoped",
+                    startNodeCode = "N-START",
+                    endNodeCode = "N-END",
+                    points = emptyList(),
+                    importedFileId = "file-remap",
+                    startNodeId = "scoped-start",
+                    endNodeId = "scoped-end"
+                )
+            )
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val sharedRoute = sharedDatabase.gisRouteDao().byProject(project.id).single()
+        assertEquals("shared-start", sharedRoute.startNodeId)
+        assertEquals("shared-end", sharedRoute.endNodeId)
+        assertEquals("file-remap", sharedRoute.importedFileId)
+    }
+
+    @Test
+    fun `databaseFor nulls route node foreign keys when target node codes are missing`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy-remap-route-null/project.sqlite")
+        val project = projectEntity("project-remap-route-null", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+        sharedDatabase.importedFileDao().upsert(
+            ImportedFileEntity(
+                id = "existing-target-file",
+                projectId = project.id,
+                fileName = "existing.kml",
+                fileType = "KML",
+                storedPath = "/tmp/existing.kml",
+                summary = "existing",
+                importedAtEpochMs = 50L
+            )
+        )
+        sharedDatabase.gisNodeDao().upsert(
+            GisNodeEntity(
+                id = "shared-other-node",
+                projectId = project.id,
+                code = "N-OTHER",
+                contractor = "Shared",
+                latitude = 0.0,
+                longitude = 0.0,
+                mapNumberLabel = "0",
+                workVolumeSummary = ""
+            )
+        )
+
+        createDatabase(scopedFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.importedFileDao().upsert(
+                ImportedFileEntity(
+                    id = "missing-file",
+                    projectId = project.id,
+                    fileName = "scoped.kml",
+                    fileType = "KML",
+                    storedPath = "/tmp/scoped.kml",
+                    summary = "scoped",
+                    importedAtEpochMs = 100L
+                )
+            )
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "scoped-start-missing",
+                    projectId = project.id,
+                    code = "N-MISSING-START",
+                    contractor = "Scoped",
+                    latitude = 10.0,
+                    longitude = 10.0,
+                    mapNumberLabel = "10",
+                    workVolumeSummary = ""
+                )
+            )
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "scoped-end-missing",
+                    projectId = project.id,
+                    code = "N-MISSING-END",
+                    contractor = "Scoped",
+                    latitude = 11.0,
+                    longitude = 11.0,
+                    mapNumberLabel = "11",
+                    workVolumeSummary = ""
+                )
+            )
+            scopedSeed.gisRouteDao().upsert(
+                GisRouteEntity(
+                    id = "scoped-route-missing",
+                    projectId = project.id,
+                    code = "R-MISSING",
+                    contractor = "Scoped",
+                    startNodeCode = "N-MISSING-START",
+                    endNodeCode = "N-MISSING-END",
+                    points = emptyList(),
+                    importedFileId = "missing-file",
+                    startNodeId = "scoped-start-missing",
+                    endNodeId = "scoped-end-missing"
+                )
+            )
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val sharedRoute = sharedDatabase.gisRouteDao().byProject(project.id).single()
+        assertNull(sharedRoute.startNodeId)
+        assertNull(sharedRoute.endNodeId)
+        assertNull(sharedRoute.importedFileId)
+        assertEquals("N-MISSING-START", sharedRoute.startNodeCode)
+        assertEquals("N-MISSING-END", sharedRoute.endNodeCode)
+    }
+
+    @Test
+    fun `databaseFor remaps auxiliary foreign keys to existing shared node and route ids`() = runBlocking {
+        val scopedFile = File(tempDir, "legacy-remap-aux/project.sqlite")
+        val project = projectEntity("project-remap-aux", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+        sharedDatabase.gisNodeDao().upsert(
+            GisNodeEntity(
+                id = "shared-node",
+                projectId = project.id,
+                code = "NODE-1",
+                contractor = "Shared",
+                latitude = 0.0,
+                longitude = 0.0,
+                mapNumberLabel = "1",
+                workVolumeSummary = ""
+            )
+        )
+        sharedDatabase.gisRouteDao().upsert(
+            GisRouteEntity(
+                id = "shared-route",
+                projectId = project.id,
+                code = "ROUTE-1",
+                contractor = "Shared",
+                startNodeCode = "NODE-1",
+                endNodeCode = "NODE-1",
+                points = emptyList(),
+                startNodeId = "shared-node",
+                endNodeId = "shared-node"
+            )
+        )
+
+        createDatabase(scopedFile).also { scopedSeed ->
+            openedDatabases += scopedSeed
+            scopedSeed.projectDao().upsert(project)
+            scopedSeed.gisNodeDao().upsert(
+                GisNodeEntity(
+                    id = "scoped-node",
+                    projectId = project.id,
+                    code = "NODE-1",
+                    contractor = "Scoped",
+                    latitude = 1.0,
+                    longitude = 1.0,
+                    mapNumberLabel = "2",
+                    workVolumeSummary = ""
+                )
+            )
+            scopedSeed.gisRouteDao().upsert(
+                GisRouteEntity(
+                    id = "scoped-route",
+                    projectId = project.id,
+                    code = "ROUTE-1",
+                    contractor = "Scoped",
+                    startNodeCode = "NODE-1",
+                    endNodeCode = "NODE-1",
+                    points = emptyList(),
+                    startNodeId = "scoped-node",
+                    endNodeId = "scoped-node"
+                )
+            )
+            scopedSeed.nodeProgressDao().upsert(
+                NodeProgressEntity(
+                    id = "progress-remap",
+                    projectId = project.id,
+                    planned = 10f,
+                    actual = 5f,
+                    remain = 5f,
+                    delayed = false,
+                    updatedAtEpochMs = 100L,
+                    nodeId = "scoped-node"
+                )
+            )
+            scopedSeed.dailyLogDao().upsert(
+                DailyLogEntity(
+                    id = "daily-remap",
+                    projectId = project.id,
+                    workItem = "Inspect",
+                    manpower = 1,
+                    note = "note",
+                    createdAtEpochMs = 200L,
+                    weather = "",
+                    temperature = 20.0,
+                    dateEpochDay = 20240703L,
+                    volume = 1.0,
+                    unit = "m",
+                    categoryName = "",
+                    batchGroupId = "",
+                    photoMatchOffsetMinutes = 0,
+                    nodeId = "scoped-node",
+                    routeId = "scoped-route"
+                )
+            )
+            scopedSeed.noteDao().insert(
+                NoteEntity(
+                    id = "note-remap",
+                    projectId = project.id,
+                    content = "hello",
+                    createdAtEpochMs = 300L,
+                    objectNodeId = "scoped-node",
+                    objectRouteId = "scoped-route"
+                )
+            )
+            scopedSeed.taskDao().upsert(
+                TaskEntity(
+                    id = "task-remap",
+                    projectId = project.id,
+                    title = "Task",
+                    description = "desc",
+                    status = "TODO",
+                    createdAtEpochMs = 400L,
+                    objectNodeId = "scoped-node",
+                    objectRouteId = "scoped-route"
+                )
+            )
+            scopedSeed.sitePhotoDao().upsert(
+                SitePhotoEntity(
+                    id = "photo-remap",
+                    projectId = project.id,
+                    objectCode = "ROUTE-1",
+                    tagCodesCsv = "",
+                    filePath = "/tmp/photo.jpg",
+                    thumbnailPath = "/tmp/photo.jpg",
+                    latitude = null,
+                    longitude = null,
+                    locationAccuracyM = null,
+                    isGpsMocked = false,
+                    locationStatus = com.mapsupervision.domain.model.PhotoLocationStatus.MISSING,
+                    engineer = "Field",
+                    capturedAtEpochMs = 500L,
+                    matchedAtEpochMs = 500L,
+                    matchingTimeOffsetMs = 0L,
+                    matchedNodeId = "scoped-node",
+                    matchedRouteId = "scoped-route"
+                )
+            )
+            scopedSeed.workPlanDao().insert(
+                WorkPlanEntity(
+                    id = "plan-remap",
+                    projectId = project.id,
+                    title = "Plan",
+                    description = "desc",
+                    plannedDateEpochDay = 20240703L,
+                    nodeCode = "NODE-1",
+                    routeCode = "ROUTE-1",
+                    taskId = null,
+                    sourceRawInput = "raw",
+                    createdAtEpochMs = 600L,
+                    quantity = 1.0,
+                    unit = "m",
+                    batchGroupId = "batch",
+                    nodeId = "scoped-node",
+                    routeId = "scoped-route"
+                )
+            )
+            scopedSeed.close()
+        }
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        assertEquals("shared-node", sharedDatabase.nodeProgressDao().byProject(project.id).single().nodeId)
+        with(sharedDatabase.dailyLogDao().byProject(project.id).single()) {
+            assertEquals("shared-node", nodeId)
+            assertEquals("shared-route", routeId)
+        }
+        with(sharedDatabase.noteDao().byProject(project.id).single()) {
+            assertEquals("shared-node", objectNodeId)
+            assertEquals("shared-route", objectRouteId)
+        }
+        with(sharedDatabase.taskDao().byProject(project.id).single()) {
+            assertEquals("shared-node", objectNodeId)
+            assertEquals("shared-route", objectRouteId)
+        }
+        with(sharedDatabase.sitePhotoDao().byProject(project.id).single()) {
+            assertEquals("shared-node", matchedNodeId)
+            assertEquals("shared-route", matchedRouteId)
+        }
     }
 
     @Test
@@ -376,11 +761,11 @@ class ProjectScopedDatabaseProviderTest {
         assertEquals(1, scopedDatabase.workCategoryDao().byProject(project.id).size)
         assertEquals(0, scopedDatabase.noteDao().byProject(project.id).size)
         assertEquals(0, scopedDatabase.sitePhotoDao().byProject(project.id).size)
-        assertEquals(0, scopedDatabase.materialDeclarationDao().getByProject(project.id).size)
-        assertEquals(0, scopedDatabase.materialHandoverDao().byProject(project.id).size)
+        assertEquals(1, scopedDatabase.materialDeclarationDao().getByProject(project.id).size)
+        assertEquals(1, scopedDatabase.materialHandoverDao().byProject(project.id).size)
 
         val startTime = System.currentTimeMillis()
-        while (scopedDatabase.materialHandoverDao().byProject(project.id).isEmpty() && System.currentTimeMillis() - startTime < 3000) {
+        while (scopedDatabase.noteDao().byProject(project.id).isEmpty() && System.currentTimeMillis() - startTime < 3000) {
             delay(50)
         }
 
@@ -549,6 +934,20 @@ class ProjectScopedDatabaseProviderTest {
 
         assertEquals(false, hasOpenHolders)
         assertEquals(false, provider.isCleanupSchedulerRunningForTest())
+    }
+
+    @Test
+    fun `databaseFor reuses existing scoped holder for repeated access`() = runBlocking {
+        val scopedFile = File(tempDir, "holder-reuse/project.sqlite")
+        val project = projectEntity("project-holder-reuse", scopedFile)
+        sharedDatabase.projectDao().upsert(project)
+
+        val provider = ProjectScopedDatabaseProvider(context, sharedDatabase, storageManager)
+        val firstDatabase = provider.databaseFor(project.id)
+        val secondDatabase = provider.databaseFor(project.id)
+
+        openedDatabases += firstDatabase!!
+        assertSame(firstDatabase, secondDatabase)
     }
 
     private fun createDatabase(file: File): MapSupervisionDatabase {

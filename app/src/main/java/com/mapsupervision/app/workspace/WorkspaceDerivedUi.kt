@@ -251,7 +251,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
             dbMaterials[key] = WorkTemplateOption(
                 name = trimmedName,
                 unit = row.unit.trim(),
-                source = "Công việc / khối lượng công việc"
+                source = com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_WORK_VOLUME
             )
         }
     }
@@ -266,7 +266,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
                 dbMaterials[key] = WorkTemplateOption(
                     name = trimmedName,
                     unit = "",
-                    source = "Công việc / khối lượng công việc"
+                    source = com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_WORK_VOLUME
                 )
             }
         }
@@ -281,7 +281,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
             manualCategories[key] = WorkTemplateOption(
                 name = trimmedName,
                 unit = cat.unit.trim(),
-                source = "Hạng mục công việc chung"
+                source = com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_GENERAL
             )
         }
     }
@@ -292,7 +292,7 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
     val preferredTemplateOptions = templateOptions
         .groupBy { it.name.trim().lowercase() }
         .mapNotNull { (_, options) ->
-            options.firstOrNull { it.source == "Hạng mục công việc chung" && it.unit.isNotBlank() }
+            options.firstOrNull { it.source == com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_GENERAL && it.unit.isNotBlank() }
                 ?: options.firstOrNull { it.unit.isNotBlank() }
                 ?: options.firstOrNull()
         }

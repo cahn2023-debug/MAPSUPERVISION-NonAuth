@@ -52,6 +52,7 @@ data class WorkspaceDataState(
     val materialHandovers: List<MaterialHandover> = emptyList(),
     val materialDeclarations: List<MaterialDeclaration> = emptyList(),
     val workPlans: List<WorkPlan> = emptyList(),
+    val projectTasks: List<Task> = emptyList(),
     val aiNoteSummary: String = "",
     val aiTaskSuggestions: List<String> = emptyList(),
     val isAiLoading: Boolean = false,
@@ -122,7 +123,8 @@ internal data class WorkspaceRefreshSnapshot(
     val dailyLogs: List<DailyLog>,
     val workCategories: List<WorkCategory>,
     val materialHandovers: List<MaterialHandover>,
-    val materialDeclarations: List<MaterialDeclaration>
+    val materialDeclarations: List<MaterialDeclaration>,
+    val projectTasks: List<Task> = emptyList()
 )
 
 private val COMBINING_MARKS_REGEX = Regex("\\p{Mn}+")
@@ -626,6 +628,7 @@ data class WorkspaceState(
     val materialHandovers: List<MaterialHandover> = emptyList(),
     val materialDeclarations: List<MaterialDeclaration> = emptyList(),
     val workPlans: List<WorkPlan> = emptyList(),
+    val projectTasks: List<Task> = emptyList(),
     val aiNoteSummary: String = "",
     val aiTaskSuggestions: List<String> = emptyList(),
     val isAiLoading: Boolean = false,
@@ -653,6 +656,7 @@ data class WorkspaceState(
         materialHandovers = materialHandovers,
         materialDeclarations = materialDeclarations,
         workPlans = workPlans,
+        projectTasks = projectTasks,
         aiNoteSummary = aiNoteSummary,
         aiTaskSuggestions = aiTaskSuggestions,
         isAiLoading = isAiLoading,

@@ -121,7 +121,8 @@ import android.net.Uri
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 import com.mapsupervision.gis.maplibre.MapBridgeInstaller
 
 @OptIn(ExperimentalMaterial3Api::class)

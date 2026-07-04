@@ -73,7 +73,8 @@ import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.TaskStatus
 import com.mapsupervision.gis.ui.GisLabelField
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 @Composable
 fun FieldChip(text: String, selected: Boolean, onClick: () -> Unit) {
     OutlinedButton(

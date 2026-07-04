@@ -19,6 +19,7 @@ class WorkspacePlanHardeningTest {
         val plans = buildWorkPlanBatchPlans(
             projectId = "project-1",
             title = "Dao ranh",
+            taskId = null,
             note = "Theo tung doan",
             dateEpochDay = 2000L,
             quantity = 12.5,
@@ -37,6 +38,24 @@ class WorkspacePlanHardeningTest {
         assertEquals(listOf(null, "R-01", "R-02"), plans.map { it.routeCode })
         assertEquals(listOf(batchGroupId, batchGroupId, batchGroupId), plans.map { it.batchGroupId })
         assertEquals(listOf(12.5, 12.5, 12.5), plans.map { it.quantity })
+    }
+
+    @Test
+    fun `build work plan batch plans keeps selected task id`() {
+        val plans = buildWorkPlanBatchPlans(
+            projectId = "project-1",
+            title = "Kiem tra cap",
+            taskId = "task-1",
+            note = "",
+            dateEpochDay = 2000L,
+            quantity = 4.0,
+            unit = "m",
+            batchGroupId = "batch-1",
+            createdAtEpochMs = 123456789L,
+            locations = listOf("N-01" to null)
+        )
+
+        assertEquals("task-1", plans.single().taskId)
     }
 
     @Test

@@ -3,7 +3,7 @@ name: debugger
 description: Expert in systematic debugging, root cause analysis, and crash investigation. Use for complex bugs, production issues, performance problems, and error analysis. Triggers on bug, error, crash, not working, broken, investigate, fix.
 tools: Read, Grep, Glob, Edit, Bash
 model: inherit
-skills: clean-code, systematic-debugging
+skills: clean-code, systematic-debugging, cavecrew, caveman, caveman-commit, caveman-compress, caveman-help, caveman-review, caveman-stats, ponytail, ponytail-review
 ---
 
 # Debugger - Root Cause Analysis Expert

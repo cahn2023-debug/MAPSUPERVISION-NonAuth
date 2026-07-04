@@ -1,4 +1,4 @@
-package com.mapsupervision.app.workspace
+﻿package com.mapsupervision.app.workspace
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -30,9 +30,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.mapsupervision.app.ui.theme.extendedColors
-import com.mapsupervision.app.ui.theme.SecondaryMint
-import com.mapsupervision.app.ui.theme.PrimaryPeach
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.SecondaryMint
+import com.mapsupervision.core.ui.theme.PrimaryPeach
+import com.mapsupervision.core.ui.components.GlassmorphicCard
+import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.WorkPlan
 import com.mapsupervision.domain.model.resolveEpochDay
 import java.text.SimpleDateFormat
@@ -53,6 +55,7 @@ fun ProgressHubScreen(
     progressUiState: ProgressUiState,
     screenUiState: ProgressHubScreenUiState,
     workCategories: List<com.mapsupervision.domain.model.WorkCategory>,
+    projectTasks: List<Task>,
     photos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
     activeProjectName: String? = null,
     onSetSubTab: (ProgressHubSubTab) -> Unit,
@@ -78,6 +81,12 @@ fun ProgressHubScreen(
     onSetRouteDropdownExpanded: (Boolean) -> Unit,
     onUpdateVolumeInput: (String) -> Unit,
     onUpdateUnitInput: (String) -> Unit,
+    onAddActualLine: () -> Unit,
+    onRemoveActualLine: (String) -> Unit,
+    onUpdateActualLineWorkName: (String, String) -> Unit,
+    onUpdateActualLineCategoryName: (String, String) -> Unit,
+    onUpdateActualLineQuantityInput: (String, String) -> Unit,
+    onUpdateActualLineUnit: (String, String) -> Unit,
     onSelectWorkTemplate: (String, String) -> Unit,
     onUpdateSelectedCategoryName: (String) -> Unit,
     onSetCategoryDropdownExpanded: (Boolean) -> Unit,
@@ -90,12 +99,20 @@ fun ProgressHubScreen(
     onUpdateProgressSheetNote: (String) -> Unit,
     onResetLogForm: () -> Unit,
     onAddConstruction: (String, Float, Float) -> Unit,
-    onAddDailyLog: (String, Int, String, String, Double, String?, String?, Long, Double, String, String, String?, Float?) -> Unit,
+    onAddDailyLog: (AddDailyLogRequest) -> Unit,
+    onExportDailyLogs: (ExportDailyLogRequest) -> Unit,
     onAddWorkCategory: (String, String) -> Unit,
     onEditDailyLog: (com.mapsupervision.domain.model.DailyLog) -> Unit,
+    onSetShowExportDialog: (Boolean) -> Unit,
+    onUpdateExportScope: (DailyLogExportScope) -> Unit,
+    onUpdateExportStartDateMillis: (Long) -> Unit,
+    onUpdateExportEndDateMillis: (Long) -> Unit,
+    onUpdateExportFormat: (DailyLogExportFormat) -> Unit,
+    onUpdateIncludePlanInExport: (Boolean) -> Unit,
+    onUpdateExportValidationError: (String) -> Unit,
 
     // Plan Actions
-    onAddWorkPlanBatch: suspend (String, List<String>, List<String>, Double, String, String, Long) -> Boolean,
+    onAddWorkPlanBatch: suspend (String, List<String>, List<String>, Double, String, String, Long, String?) -> Boolean,
     onUpdateSelectedPlanWorkName: (String) -> Unit,
     onUpdatePlanUnitInput: (String) -> Unit,
     onUpdatePlanQuantityInput: (String) -> Unit,
@@ -111,7 +128,8 @@ fun ProgressHubScreen(
     onUpdateNewPlanWorkName: (String) -> Unit,
     onUpdateNewPlanWorkUnit: (String) -> Unit,
     onUpdatePlanFormError: (String) -> Unit,
-    onSelectPlanWorkTemplate: (String, String) -> Unit,
+    onSelectPlanWorkTemplate: (String, String, String?) -> Unit,
+    onApplyPlanToLog: (WorkPlan) -> Unit,
     onResetPlanForm: () -> Unit
 ) {
     val selectedNodeCodeForProgress = screenUiState.selectedNodeCodeForProgress
@@ -119,6 +137,8 @@ fun ProgressHubScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    var showExportStartDatePicker by remember { mutableStateOf(false) }
+    var showExportEndDatePicker by remember { mutableStateOf(false) }
 
     // Calendar & Diary state
     val todayCal = remember { Calendar.getInstance() }
@@ -365,28 +385,8 @@ fun ProgressHubScreen(
                         )
                     }
                     OutlinedButton( onClick = {
-                            coroutineScope.launch {
-                                val result = ProgressPdfExporter.export( projectId = activeProjectId ?: "unknown", progress = constructionProgress, nodes = nonStructuralNodes, photos = photos
-                                )
-                                result.fold( onSuccess = { file ->
-                                        try {
-                                            val uri = FileProvider.getUriForFile( context, "${context.packageName}.fileprovider", file
-                                            )
-                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, "application/pdf")
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (e: ActivityNotFoundException) {
-                                            snackbarHostState.showSnackbar("Da luu: ${file.absolutePath}")
-                                        }
-                                    }, onFailure = { e ->
-                                        snackbarHostState.showSnackbar(e.message ?: "Không xác định")
-                                    }
-                                )
-                            }
-                        }, shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            onSetShowExportDialog(true)
+                        }, shape = RoundedCornerShape(8.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp), enabled = !screenUiState.isExporting
                     ) {
                         Icon( imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = primaryTextColor
                         )
@@ -768,18 +768,67 @@ fun ProgressHubScreen(
                                             onSetShowAddPlanWorkDialog(true)
                                         }
                                     )
-                                    val allWorkOptions = remember(workCategories, progressUiState.workVolumeRows) {
-                                        val cats = workCategories.map { it.name to it.unit }
-                                        val rows = progressUiState.workVolumeRows.map { it.materialName to it.unit }
-                                        (cats + rows).distinctBy { it.first }
+                                    val materialOptions = progressUiState.templateOptions.filter {
+                                        it.source == com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_WORK_VOLUME
                                     }
-                                    allWorkOptions.forEach { opt ->
+                                    val generalWorkOptions = progressUiState.templateOptions.filter {
+                                        it.source == com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_GENERAL
+                                    }
+                                    if (materialOptions.isNotEmpty()) {
                                         DropdownMenuItem(
-                                            text = { Text("${opt.first} (${opt.second})") },
-                                            onClick = {
-                                                onSelectPlanWorkTemplate(opt.first, opt.second)
-                                            }
+                                            text = {
+                                                Text(
+                                                    "Công việc / khối lượng công việc:",
+                                                    color = secondaryTextColor,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                            },
+                                            onClick = {},
+                                            enabled = false
                                         )
+                                        materialOptions.forEach { option ->
+                                            val displayUnit = if (option.unit.isNotBlank()) " (${option.unit})" else ""
+                                            DropdownMenuItem(
+                                                text = { Text("${option.name}$displayUnit", color = primaryTextColor) },
+                                                onClick = {
+                                                    onSelectPlanWorkTemplate(
+                                                        option.name,
+                                                        resolveWorkTemplateUnit(option.name, workCategories, progressUiState.workVolumeRows)
+                                                            .ifBlank { option.unit },
+                                                        null
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    }
+                                    if (generalWorkOptions.isNotEmpty()) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "Hạng mục công việc chung:",
+                                                    color = secondaryTextColor,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                            },
+                                            onClick = {},
+                                            enabled = false
+                                        )
+                                        generalWorkOptions.forEach { option ->
+                                            val displayUnit = if (option.unit.isNotBlank()) " (${option.unit})" else ""
+                                            DropdownMenuItem(
+                                                text = { Text("${option.name}$displayUnit", color = primaryTextColor) },
+                                                onClick = {
+                                                    onSelectPlanWorkTemplate(
+                                                        option.name,
+                                                        resolveWorkTemplateUnit(option.name, workCategories, progressUiState.workVolumeRows)
+                                                            .ifBlank { option.unit },
+                                                        null
+                                                    )
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -941,7 +990,8 @@ fun ProgressHubScreen(
                                                 qty,
                                                 if (isPlanUnitReadOnly) selectedPlanTemplateUnit else screenUiState.planUnitInput,
                                                 screenUiState.planNoteInput,
-                                                selectedEpoch
+                                                selectedEpoch,
+                                                screenUiState.selectedPlanTaskId
                                             )
                                             if (saved) {
                                                 onResetPlanForm()
@@ -1276,6 +1326,48 @@ fun ProgressHubScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
 
+                            if (plansForDate.isNotEmpty()) {
+                                Text("KẾ HOẠCH TRONG NGÀY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                androidx.compose.foundation.lazy.LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(plansForDate, key = { it.id }) { plan ->
+                                        FilterChip(
+                                            selected = screenUiState.selectedPlanSnapshot?.linkedWorkPlanId == plan.id,
+                                            onClick = { onApplyPlanToLog(plan) },
+                                            label = {
+                                                Text(
+                                                    "${plan.title} (${String.format("%.2f", plan.quantity)} ${plan.unit})",
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                                screenUiState.selectedPlanSnapshot?.let { snapshot ->
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text("Kế hoạch gốc", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(snapshot.plannedWorkName, color = primaryTextColor, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "Khối lượng kế hoạch: ${String.format("%.2f", snapshot.plannedQuantity)} ${snapshot.plannedUnit}",
+                                                color = successColor,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+
                             // Associated node selector
                             Text("LIÊN KẾT VỊ TRÍ (ĐIỂM NÚT)", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = secondaryTextColor)
                             Spacer(modifier = Modifier.height(6.dp))
@@ -1385,7 +1477,9 @@ fun ProgressHubScreen(
                                              }
                                          )
 
-                                         val allMaterials = progressUiState.templateOptions.filter { it.source == "Công việc / khối lượng công việc" }
+                                         val allMaterials = progressUiState.templateOptions.filter {
+                                             it.source == com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_WORK_VOLUME
+                                         }
                                          val materials = if (selectedNodeCodeForLog != null) {
                                              val parsedNames = progressUiState.materialOptionsByNodeCode[selectedNodeCodeForLog].orEmpty()
                                                  .map { it.key.lowercase().trim() }
@@ -1401,7 +1495,9 @@ fun ProgressHubScreen(
                                          } else {
                                              allMaterials
                                          }
-                                         val generalWorks = progressUiState.templateOptions.filter { it.source == "Hạng mục công việc chung" }
+                                         val generalWorks = progressUiState.templateOptions.filter {
+                                             it.source == com.mapsupervision.domain.model.WORK_TEMPLATE_SOURCE_GENERAL
+                                         }
 
                                          if (materials.isNotEmpty()) {
                                              DropdownMenuItem(
@@ -1554,19 +1650,30 @@ fun ProgressHubScreen(
                                          val wasEditing = screenUiState.editingDailyLogId != null
 
                                          onAddDailyLog(
-                                             workItem,
-                                             manpower,
-                                             screenUiState.noteInput.trim(),
-                                             weatherDesc,
-                                             temp,
-                                             selectedNodeCodeForLog,
-                                             selectedRouteCodeForLog,
-                                             selectedEpoch,
-                                             volume,
-                                             screenUiState.unitInput.trim(),
-                                             screenUiState.selectedCategoryName.trim(),
-                                             screenUiState.editingDailyLogId,
-                                             progressPercent
+                                             AddDailyLogRequest(
+                                                 workItem = workItem,
+                                                 manpower = manpower,
+                                                 note = screenUiState.noteInput.trim(),
+                                                 weather = weatherDesc,
+                                                 temperature = temp,
+                                                 nodeCode = selectedNodeCodeForLog,
+                                                 routeCode = selectedRouteCodeForLog,
+                                                 dateEpochDay = selectedEpoch,
+                                                 planSnapshot = screenUiState.selectedPlanSnapshot,
+                                                 actualLines = listOf(
+                                                     DailyLogDraftLine(
+                                                         id = screenUiState.editingDailyLogId ?: java.util.UUID.randomUUID().toString(),
+                                                         workName = workItem,
+                                                         categoryName = screenUiState.selectedCategoryName.trim(),
+                                                         quantityInput = volume.toString(),
+                                                         unit = screenUiState.unitInput.trim(),
+                                                         nodeCode = selectedNodeCodeForLog,
+                                                         routeCode = selectedRouteCodeForLog
+                                                     )
+                                                 ),
+                                                 existingId = screenUiState.editingDailyLogId,
+                                                 actualProgressPercent = progressPercent
+                                             )
                                          )
 
                                          // Clear fields after saving
@@ -1780,6 +1887,165 @@ fun ProgressHubScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (screenUiState.showExportDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!screenUiState.isExporting) onSetShowExportDialog(false) },
+                title = { Text("Xuất nhật ký", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Phạm vi xuất", fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = screenUiState.exportScope == DailyLogExportScope.ALL,
+                                onClick = { onUpdateExportScope(DailyLogExportScope.ALL) },
+                                label = { Text("Toàn bộ") }
+                            )
+                            FilterChip(
+                                selected = screenUiState.exportScope == DailyLogExportScope.DATE_RANGE,
+                                onClick = { onUpdateExportScope(DailyLogExportScope.DATE_RANGE) },
+                                label = { Text("Từ ngày...đến ngày...") }
+                            )
+                        }
+
+                        if (screenUiState.exportScope == DailyLogExportScope.DATE_RANGE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(onClick = { showExportStartDatePicker = true }, modifier = Modifier.weight(1f)) {
+                                    Text("Từ: ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(screenUiState.exportStartDateMillis))}")
+                                }
+                                OutlinedButton(onClick = { showExportEndDatePicker = true }, modifier = Modifier.weight(1f)) {
+                                    Text("Đến: ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(screenUiState.exportEndDateMillis))}")
+                                }
+                            }
+                        }
+
+                        Text("Định dạng", fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = screenUiState.exportFormat == DailyLogExportFormat.PDF,
+                                onClick = { onUpdateExportFormat(DailyLogExportFormat.PDF) },
+                                label = { Text("PDF") }
+                            )
+                            FilterChip(
+                                selected = screenUiState.exportFormat == DailyLogExportFormat.DOCX,
+                                onClick = { onUpdateExportFormat(DailyLogExportFormat.DOCX) },
+                                label = { Text("Word") }
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Kèm kế hoạch", fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = screenUiState.includePlanInExport,
+                                onCheckedChange = { onUpdateIncludePlanInExport(it) }
+                            )
+                        }
+
+                        if (screenUiState.isExporting) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+
+                        if (screenUiState.exportValidationError.isNotBlank()) {
+                            Text(
+                                screenUiState.exportValidationError,
+                                color = redColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val startEpochDay = java.time.Instant.ofEpochMilli(screenUiState.exportStartDateMillis)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDate()
+                                .toEpochDay()
+                            val endEpochDay = java.time.Instant.ofEpochMilli(screenUiState.exportEndDateMillis)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDate()
+                                .toEpochDay()
+                            if (screenUiState.exportScope == DailyLogExportScope.DATE_RANGE && startEpochDay > endEpochDay) {
+                                onUpdateExportValidationError("Ngày bắt đầu không được lớn hơn ngày kết thúc")
+                            } else {
+                                onUpdateExportValidationError("")
+                                onExportDailyLogs(
+                                    ExportDailyLogRequest(
+                                        projectId = activeProjectId ?: return@Button,
+                                        scope = screenUiState.exportScope,
+                                        startEpochDay = if (screenUiState.exportScope == DailyLogExportScope.DATE_RANGE) startEpochDay else null,
+                                        endEpochDay = if (screenUiState.exportScope == DailyLogExportScope.DATE_RANGE) endEpochDay else null,
+                                        format = screenUiState.exportFormat,
+                                        includePlan = screenUiState.includePlanInExport
+                                    )
+                                )
+                            }
+                        },
+                        enabled = !screenUiState.isExporting
+                    ) {
+                        Text("Xuất")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { onSetShowExportDialog(false) }, enabled = !screenUiState.isExporting) {
+                        Text("Hủy")
+                    }
+                }
+            )
+        }
+
+        if (showExportStartDatePicker) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = screenUiState.exportStartDateMillis
+            )
+            DatePickerDialog(
+                onDismissRequest = { showExportStartDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onUpdateExportStartDateMillis(datePickerState.selectedDateMillis ?: screenUiState.exportStartDateMillis)
+                        showExportStartDatePicker = false
+                    }) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExportStartDatePicker = false }) {
+                        Text("Hủy")
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        if (showExportEndDatePicker) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = screenUiState.exportEndDateMillis
+            )
+            DatePickerDialog(
+                onDismissRequest = { showExportEndDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onUpdateExportEndDateMillis(datePickerState.selectedDateMillis ?: screenUiState.exportEndDateMillis)
+                        showExportEndDatePicker = false
+                    }) {
+                        Text("OK")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExportEndDatePicker = false }) {
+                        Text("Hủy")
+                    }
+                }
+            ) {
+                DatePicker(state = datePickerState)
             }
         }
 

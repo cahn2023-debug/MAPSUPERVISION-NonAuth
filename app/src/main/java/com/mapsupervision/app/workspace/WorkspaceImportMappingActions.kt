@@ -51,6 +51,7 @@ import com.mapsupervision.gis.ui.GisLabelField
 import com.mapsupervision.gis.ui.GisMapBridgeRegistry
 import com.mapsupervision.gis.ui.MapLayerType
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -211,6 +212,89 @@ fun WorkspaceViewModel.updateSelectedExcelSheet(sheetName: String) {
     val ui = _state.value.excelParserUi
     val uri = ui.sourceUri ?: return
     loadExcelPreview(uri, ui.existingFileId, sheetName)
+}
+
+fun WorkspaceViewModel.repairImportedGeometry(file: ImportedFile) {
+    viewModelScope.launch {
+        val projectId = _state.value.activeProjectId?.takeUnless { it.isBlank() }
+        val ext = file.fileType.lowercase(java.util.Locale.US)
+        if (projectId == null || ext !in setOf("kml", "kmz", "geojson", "json")) {
+            showMessage("File này không hỗ trợ nhập lại geometry.")
+            return@launch
+        }
+
+        val sourceFile = File(file.storedPath)
+        if (!sourceFile.exists() || !sourceFile.isFile) {
+            showMessage("Không tìm thấy file nguồn để nhập lại geometry.")
+            return@launch
+        }
+
+        _state.value = _state.value.copy(
+            importMappingUi = _state.value.importMappingUi.copy(
+                isLoading = true,
+                message = "Đang nhập lại geometry..."
+            )
+        )
+
+        runCatching {
+            withContext(Dispatchers.IO) {
+                importService.importNonExcelWithMapping(
+                    projectId = projectId,
+                    uri = Uri.fromFile(sourceFile).toString(),
+                    mapping = NonExcelImportMapping(positionField = "Tự sinh mã"),
+                    confirmed = ConfirmedFieldFlags(positionField = true)
+                )
+            }
+        }.onSuccess { draft ->
+            val repairedNodes = draft.suggestedNodes.map { it.copy(projectId = projectId, importedFileId = file.id) }
+            val repairedRoutes = draft.suggestedRoutes.map { it.copy(projectId = projectId, importedFileId = file.id) }
+            when (val result = gisRepository.replaceImportedGeometry(file.id, repairedNodes, repairedRoutes)) {
+                is AppResult.Error -> {
+                    _state.value = _state.value.copy(
+                        importMappingUi = _state.value.importMappingUi.copy(
+                            isLoading = false,
+                            message = "Nhập lại geometry thất bại: ${result.throwable.message}"
+                        )
+                    )
+                    showMessage("Nhập lại geometry thất bại.")
+                }
+                is AppResult.Success -> {
+                    val stateSnapshot = _state.value
+                    val updatedNodes = stateSnapshot.designNodes.filter { it.importedFileId != file.id } + repairedNodes
+                    val updatedRoutes = stateSnapshot.designRoutes.filter { it.importedFileId != file.id } + repairedRoutes
+                    _state.value = stateSnapshot.copy(
+                        designNodes = updatedNodes,
+                        designRoutes = updatedRoutes,
+                        importMappingUi = stateSnapshot.importMappingUi.copy(
+                            isLoading = false,
+                            message = "Đã nhập lại geometry: +${repairedNodes.size} node, +${repairedRoutes.size} tuyến"
+                        ),
+                        dashboard = buildDashboard(
+                            updatedNodes,
+                            updatedRoutes,
+                            stateSnapshot.constructionProgress,
+                            stateSnapshot.workVolumeRows
+                        )
+                    )
+                    updateFilteredMapData()
+                    if (updatedNodes.isNotEmpty() || updatedRoutes.isNotEmpty()) {
+                        GisMapBridgeRegistry.bridge?.fitToObjects()
+                    }
+                    markProjectChanged(projectId, "design_geometry_repaired")
+                    showMessage("Đã nhập lại geometry cho ${file.fileName}.")
+                }
+            }
+        }.onFailure { ex ->
+            AppLogger.e(ex, "repairImportedGeometry failed fileId=${file.id}")
+            _state.value = _state.value.copy(
+                importMappingUi = _state.value.importMappingUi.copy(
+                    isLoading = false,
+                    message = "Nhập lại geometry thất bại: ${ex.message}"
+                )
+            )
+            showMessage("Nhập lại geometry thất bại.")
+        }
+    }
 }
 
 fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = null) {

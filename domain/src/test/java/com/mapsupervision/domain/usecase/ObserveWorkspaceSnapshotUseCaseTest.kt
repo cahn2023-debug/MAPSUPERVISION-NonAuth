@@ -9,6 +9,8 @@ import com.mapsupervision.domain.model.WorkVolumeProgress
 import com.mapsupervision.domain.model.NodeProgress
 import com.mapsupervision.domain.model.PhotoLocationStatus
 import com.mapsupervision.domain.model.SitePhoto
+import com.mapsupervision.domain.model.Task
+import com.mapsupervision.domain.model.TaskStatus
 import com.mapsupervision.domain.model.WorkCategory
 import com.mapsupervision.domain.model.MaterialHandover
 import com.mapsupervision.domain.model.MaterialDeclaration
@@ -19,6 +21,7 @@ import com.mapsupervision.domain.repository.ImportedFileRepository
 import com.mapsupervision.domain.repository.WorkVolumeProgressRepository
 import com.mapsupervision.domain.repository.PhotoRepository
 import com.mapsupervision.domain.repository.ProgressRepository
+import com.mapsupervision.domain.repository.TaskRepository
 import com.mapsupervision.domain.repository.WorkCategoryRepository
 import com.mapsupervision.domain.repository.MaterialHandoverRepository
 import com.mapsupervision.domain.repository.MaterialDeclarationRepository
@@ -56,6 +59,19 @@ class ObserveWorkspaceSnapshotUseCaseTest {
         )
         val dailyLogs = MutableStateFlow(listOf(DailyLog("d1", "p1", "Đào rãnh", 5, "done", 4L)))
         val workCategories = MutableStateFlow(listOf(WorkCategory("w1", "p1", "Cap", "m", 5L)))
+        val projectTasks = MutableStateFlow(
+            listOf(
+                Task(
+                    id = "task-1",
+                    projectId = "p1",
+                    objectCode = "N-1",
+                    title = "Kiem tra tuyen cap",
+                    description = "",
+                    status = TaskStatus.TODO,
+                    createdAtEpochMs = 6L
+                )
+            )
+        )
         val handovers = MutableStateFlow(
             listOf(
                 MaterialHandover(
@@ -139,7 +155,8 @@ class ObserveWorkspaceSnapshotUseCaseTest {
             photoRepository = FakePhotoRepository(photos),
             materialHandoverRepository = FakeMaterialHandoverRepository(handovers),
             materialDeclarationRepository = FakeMaterialDeclarationRepository(declarations),
-            workPlanRepository = FakeWorkPlanRepository(workPlans)
+            workPlanRepository = FakeWorkPlanRepository(workPlans),
+            taskRepository = FakeTaskRepository(projectTasks)
         )
  
         val snapshot = useCase("p1").first()
@@ -157,6 +174,8 @@ class ObserveWorkspaceSnapshotUseCaseTest {
         assertEquals(1, snapshot.materialDeclarations.size)
         assertEquals(1, snapshot.workPlans.size)
         assertEquals("wp1", snapshot.workPlans.first().id)
+        assertEquals(1, snapshot.projectTasks.size)
+        assertEquals("task-1", snapshot.projectTasks.first().id)
     }
  
     @Test
@@ -225,7 +244,14 @@ class ObserveWorkspaceSnapshotUseCaseTest {
                 override suspend fun getByProject(projectId: String): AppResult<List<MaterialDeclaration>> = AppResult.Success(emptyList())
                 override fun observeByProject(projectId: String): Flow<List<MaterialDeclaration>> = flowOf(emptyList())
             },
-            workPlanRepository = FakeWorkPlanRepository()
+            workPlanRepository = FakeWorkPlanRepository(),
+            taskRepository = object : TaskRepository {
+                override suspend fun upsert(task: Task): AppResult<Unit> = AppResult.Success(Unit)
+                override suspend fun delete(taskId: String): AppResult<Unit> = AppResult.Success(Unit)
+                override suspend fun byObject(projectId: String, objectCode: String): AppResult<List<Task>> = AppResult.Success(emptyList())
+                override suspend fun byProject(projectId: String): AppResult<List<Task>> = AppResult.Success(emptyList())
+                override fun observeByProject(projectId: String): Flow<List<Task>> = flowOf(emptyList())
+            }
         )
 
         val emissions = useCase("p1").toList()
@@ -325,5 +351,15 @@ private class FakeWorkPlanRepository(
     override suspend fun add(workPlan: com.mapsupervision.domain.model.WorkPlan): AppResult<Unit> = AppResult.Success(Unit)
     override suspend fun byProject(projectId: String): AppResult<List<com.mapsupervision.domain.model.WorkPlan>> = AppResult.Success(emptyList())
     override fun observeByProject(projectId: String): Flow<List<com.mapsupervision.domain.model.WorkPlan>> = flow
+}
+
+private class FakeTaskRepository(
+    private val flow: MutableStateFlow<List<Task>>
+) : TaskRepository {
+    override suspend fun upsert(task: Task): AppResult<Unit> = AppResult.Success(Unit)
+    override suspend fun delete(taskId: String): AppResult<Unit> = AppResult.Success(Unit)
+    override suspend fun byObject(projectId: String, objectCode: String): AppResult<List<Task>> = AppResult.Success(flow.value)
+    override suspend fun byProject(projectId: String): AppResult<List<Task>> = AppResult.Success(flow.value)
+    override fun observeByProject(projectId: String): Flow<List<Task>> = flow
 }
 

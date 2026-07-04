@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.mapsupervision.data.db.entity.TaskEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TaskDao {
@@ -24,6 +25,9 @@ interface TaskDao {
 
     @Query("SELECT * FROM task WHERE projectId = :projectId AND isDeleted = 0 ORDER BY createdAtEpochMs DESC")
     suspend fun byProject(projectId: String): List<TaskEntity>
+
+    @Query("SELECT * FROM task WHERE projectId = :projectId AND isDeleted = 0 ORDER BY createdAtEpochMs DESC")
+    fun observeByProject(projectId: String): Flow<List<TaskEntity>>
 
     @Query("SELECT * FROM task WHERE projectId = :projectId ORDER BY createdAtEpochMs DESC")
     suspend fun byProjectIncludingDeleted(projectId: String): List<TaskEntity>

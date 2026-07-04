@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.mapsupervision.app.ui.theme.MapSupervisionTheme
+import com.mapsupervision.core.ui.theme.MapSupervisionTheme
 import com.mapsupervision.app.workspace.IncomingSharePayload
 import com.mapsupervision.domain.service.IPhotoLocationProvider
 import com.mapsupervision.domain.service.IPhotoPipelineService

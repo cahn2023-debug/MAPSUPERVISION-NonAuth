@@ -9,6 +9,12 @@ import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.repository.TaskRepository
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class TaskRepositoryImpl @Inject constructor(
@@ -18,15 +24,24 @@ class TaskRepositoryImpl @Inject constructor(
 ) : TaskRepository {
     override suspend fun upsert(task: Task): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
         val database = projectScopedDatabaseProvider.databaseFor(task.projectId)
-        val resolvedNodeId = task.objectNodeId ?: database?.gisNodeDao()?.byProject(task.projectId)?.find { it.code == task.objectCode }?.id
-        val resolvedRouteId = task.objectRouteId ?: if (resolvedNodeId == null) database?.gisRouteDao()?.byProject(task.projectId)?.find { it.code == task.objectCode }?.id else null
+        val resolvedNodeId = task.objectNodeId
+            ?: database?.gisNodeDao()?.byProject(task.projectId)?.find { it.code == task.objectCode }?.id
+        val resolvedRouteId = task.objectRouteId ?: if (resolvedNodeId == null) {
+            database?.gisRouteDao()?.byProject(task.projectId)?.find { it.code == task.objectCode }?.id
+        } else {
+            null
+        }
 
         val normalized = task.copy(
             objectNodeId = resolvedNodeId,
             objectRouteId = resolvedRouteId,
             updatedAtEpochMs = if (task.updatedAtEpochMs == 0L) System.currentTimeMillis() else task.updatedAtEpochMs
         )
-        dao(task.projectId).upsert(TaskEntity.fromDomain(normalized))
+        val entity = TaskEntity.fromDomain(normalized)
+        writeToSharedAndScoped(
+            sharedWrite = { dao.upsert(entity) },
+            scopedWrite = { database?.taskDao()?.upsert(entity) }
+        )
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to upsert task", it)) }
@@ -34,27 +49,48 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun delete(taskId: String): AppResult<Unit> = withContext(Dispatchers.IO) { runCatching {
         val activeProjectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data
-        val scopedDao = if (activeProjectId.isNullOrBlank()) dao else dao(activeProjectId)
         val now = System.currentTimeMillis()
-        scopedDao.markDeletedById(taskId, now, now)
+        val database = activeProjectId?.let { projectScopedDatabaseProvider.databaseFor(it) }
+        writeToSharedAndScoped(
+            sharedWrite = { dao.markDeletedById(taskId, now, now) },
+            scopedWrite = { database?.taskDao()?.markDeletedById(taskId, now, now) }
+        )
     }.fold(
         onSuccess = { AppResult.Success(Unit) },
         onFailure = { AppResult.Error(DatabaseException("Failed to delete task", it)) }
     ) }
 
     override suspend fun byObject(projectId: String, objectCode: String): AppResult<List<Task>> = withContext(Dispatchers.IO) { runCatching {
-        hydrateTasks(projectId, dao(projectId).byObject(projectId, objectCode))
+        val rows = dao(projectId).byObject(projectId, objectCode)
+        val resolvedRows = if (rows.isEmpty()) dao.byObject(projectId, objectCode) else rows
+        hydrateTasks(projectId, resolvedRows)
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list tasks by object", it)) }
     ) }
 
     override suspend fun byProject(projectId: String): AppResult<List<Task>> = withContext(Dispatchers.IO) { runCatching {
-        hydrateTasks(projectId, dao(projectId).byProject(projectId))
+        val rows = dao(projectId).byProject(projectId)
+        val resolvedRows = if (rows.isEmpty()) dao.byProject(projectId) else rows
+        hydrateTasks(projectId, resolvedRows)
     }.fold(
         onSuccess = { AppResult.Success(it) },
         onFailure = { AppResult.Error(DatabaseException("Failed to list tasks by project", it)) }
     ) }
+
+    override fun observeByProject(projectId: String): Flow<List<Task>> = flow {
+        val scopedDao = dao(projectId)
+        emitAll(
+            combine(
+                scopedDao.observeByProject(projectId),
+                dao.observeByProject(projectId)
+            ) { scopedRows, sharedRows ->
+                val resolvedRows = if (scopedRows.isEmpty()) sharedRows else scopedRows
+                hydrateTasks(projectId, resolvedRows)
+            }
+                .distinctUntilChanged()
+        )
+    }
 
     private suspend fun hydrateTasks(projectId: String, entities: List<TaskEntity>): List<Task> {
         if (entities.isEmpty()) return emptyList()
@@ -73,4 +109,22 @@ class TaskRepositoryImpl @Inject constructor(
 
     private suspend fun dao(projectId: String): TaskDao =
         projectScopedDatabaseProvider.databaseFor(projectId)?.taskDao() ?: dao
+
+    private suspend fun writeToSharedAndScoped(
+        sharedWrite: suspend () -> Unit,
+        scopedWrite: suspend () -> Unit?
+    ) {
+        val failures = mutableListOf<Throwable>()
+        var success = false
+        runCatching { sharedWrite() }
+            .onSuccess { success = true }
+            .onFailure { failures += it }
+        runCatching { scopedWrite() }
+            .onSuccess { if (it != null) success = true }
+            .onFailure { failures += it }
+
+        if (!success && failures.isNotEmpty()) {
+            throw failures.first()
+        }
+    }
 }

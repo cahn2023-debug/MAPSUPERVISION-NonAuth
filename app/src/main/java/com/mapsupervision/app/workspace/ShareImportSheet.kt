@@ -57,7 +57,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.mapsupervision.app.resolveIncomingShareMediaType
-import com.mapsupervision.app.ui.theme.extendedColors
+import com.mapsupervision.core.ui.theme.extendedColors
+import com.mapsupervision.core.ui.components.*
 import com.mapsupervision.domain.model.MediaType
 import com.mapsupervision.domain.model.Project
 

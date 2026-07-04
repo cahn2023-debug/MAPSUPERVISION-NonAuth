@@ -81,6 +81,7 @@ internal fun mergeWorkspacePlanningSnapshot(
         activeProjectId = snapshot.projectId,
         materialHandovers = snapshot.materialHandovers,
         materialDeclarations = snapshot.materialDeclarations,
-        workPlans = snapshot.workPlans
+        workPlans = snapshot.workPlans,
+        projectTasks = snapshot.projectTasks
     )
 }

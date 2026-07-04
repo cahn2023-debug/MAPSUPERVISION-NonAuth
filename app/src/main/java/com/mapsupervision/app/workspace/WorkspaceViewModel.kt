@@ -238,14 +238,7 @@ class WorkspaceViewModel @Inject constructor(
                         lastMigrationProjectId = null
                         flowOf<WorkspaceSnapshot?>(null)
                     } else {
-                        val projectResult = projectRepository.list(true)
-                        if (projectResult is com.mapsupervision.core.result.AppResult.Success) {
-                            val activeProj = projectResult.data.find { it.id == projectId }
-                            if (activeProj != null && lastMigrationProjectId != projectId) {
-                                lastMigrationProjectId = projectId
-                                migrationService.migrateProjectIfNeeded(activeProj)
-                            }
-                        }
+                        scheduleProjectMigration(projectId)
                         observeWorkspaceSnapshot(projectId)
                     }
                 }
@@ -274,6 +267,19 @@ class WorkspaceViewModel @Inject constructor(
                     "photo_saved" -> showMessage("Đã lưu ảnh hiện trường")
                     "project_imported" -> showMessage("Đã nhập dự án")
                 }
+            }
+        }
+    }
+
+    private fun scheduleProjectMigration(projectId: String) {
+        if (lastMigrationProjectId == projectId) return
+        lastMigrationProjectId = projectId
+        viewModelScope.launch(Dispatchers.IO) {
+            val projects = (projectRepository.list(true) as? com.mapsupervision.core.result.AppResult.Success)?.data.orEmpty()
+            val activeProject = projects.find { it.id == projectId } ?: return@launch
+            val migrationStatus = migrationService.migrateProjectIfNeeded(activeProject)
+            if (migrationStatus.migrated || migrationStatus.verified) {
+                projectSyncRepository.notifyProjectChanged(projectId, "project_migrated")
             }
         }
     }
@@ -454,6 +460,7 @@ internal fun applyWorkspaceSnapshotToState(
         materialHandovers = snapshot.materialHandovers,
         materialDeclarations = snapshot.materialDeclarations,
         workPlans = snapshot.workPlans,
+        projectTasks = snapshot.projectTasks,
         selectedNodePhotos = nextSelectedPhotos,
         projectPhotos = snapshot.sitePhotos,
         isRefreshing = false,
@@ -503,9 +510,23 @@ internal fun filterRoutes(
         val byVisibility = !isContractorHidden(mapUi, route.contractor)
         val byQuery = mapUi.searchQuery.isBlank() ||
             indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
-        val byLiveNodes = liveNodeCodesUpper.contains(route.startNodeCode.trim().uppercase()) ||
+        val byLiveNodes = routeHasRenderablePolyline(route) ||
+            liveNodeCodesUpper.contains(route.startNodeCode.trim().uppercase()) ||
             liveNodeCodesUpper.contains(route.endNodeCode.trim().uppercase())
         byContractor && byVisibility && byQuery && byLiveNodes
     }
+}
+
+private fun routeHasRenderablePolyline(route: GisRoute): Boolean {
+    var validPointCount = 0
+    for ((latitude, longitude) in route.points) {
+        val isValid = (latitude in -90.0..90.0 && longitude in -180.0..180.0) ||
+            (longitude in -90.0..90.0 && latitude in -180.0..180.0)
+        if (isValid) {
+            validPointCount += 1
+            if (validPointCount >= 2) return true
+        }
+    }
+    return false
 }
 

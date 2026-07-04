@@ -32,10 +32,10 @@ internal fun scanGeoJsonPreview(
             val row = linkedMapOf<String, String>()
             row["properties.name"] = feature.properties["name"].orEmpty()
             row["properties.id"] = feature.properties["id"].orEmpty()
-            row["Tá»± sinh mÃ£"] = defaultCode
+            row["Tự sinh mã"] = defaultCode
             row["properties.contractor"] = feature.properties["contractor"].orEmpty()
             row["properties.mapNumber"] = feature.properties["mapNumber"].orEmpty()
-            row["MÃ£ tá»± sinh tá»« Ä‘á»‘i tÆ°á»£ng"] = defaultCode
+            row["Mã tự sinh từ đối tượng"] = defaultCode
             feature.properties.forEach { (key, value) ->
                 row.putIfAbsent(key, value)
                 row["properties.$key"] = value
@@ -87,16 +87,17 @@ internal fun parseGeoJsonContentStreaming(
                     workVolumeSummary = workVolumeSummary
                 )
             }
-            "LineString" -> {
-                val points = feature.linePoints
-                if (points.isNotEmpty()) {
+            "LineString", "MultiLineString", "Polygon", "MultiPolygon" -> {
+                for (points in feature.lineStrings) {
+                    val normalizedLine = normalizeGeometryLine(points)
+                    if (normalizedLine.points.size < 2) continue
                     localLineSegments += CollectedLineSegment(
                         routeDisplayName = extractedCode,
                         contractor = extractedContractor,
                         mapNumber = extractedMapNumber,
                         workVolumeSummary = "",
                         description = "",
-                        points = points,
+                        points = normalizedLine.points,
                         extendedData = feature.properties,
                         customFields = customFields
                     )
@@ -107,9 +108,10 @@ internal fun parseGeoJsonContentStreaming(
     }
 
     val totalRouteLengthMeters = mergeAndProcessLines(localLineSegments, projectId, mapping, nodes, routes, base)
+    val displayNodes = filterNodesMatchingRouteVertices(nodes, routes)
     return ParsedImportResult(
-        summary = "GeoJSON parsed: features=$featureCount, nodes=${nodes.size}, routes=${routes.size}, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m",
-        nodes = nodes,
+        summary = "GeoJSON parsed: features=$featureCount, nodes=${displayNodes.size}, routes=${routes.size}, routeLength=${"%.2f".format(Locale.US, totalRouteLengthMeters)}m",
+        nodes = displayNodes,
         routes = routes,
         routeLengthMeters = totalRouteLengthMeters
     )
@@ -118,7 +120,7 @@ internal fun parseGeoJsonContentStreaming(
 private data class GeoJsonFeatureData(
     val geometryType: String = "",
     val point: Pair<Double, Double>? = null,
-    val linePoints: List<Pair<Double, Double>> = emptyList(),
+    val lineStrings: List<List<Pair<Double, Double>>> = emptyList(),
     val properties: Map<String, String> = emptyMap()
 )
 
@@ -175,7 +177,7 @@ private fun mergeFeatureField(
             existing.copy(
                 geometryType = geometry.type,
                 point = geometry.point,
-                linePoints = geometry.linePoints
+                lineStrings = geometry.lineStrings
             )
         }
         "properties" -> existing.copy(properties = readProperties(reader))
@@ -193,7 +195,7 @@ private fun readFeature(reader: JsonReader): GeoJsonFeatureData? {
     }
     var geometryType = ""
     var point: Pair<Double, Double>? = null
-    var linePoints: List<Pair<Double, Double>> = emptyList()
+    var lineStrings: List<List<Pair<Double, Double>>> = emptyList()
     var properties: Map<String, String> = emptyMap()
 
     reader.beginObject()
@@ -203,7 +205,7 @@ private fun readFeature(reader: JsonReader): GeoJsonFeatureData? {
                 val geometry = readGeometry(reader)
                 geometryType = geometry.type
                 point = geometry.point
-                linePoints = geometry.linePoints
+                lineStrings = geometry.lineStrings
             }
             "properties" -> properties = readProperties(reader)
             else -> reader.skipValue()
@@ -214,7 +216,7 @@ private fun readFeature(reader: JsonReader): GeoJsonFeatureData? {
     return GeoJsonFeatureData(
         geometryType = geometryType,
         point = point,
-        linePoints = linePoints,
+        lineStrings = lineStrings,
         properties = properties
     )
 }
@@ -222,7 +224,7 @@ private fun readFeature(reader: JsonReader): GeoJsonFeatureData? {
 private data class GeometryData(
     val type: String = "",
     val point: Pair<Double, Double>? = null,
-    val linePoints: List<Pair<Double, Double>> = emptyList()
+    val lineStrings: List<List<Pair<Double, Double>>> = emptyList()
 )
 
 private fun readGeometry(reader: JsonReader): GeometryData {
@@ -232,7 +234,7 @@ private fun readGeometry(reader: JsonReader): GeometryData {
     }
     var type = ""
     var point: Pair<Double, Double>? = null
-    var linePoints: List<Pair<Double, Double>> = emptyList()
+    var lineStrings: List<List<Pair<Double, Double>>> = emptyList()
 
     reader.beginObject()
     while (reader.hasNext()) {
@@ -240,14 +242,17 @@ private fun readGeometry(reader: JsonReader): GeometryData {
             "type" -> type = nextStringOrEmpty(reader)
             "coordinates" -> when (type) {
                 "Point" -> point = readPointCoordinates(reader)
-                "LineString" -> linePoints = readLineStringCoordinates(reader)
+                "LineString" -> lineStrings = listOf(readLineStringCoordinates(reader))
+                "MultiLineString" -> lineStrings = readMultiLineStringCoordinates(reader)
+                "Polygon" -> lineStrings = readPolygonCoordinates(reader)
+                "MultiPolygon" -> lineStrings = readMultiPolygonCoordinates(reader)
                 else -> reader.skipValue()
             }
             else -> reader.skipValue()
         }
     }
     reader.endObject()
-    return GeometryData(type = type, point = point, linePoints = linePoints)
+    return GeometryData(type = type, point = point, lineStrings = lineStrings)
 }
 
 private fun readPointCoordinates(reader: JsonReader): Pair<Double, Double>? {
@@ -260,7 +265,7 @@ private fun readPointCoordinates(reader: JsonReader): Pair<Double, Double>? {
     val lat = nextDoubleOrNull(reader)
     while (reader.hasNext()) reader.skipValue()
     reader.endArray()
-    return if (lat != null && lon != null) lat to lon else null
+    return if (lat != null && lon != null) normalizeGeoJsonCoordinatePair(longitude = lon, latitude = lat) else null
 }
 
 private fun readLineStringCoordinates(reader: JsonReader): List<Pair<Double, Double>> {
@@ -275,6 +280,48 @@ private fun readLineStringCoordinates(reader: JsonReader): List<Pair<Double, Dou
     }
     reader.endArray()
     return points
+}
+
+private fun readMultiLineStringCoordinates(reader: JsonReader): List<List<Pair<Double, Double>>> {
+    if (reader.peek() != JsonToken.BEGIN_ARRAY) {
+        reader.skipValue()
+        return emptyList()
+    }
+    val lines = mutableListOf<List<Pair<Double, Double>>>()
+    reader.beginArray()
+    while (reader.hasNext()) {
+        lines += readLineStringCoordinates(reader)
+    }
+    reader.endArray()
+    return lines
+}
+
+private fun readPolygonCoordinates(reader: JsonReader): List<List<Pair<Double, Double>>> {
+    if (reader.peek() != JsonToken.BEGIN_ARRAY) {
+        reader.skipValue()
+        return emptyList()
+    }
+    val rings = mutableListOf<List<Pair<Double, Double>>>()
+    reader.beginArray()
+    while (reader.hasNext()) {
+        rings += readLineStringCoordinates(reader)
+    }
+    reader.endArray()
+    return rings
+}
+
+private fun readMultiPolygonCoordinates(reader: JsonReader): List<List<Pair<Double, Double>>> {
+    if (reader.peek() != JsonToken.BEGIN_ARRAY) {
+        reader.skipValue()
+        return emptyList()
+    }
+    val rings = mutableListOf<List<Pair<Double, Double>>>()
+    reader.beginArray()
+    while (reader.hasNext()) {
+        rings += readPolygonCoordinates(reader)
+    }
+    reader.endArray()
+    return rings
 }
 
 private fun readProperties(reader: JsonReader): Map<String, String> {
@@ -349,7 +396,7 @@ private fun extractGeoJsonCode(
     val field = mapping?.positionField.orEmpty()
     val cleanField = field.removePrefix("properties.")
     return when (field) {
-        "Tá»± sinh mÃ£" -> defaultCode
+        "Tự sinh mã" -> defaultCode
         "" -> defaultCode
         else -> properties[field].orEmpty().ifBlank { properties[cleanField].orEmpty() }.ifBlank { defaultCode }
     }
@@ -377,7 +424,7 @@ private fun extractGeoJsonMapNumber(
     if (field.isNullOrBlank()) return properties["mapNumber"].orEmpty()
     val cleanField = field.removePrefix("properties.")
     return when (field) {
-        "MÃ£ tá»± sinh tá»« Ä‘á»‘i tÆ°á»£ng" -> defaultCode
+        "Mã tự sinh từ đối tượng" -> defaultCode
         else -> properties[field].orEmpty().ifBlank { properties[cleanField].orEmpty() }
     }
 }

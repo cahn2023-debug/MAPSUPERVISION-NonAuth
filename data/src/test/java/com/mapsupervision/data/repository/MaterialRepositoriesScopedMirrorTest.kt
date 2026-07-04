@@ -18,8 +18,11 @@ import com.mapsupervision.domain.model.ProjectStorageMode
 import com.mapsupervision.storage.ProjectStorageManager
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -192,6 +195,80 @@ class MaterialRepositoriesScopedMirrorTest {
         assertTrue(handoverRepository.add(newHandover) is AppResult.Success)
         assertEquals(2, scopedDatabase.materialHandoverDao().byProject(project.id).size)
         assertEquals(2, sharedDatabase.materialHandoverDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `handover observe emits saved row after add`() = runBlocking {
+        val project = projectEntity("handover-observe")
+        sharedDatabase.projectDao().upsert(project)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val handoverRepository = MaterialHandoverRepositoryImpl(
+            sharedDatabase.materialHandoverDao(),
+            provider
+        )
+        val observed = async {
+            withTimeout(5_000L) {
+                handoverRepository.observeByProject(project.id).first { it.isNotEmpty() }
+            }
+        }
+        yield()
+
+        val handover = MaterialHandover(
+            id = "handover-observe-1",
+            projectId = project.id,
+            nodeCode = "N-01",
+            workName = "Cable",
+            materialName = "Cable drum",
+            contractor = "Contractor",
+            quantity = 2f,
+            unit = "m",
+            handoverDateEpochDay = 20240702L,
+            note = "handover",
+            createdAtEpochMs = 200L
+        )
+
+        assertTrue(handoverRepository.add(handover) is AppResult.Success)
+        assertEquals(1, observed.await().size)
+        assertEquals(1, scopedDatabase.materialHandoverDao().byProject(project.id).size)
+        assertEquals(1, sharedDatabase.materialHandoverDao().byProject(project.id).size)
+    }
+
+    @Test
+    fun `handover with stale optional links still saves to scoped database`() = runBlocking {
+        val project = projectEntity("handover-stale-links")
+        sharedDatabase.projectDao().upsert(project)
+        val scopedDatabase = provider.databaseFor(project.id)
+        openedDatabases += scopedDatabase!!
+
+        val handoverRepository = MaterialHandoverRepositoryImpl(
+            sharedDatabase.materialHandoverDao(),
+            provider
+        )
+        val handover = MaterialHandover(
+            id = "handover-stale-links-1",
+            projectId = project.id,
+            nodeCode = "N-01",
+            nodeId = "missing-node",
+            workName = "Cable",
+            materialName = "Cable drum",
+            contractor = "Contractor",
+            quantity = 2f,
+            unit = "m",
+            handoverDateEpochDay = 20240702L,
+            note = "handover",
+            createdAtEpochMs = 200L,
+            materialDeclarationId = "missing-declaration",
+            workCategoryId = "missing-category"
+        )
+
+        assertTrue(handoverRepository.add(handover) is AppResult.Success)
+        val scopedRows = scopedDatabase.materialHandoverDao().byProject(project.id)
+        assertEquals(1, scopedRows.size)
+        assertEquals(null, scopedRows.single().nodeId)
+        assertEquals(null, scopedRows.single().materialDeclarationId)
+        assertEquals(null, scopedRows.single().workCategoryId)
     }
 
     private fun projectEntity(projectId: String) = ProjectEntity(

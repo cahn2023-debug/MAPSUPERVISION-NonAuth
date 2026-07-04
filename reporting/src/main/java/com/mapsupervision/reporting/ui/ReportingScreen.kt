@@ -56,6 +56,7 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.rememberAsyncImagePainter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mapsupervision.core.ui.theme.extendedColors
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
 import com.mapsupervision.domain.model.SitePhoto
@@ -192,7 +193,7 @@ fun ReportingScreen(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
                             enabled = !isExporting,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A623), contentColor = Color.Black)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.extendedColors.warning, contentColor = Color.Black)
                         ) {
                             Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.Black)
                             Spacer(Modifier.size(6.dp))
@@ -596,7 +597,7 @@ fun ReportingScreen(
                                     viewModel.clearExportPaths()
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF5A623), contentColor = Color.Black)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.extendedColors.warning, contentColor = Color.Black)
                         ) {
                             Text("Mở file", fontWeight = FontWeight.Bold)
                         }

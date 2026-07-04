@@ -361,7 +361,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private fun tryFitToObjects(): Boolean {
         val mapRef = map ?: return false
         if (mapRef.style == null) return false
-        val points = nodesSnapshot.mapNotNull(::renderCoordinateForNode)
+        val points = renderCoordinatesForMapObjects(nodesSnapshot, routesSnapshot)
         if (points.isEmpty()) return false
         val bounds = LatLngBounds.Builder().apply {
             points.forEach { include(LatLng(it.latitude, it.longitude)) }
@@ -371,7 +371,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val maxLat = points.maxOf { it.latitude }
         val minLon = points.minOf { it.longitude }
         val maxLon = points.maxOf { it.longitude }
-        Log.d(TAG, "fitToObjects success nodes=${points.size} latRange=%.5f..%.5f lonRange=%.5f..%.5f".format(minLat, maxLat, minLon, maxLon))
+        Log.d(TAG, "fitToObjects success nodes=${nodesSnapshot.size} routes=${routesSnapshot.size} points=${points.size} latRange=%.5f..%.5f lonRange=%.5f..%.5f".format(minLat, maxLat, minLon, maxLon))
         return true
     }
 
@@ -590,11 +590,17 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 }
 
                 var skippedRoutes = 0
+                var skippedInvalidPointRoutes = 0
                 val routeFeatures = localRoutes.mapNotNull { r ->
                     if (r.points.isNotEmpty()) {
+                        val renderPoints = renderCoordinatesForRoutePoints(r)
+                        if (renderPoints.size < 2) {
+                            skippedInvalidPointRoutes++
+                            return@mapNotNull null
+                        }
                         Feature.fromGeometry(
                             LineString.fromLngLats(
-                                r.points.map { Point.fromLngLat(it.second, it.first) }
+                                renderPoints.map { Point.fromLngLat(it.longitude, it.latitude) }
                             )
                         ).apply {
                             addStringProperty("code", r.code)
@@ -629,6 +635,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
                     nodeFeaturesBuilt = nodeFeatures.size,
                     routeFeaturesBuilt = routeFeatures.size,
                     skippedRoutes = skippedRoutes,
+                    skippedInvalidPointRoutes = skippedInvalidPointRoutes,
                     newRenderKey = effectiveRenderKey,
                     scheduleDetailUpgrade = renderPolicy.scheduleDetailUpgrade,
                     requestedRenderKey = requestedRenderKey,
@@ -669,6 +676,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 "updateMapData committed nodesIn=${localNodes.size} " +
                     "nodeFeatures=${renderPayload.nodeFeaturesBuilt} routesIn=${localRoutes.size} " +
                     "routeFeatures=${renderPayload.routeFeaturesBuilt} skippedRoutes=${renderPayload.skippedRoutes} " +
+                    "skippedInvalidPointRoutes=${renderPayload.skippedInvalidPointRoutes} " +
                     "tier=${renderPayload.committedTier}"
             )
         }
@@ -803,7 +811,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
     }
 
     private fun fitIfNeeded() {
-        if (!didFitBoundsOnce && nodesSnapshot.isNotEmpty()) {
+        if (!didFitBoundsOnce && renderCoordinatesForMapObjects(nodesSnapshot, routesSnapshot).isNotEmpty()) {
             didFitBoundsOnce = tryFitToObjects()
         }
     }
@@ -831,6 +839,27 @@ private class MapLibreGisMapBridge : GisMapBridge {
         }
 
         selectedRouteSnapshot?.let { route ->
+            val routePoints = renderCoordinatesForRoutePoints(route)
+            if (routePoints.isNotEmpty()) {
+                val key = "route:${route.id}:${route.code}:${routePoints.hashCode()}"
+                if (lastFocusedSelectionKey != key) {
+                    if (routePoints.size == 1) {
+                        val point = routePoints.single()
+                        mapRef.animateCamera(
+                            CameraUpdateFactory.newLatLngZoom(LatLng(point.latitude, point.longitude), 18.0)
+                        )
+                    } else {
+                        val bounds = LatLngBounds.Builder().apply {
+                            routePoints.forEach { include(LatLng(it.latitude, it.longitude)) }
+                        }.build()
+                        mapRef.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 80))
+                    }
+                    lastFocusedSelectionKey = key
+                    didFitBoundsOnce = true
+                }
+                return true
+            }
+
             val nodesByCode = nodesSnapshot.associateBy { it.code.trim().uppercase() }
             val startNode = nodesByCode[route.startNodeCode.trim().uppercase()]
             val endNode = nodesByCode[route.endNodeCode.trim().uppercase()]
@@ -942,6 +971,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val nodeFeaturesBuilt: Int,
         val routeFeaturesBuilt: Int,
         val skippedRoutes: Int,
+        val skippedInvalidPointRoutes: Int,
         val newRenderKey: MapRenderKey,
         val scheduleDetailUpgrade: Boolean,
         val requestedRenderKey: MapRenderKey,
@@ -973,6 +1003,20 @@ internal fun normalizeCoordinatePair(latitude: Double, longitude: Double): Rende
 
 internal fun renderCoordinateForNode(node: GisNode): RenderCoordinate? =
     normalizeCoordinatePair(node.latitude, node.longitude)
+
+internal fun renderCoordinatesForRoutePoints(route: GisRoute): List<RenderCoordinate> =
+    route.points.mapNotNull { point -> normalizeCoordinatePair(point.first, point.second) }
+
+internal fun renderCoordinatesForMapObjects(
+    nodes: List<GisNode>,
+    routes: List<GisRoute>
+): List<RenderCoordinate> {
+    if (nodes.isEmpty() && routes.isEmpty()) return emptyList()
+    return buildList {
+        nodes.mapNotNullTo(this, ::renderCoordinateForNode)
+        routes.forEach { route -> addAll(renderCoordinatesForRoutePoints(route)) }
+    }
+}
 
 internal data class CoordinateSummary(
     val validCount: Int,

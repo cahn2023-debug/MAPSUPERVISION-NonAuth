@@ -1,6 +1,7 @@
 package com.mapsupervision.gis.maplibre
 
 import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.GisRoute
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,5 +46,26 @@ class MapCoordinateValidationTest {
         assertEquals(1, summary.invalidCount)
         assertEquals("10.00000..21.02851", summary.latRangeText)
         assertEquals("105.80482..106.00000", summary.lonRangeText)
+    }
+
+    @Test
+    fun map_bounds_include_route_points_without_vertex_nodes() {
+        val routes = listOf(
+            GisRoute(
+                id = "r1",
+                projectId = "p1",
+                code = "R-001",
+                contractor = "A",
+                startNodeCode = "",
+                endNodeCode = "",
+                points = listOf(10.0 to 106.0, 10.1 to 106.1, 10.2 to 106.2)
+            )
+        )
+
+        val points = renderCoordinatesForMapObjects(nodes = emptyList(), routes = routes)
+
+        assertEquals(3, points.size)
+        assertEquals(10.0, points.first().latitude, 0.000001)
+        assertEquals(106.0, points.first().longitude, 0.000001)
     }
 }

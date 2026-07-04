@@ -76,6 +76,7 @@ fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float,
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
         val normalizedNodeCode = findBestMatchingNodeCode(nodeCode, _state.value.designNodes)
+        val nodeId = ensureIndexes().nodesByCode[normalizedNodeCode]?.id
         val remain = (planned - actual).coerceAtLeast(0f)
         val upsertResult = progressRepository.upsert(
             NodeProgress(
@@ -86,7 +87,8 @@ fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float,
                 actual = actual,
                 remain = remain,
                 delayed = actual < planned,
-                updatedAtEpochMs = System.currentTimeMillis()
+                updatedAtEpochMs = System.currentTimeMillis(),
+                nodeId = nodeId
             )
         )
         if (upsertResult is AppResult.Error) {
@@ -101,6 +103,175 @@ fun WorkspaceViewModel.addConstructionProgress(nodeCode: String, planned: Float,
         _state.value = _state.value.copy(
             importUi = _state.value.importUi.copy(message = "Đã cập nhật thi công cho node $normalizedNodeCode")
         )
+    }
+}
+
+fun WorkspaceViewModel.addDailyLog(request: AddDailyLogRequest) {
+    viewModelScope.launch {
+        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val now = System.currentTimeMillis()
+
+        val normalizedNodeCode = request.nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+        val normalizedRouteCode = request.routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
+        val nodeId = normalizedNodeCode?.let { ensureIndexes().nodesByCode[it]?.id }
+        val routeId = normalizedRouteCode?.let { ensureIndexes().routesByCode[it]?.id }
+
+        if (normalizedNodeCode.isNullOrBlank() && normalizedRouteCode.isNullOrBlank()) {
+            showMessage("Vui lòng chọn vị trí hoặc tuyến liên kết")
+            return@launch
+        }
+
+        if (normalizedNodeCode.isNullOrBlank() && !normalizedRouteCode.isNullOrBlank()) {
+            showMessage("Không thể lưu nhật ký liên kết tuyến mà không chọn vị trí cụ thể")
+            return@launch
+        }
+
+        val normalizedPlanSnapshot = request.planSnapshot?.let { snapshot ->
+            val plannedNodeCode = snapshot.plannedNodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
+            val plannedRouteCode = snapshot.plannedRouteCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
+            if (plannedRouteCode != null && plannedNodeCode == null && normalizedNodeCode == null) {
+                showMessage("Kế hoạch theo tuyến cần chọn node cụ thể trước khi lưu nhật ký")
+                return@launch
+            }
+            DailyLogPlanSnapshotDraft(
+                linkedWorkPlanId = snapshot.linkedWorkPlanId,
+                plannedWorkName = snapshot.plannedWorkName,
+                plannedQuantity = snapshot.plannedQuantity,
+                plannedUnit = snapshot.plannedUnit,
+                plannedNodeCode = plannedNodeCode ?: normalizedNodeCode,
+                plannedRouteCode = plannedRouteCode
+            )
+        }
+
+        val lines = request.actualLines.mapIndexed { index, line ->
+            val normalizedLineNodeCode = line.nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) } ?: normalizedNodeCode
+            val normalizedLineRouteCode = line.routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) } ?: normalizedRouteCode
+            val normalizedCategoryResult = if (line.categoryName.isNotBlank()) {
+                findBestMatchingCategory(line.categoryName, _state.value.workCategories, _state.value.workVolumeRows)
+            } else if (line.workName.isNotBlank()) {
+                findBestMatchingCategory(line.workName, _state.value.workCategories, _state.value.workVolumeRows)
+            } else null
+            val normalizedCategory = normalizedCategoryResult?.first ?: line.categoryName.ifBlank { line.workName }
+            val normalizedUnit = normalizedCategoryResult?.second ?: line.unit
+            val normalizedWorkName = line.workName.ifBlank {
+                if (index == 0) request.workItem else normalizedCategory
+            }
+            com.mapsupervision.domain.model.DailyLogLine(
+                id = line.id.ifBlank { UUID.randomUUID().toString() },
+                projectId = projectId,
+                dailyLogId = request.existingId ?: "",
+                lineType = if (index == 0 && normalizedPlanSnapshot != null) {
+                    com.mapsupervision.domain.model.DailyLogLineType.PLAN_PRIMARY
+                } else {
+                    com.mapsupervision.domain.model.DailyLogLineType.EXTRA
+                },
+                workName = normalizedWorkName,
+                categoryName = normalizedCategory,
+                quantity = line.quantityInput.toDoubleOrNull() ?: 0.0,
+                unit = normalizedUnit,
+                nodeCode = normalizedLineNodeCode,
+                routeCode = normalizedLineRouteCode,
+                linkedWorkPlanId = if (index == 0) normalizedPlanSnapshot?.linkedWorkPlanId else null,
+                nodeId = normalizedLineNodeCode?.let { ensureIndexes().nodesByCode[it]?.id },
+                routeId = normalizedLineRouteCode?.let { ensureIndexes().routesByCode[it]?.id },
+                createdAtEpochMs = now,
+                updatedAtEpochMs = now
+            )
+        }
+
+        lines.forEachIndexed { index, line ->
+            val lineNodeCode = line.nodeCode ?: return@forEachIndexed
+            if (lineNodeCode.isBlank() || line.quantity <= 0.0) return@forEachIndexed
+            val existing = _state.value.workVolumeRows.firstOrNull {
+                it.nodeCode.equals(lineNodeCode, ignoreCase = true) &&
+                    it.workName.equals(line.workName, ignoreCase = true)
+            }
+            val lineNode = ensureIndexes().nodesByCode[lineNodeCode]
+            val fallbackPlannedQty = extractPlannedQty(lineNode, line.categoryName.ifBlank { line.workName })
+            val plannedQty = when {
+                index == 0 && normalizedPlanSnapshot != null && normalizedPlanSnapshot.plannedQuantity > 0.0 ->
+                    normalizedPlanSnapshot.plannedQuantity.toFloat()
+                existing != null && existing.plannedQty > 0f -> existing.plannedQty
+                else -> fallbackPlannedQty
+            }
+            val resolvedUnit = when {
+                index == 0 && normalizedPlanSnapshot != null && normalizedPlanSnapshot.plannedUnit.isNotBlank() -> normalizedPlanSnapshot.plannedUnit
+                line.unit.isNotBlank() -> line.unit
+                existing != null && existing.unit.isNotBlank() -> existing.unit
+                else -> ""
+            }
+            workVolumeProgressRepository.upsert(
+                WorkVolumeProgress(
+                    id = existing?.id ?: UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    nodeCode = lineNodeCode,
+                    workName = existing?.workName ?: line.workName,
+                    plannedQty = plannedQty,
+                    actualQty = line.quantity.toFloat(),
+                    updatedAtEpochMs = now,
+                    unit = resolvedUnit,
+                    nodeId = line.nodeId
+                )
+            )
+        }
+
+        val computedProgress = normalizedPlanSnapshot
+            ?.takeIf { it.plannedQuantity > 0.0 }
+            ?.let { snapshot ->
+                val primaryQty = lines.firstOrNull()?.quantity ?: 0.0
+                ((primaryQty / snapshot.plannedQuantity) * 100.0).toFloat().coerceIn(0f, 100f)
+            }
+        val progressToUpdate = request.actualProgressPercent ?: computedProgress
+        if (progressToUpdate != null && !normalizedNodeCode.isNullOrBlank()) {
+            val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == normalizedNodeCode }
+            addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, progressToUpdate)
+        }
+
+        val finalId = if (!request.existingId.isNullOrBlank()) request.existingId else UUID.randomUUID().toString()
+        val originalLog = _state.value.dailyLogs.firstOrNull { it.id == finalId }
+        val createdAt = originalLog?.createdAtEpochMs ?: now
+        val persistedLines = lines.map { line ->
+            line.copy(
+                dailyLogId = finalId,
+                createdAtEpochMs = createdAt,
+                updatedAtEpochMs = now
+            )
+        }
+        val primaryLine = persistedLines.firstOrNull()
+
+        val log = com.mapsupervision.domain.model.DailyLog(
+            id = finalId,
+            projectId = projectId,
+            workItem = request.workItem,
+            manpower = request.manpower,
+            note = request.note,
+            createdAtEpochMs = createdAt,
+            weather = request.weather,
+            temperature = request.temperature,
+            nodeCode = normalizedNodeCode.takeIf { !it.isNullOrBlank() },
+            routeCode = normalizedRouteCode.takeIf { !it.isNullOrBlank() },
+            dateEpochDay = request.dateEpochDay,
+            volume = primaryLine?.quantity ?: 0.0,
+            unit = primaryLine?.unit.orEmpty(),
+            categoryName = primaryLine?.categoryName.orEmpty(),
+            linkedWorkPlanId = normalizedPlanSnapshot?.linkedWorkPlanId,
+            plannedWorkName = normalizedPlanSnapshot?.plannedWorkName.orEmpty(),
+            plannedQuantity = normalizedPlanSnapshot?.plannedQuantity ?: 0.0,
+            plannedUnit = normalizedPlanSnapshot?.plannedUnit.orEmpty(),
+            plannedNodeCode = normalizedPlanSnapshot?.plannedNodeCode,
+            plannedRouteCode = normalizedPlanSnapshot?.plannedRouteCode,
+            nodeId = nodeId,
+            routeId = routeId,
+            plannedNodeId = normalizedPlanSnapshot?.plannedNodeCode?.let { ensureIndexes().nodesByCode[it]?.id },
+            plannedRouteId = normalizedPlanSnapshot?.plannedRouteCode?.let { ensureIndexes().routesByCode[it]?.id },
+            lines = persistedLines
+        )
+        val result = dailyLogRepository.add(log)
+        if (result is AppResult.Error) {
+            AppLogger.d("dailylog.add.error project=$projectId msg=${result.throwable.message}")
+            return@launch
+        }
+        markProjectChanged(projectId, "daily_log_added")
     }
 }
 
@@ -119,79 +290,31 @@ fun WorkspaceViewModel.addDailyLog(
     id: String? = null,
     actualProgressPercent: Float? = null
 ) {
-    viewModelScope.launch {
-        val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
-
-        val normalizedNodeCode = nodeCode?.let { findBestMatchingNodeCode(it, _state.value.designNodes) }
-        val normalizedRouteCode = routeCode?.let { findBestMatchingRouteCode(it, _state.value.designRoutes) }
-        val categoryMatch = if (categoryName.isNotBlank()) {
-            findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.workVolumeRows)
-        } else null
-        val normalizedCategory = categoryMatch?.first ?: categoryName
-        val normalizedUnit = categoryMatch?.second ?: unit
-
-        var calculatedProgress: Float? = null
-        if (!normalizedNodeCode.isNullOrBlank() && normalizedCategory.isNotBlank() && volume > 0.0) {
-            val node = ensureIndexes().nodesByCode[normalizedNodeCode]
-            val plannedVolume = extractPlannedQty(node, normalizedCategory)
-            val existingMaterials = _state.value.workVolumeRows
-            val existing = existingMaterials.firstOrNull {
-                (it.nodeCode == normalizedNodeCode || ensureIndexes().nodesById[it.nodeCode]?.code == normalizedNodeCode) &&
-                    it.workName.equals(normalizedCategory, ignoreCase = true)
-            }
-            val currentActual = volume.toFloat()
-            val newMaterial = WorkVolumeProgress(
-                id = existing?.id ?: UUID.randomUUID().toString(),
-                projectId = projectId,
-                nodeCode = normalizedNodeCode,
-                workName = existing?.workName ?: normalizedCategory,
-                plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
-                actualQty = currentActual,
-                updatedAtEpochMs = System.currentTimeMillis(),
-                unit = normalizedUnit
-            )
-            workVolumeProgressRepository.upsert(newMaterial)
-
-            calculatedProgress = if (newMaterial.plannedQty > 0f) {
-                (newMaterial.actualQty / newMaterial.plannedQty * 100f).coerceIn(0f, 100f)
-            } else {
-                100f
-            }
-        }
-
-        val progressToUpdate = actualProgressPercent ?: calculatedProgress
-        if (progressToUpdate != null && !normalizedNodeCode.isNullOrBlank()) {
-            val existingProgress = _state.value.constructionProgress.firstOrNull { it.nodeCode == normalizedNodeCode }
-            addConstructionProgress(normalizedNodeCode, existingProgress?.planned ?: 100f, progressToUpdate)
-        }
-
-        val finalId = if (!id.isNullOrBlank()) id else UUID.randomUUID().toString()
-        val originalLog = _state.value.dailyLogs.firstOrNull { it.id == finalId }
-        val createdAt = originalLog?.createdAtEpochMs ?: System.currentTimeMillis()
-
-        val log = com.mapsupervision.domain.model.DailyLog(
-            id = finalId,
-            projectId = projectId,
+    addDailyLog(
+        AddDailyLogRequest(
             workItem = workItem,
             manpower = manpower,
             note = note,
-            createdAtEpochMs = createdAt,
             weather = weather,
             temperature = temperature,
-            nodeCode = normalizedNodeCode.takeIf { !it.isNullOrBlank() },
-            routeCode = normalizedRouteCode.takeIf { !it.isNullOrBlank() },
+            nodeCode = nodeCode,
+            routeCode = routeCode,
             dateEpochDay = dateEpochDay,
-            volume = volume,
-            unit = normalizedUnit,
-            categoryName = normalizedCategory
+            actualLines = listOf(
+                DailyLogDraftLine(
+                    id = UUID.randomUUID().toString(),
+                    workName = workItem,
+                    categoryName = categoryName,
+                    quantityInput = if (volume > 0.0) volume.toString() else "",
+                    unit = unit,
+                    nodeCode = nodeCode,
+                    routeCode = routeCode
+                )
+            ),
+            existingId = id,
+            actualProgressPercent = actualProgressPercent
         )
-        val result = dailyLogRepository.add(log)
-        if (result is AppResult.Error) {
-            AppLogger.d("dailylog.add.error project=$projectId msg=${result.throwable.message}")
-            return@launch
-        }
-        markProjectChanged(projectId, "daily_log_added")
-    }
+    )
 }
 
 internal fun WorkspaceViewModel.extractPlannedQty(node: GisNode?, workName: String): Float {
@@ -1559,6 +1682,7 @@ fun WorkspaceViewModel.addDailyLogBatch(
 ) {
     viewModelScope.launch {
         val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return@launch
+        val now = System.currentTimeMillis()
 
         val categoryMatch = if (categoryName.isNotBlank()) {
             findBestMatchingCategory(categoryName, _state.value.workCategories, _state.value.workVolumeRows)
@@ -1586,7 +1710,7 @@ fun WorkspaceViewModel.addDailyLogBatch(
                     workName = existing?.workName ?: normalizedCategory,
                     plannedQty = if (existing != null && existing.plannedQty > 0f) existing.plannedQty else plannedVolume,
                     actualQty = currentActual,
-                    updatedAtEpochMs = System.currentTimeMillis(),
+                    updatedAtEpochMs = now,
                     unit = normalizedUnit
                 )
                 workVolumeProgressRepository.upsert(newMaterial)
@@ -1601,13 +1725,35 @@ fun WorkspaceViewModel.addDailyLogBatch(
             }
         }
 
+        val finalLogId = UUID.randomUUID().toString()
+        val persistedLines = normalizedNodeCodes
+            .filter { it.isNotBlank() }
+            .map { nodeCode ->
+                com.mapsupervision.domain.model.DailyLogLine(
+                    id = UUID.randomUUID().toString(),
+                    projectId = projectId,
+                    dailyLogId = finalLogId,
+                    lineType = com.mapsupervision.domain.model.DailyLogLineType.EXTRA,
+                    workName = workItem,
+                    categoryName = normalizedCategory,
+                    quantity = volume,
+                    unit = normalizedUnit,
+                    nodeCode = nodeCode,
+                    linkedWorkPlanId = null,
+                    nodeId = ensureIndexes().nodesByCode[nodeCode]?.id,
+                    routeId = null,
+                    createdAtEpochMs = now,
+                    updatedAtEpochMs = now
+                )
+            }
+
         val log = com.mapsupervision.domain.model.DailyLog(
-            id = UUID.randomUUID().toString(),
+            id = finalLogId,
             projectId = projectId,
             workItem = workItem,
             manpower = manpower,
             note = note,
-            createdAtEpochMs = System.currentTimeMillis(),
+            createdAtEpochMs = now,
             weather = weather,
             temperature = temperature,
             nodeCode = normalizedNodeCodes.firstOrNull()?.takeIf { it.isNotBlank() },
@@ -1616,7 +1762,8 @@ fun WorkspaceViewModel.addDailyLogBatch(
             unit = normalizedUnit,
             categoryName = normalizedCategory,
             batchGroupId = UUID.randomUUID().toString(),
-            appliedNodeCodesCsv = normalizedNodeCodes.filter { it.isNotBlank() }.joinToString(",")
+            appliedNodeCodesCsv = normalizedNodeCodes.filter { it.isNotBlank() }.joinToString(","),
+            lines = persistedLines
         )
         val result = dailyLogRepository.add(log)
         if (result is AppResult.Error) {
@@ -1737,6 +1884,7 @@ fun buildWorkPlanBatchLocations(
 fun buildWorkPlanBatchPlans(
     projectId: String,
     title: String,
+    taskId: String?,
     note: String,
     dateEpochDay: Long,
     quantity: Double,
@@ -1754,7 +1902,7 @@ fun buildWorkPlanBatchPlans(
             plannedDateEpochDay = dateEpochDay,
             nodeCode = nodeCode,
             routeCode = routeCode,
-            taskId = null,
+            taskId = taskId,
             sourceRawInput = "",
             createdAtEpochMs = createdAtEpochMs,
             quantity = quantity,
@@ -1771,7 +1919,8 @@ suspend fun WorkspaceViewModel.addWorkPlanBatch(
     qty: Double,
     unit: String,
     note: String,
-    dateEpochDay: Long
+    dateEpochDay: Long,
+    taskId: String? = null
 ): Boolean {
     val projectId = (activeProjectRepository.getActive() as? AppResult.Success)?.data ?: return false
     val batchGroupId = UUID.randomUUID().toString()
@@ -1784,6 +1933,7 @@ suspend fun WorkspaceViewModel.addWorkPlanBatch(
     val plans = buildWorkPlanBatchPlans(
         projectId = projectId,
         title = workName,
+        taskId = taskId,
         note = note,
         dateEpochDay = dateEpochDay,
         quantity = qty,
