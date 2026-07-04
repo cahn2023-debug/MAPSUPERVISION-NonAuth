@@ -1587,7 +1587,7 @@ fun AddDeclarationDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val ratio = if (ratioString.isBlank()) 1f else ratioString.toFloatOrNull()
+                    val ratio = if (ratioString.isBlank()) 1f else parseMaterialNumberInput(ratioString)
                     if (selectedWorkCategory.isBlank()) {
                         errorMessage = "Vui lòng nhập/chọn công việc thiết kế"
                         return@Button
@@ -1761,7 +1761,7 @@ fun AddHandoverDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val qty = qtyString.toFloatOrNull()
+                    val qty = parseMaterialNumberInput(qtyString)
                     if (qty == null || qty <= 0f) {
                         errorMessage = "Số lượng phải là số lớn hơn 0"
                         return@Button
@@ -1876,6 +1876,17 @@ internal fun resolveMaterialQuantitySuggestion(
 
 internal fun materialQuantityDefaultText(suggestion: MaterialQuantitySuggestion?): String {
     return suggestion?.plannedMaterialQty?.takeIf { it > 0f }?.let(::formatQty).orEmpty()
+}
+
+internal fun parseMaterialNumberInput(value: String): Float? {
+    val compact = value.trim().replace(" ", "")
+    if (compact.isBlank()) return null
+    val normalized = if (compact.contains(',') && compact.contains('.')) {
+        compact.replace(".", "").replace(',', '.')
+    } else {
+        compact.replace(',', '.')
+    }
+    return normalized.toFloatOrNull()
 }
 
 internal fun shouldRefreshMaterialQuantity(
@@ -2385,7 +2396,7 @@ private fun QuickAddHandoverDialog(
             Button(
                 onClick = {
                     val candidate = selectedCandidate
-                    val qty = qtyString.toFloatOrNull()
+                    val qty = parseMaterialNumberInput(qtyString)
                     when {
                         candidates.isEmpty() -> errorMessage = "Chưa có dữ liệu vật tư để thêm giao nhận"
                         selectedContractor.isBlank() -> errorMessage = "Vui lòng chọn nhà thầu"

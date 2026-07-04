@@ -97,6 +97,14 @@ class MaterialsHubHelpersTest {
     }
 
     @Test
+    fun `parse material number input accepts decimal comma and vietnamese thousands`() {
+        assertEquals(1.5f, parseMaterialNumberInput("1,5") ?: 0f, 0.001f)
+        assertEquals(1000.5f, parseMaterialNumberInput("1.000,5") ?: 0f, 0.001f)
+        assertEquals(12.25f, parseMaterialNumberInput("12.25") ?: 0f, 0.001f)
+        assertEquals(null, parseMaterialNumberInput("abc"))
+    }
+
+    @Test
     fun `calculate material balance sums planned delivered and remaining`() {
         val declaration = MaterialDeclaration(
             id = "decl-1",
