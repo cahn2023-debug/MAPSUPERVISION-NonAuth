@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -38,18 +42,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun ExcelMappingDialog(
     state: ExcelParserUiState,
     onDismiss: () -> Unit,
-    onUpdateExcelMapping: (String?, String?, String?, String?, String?, String?, String?, String?) -> Unit,
+    onUpdateExcelMapping: (String?, String?, String?, String?, String?, String?, String?, String?, String?, String?, String?, String?, String?, String?) -> Unit,
     onUpdateCoordinateMode: (Boolean) -> Unit,
     onUpdateMapVisualOptions: (Boolean?, Boolean?) -> Unit,
     onConfirmParse: () -> Unit,
@@ -68,16 +72,55 @@ fun ExcelMappingDialog(
         }
     }
 
+    fun update(
+        positionColumn: String? = null,
+        coordinateColumn: String? = null,
+        latitudeColumn: String? = null,
+        longitudeColumn: String? = null,
+        contractorColumn: String? = null,
+        mapNumberColumn: String? = null,
+        objectTypeColumn: String? = null,
+        ipAddressColumn: String? = null,
+        subnetColumn: String? = null,
+        gatewayColumn: String? = null,
+        signalStatusColumn: String? = null,
+        fiberCoreCountColumn: String? = null,
+        fiberConnectionColumn: String? = null,
+        workVolumeColumnsCsv: String? = null
+    ) {
+        onUpdateExcelMapping(
+            positionColumn,
+            coordinateColumn,
+            latitudeColumn,
+            longitudeColumn,
+            contractorColumn,
+            mapNumberColumn,
+            objectTypeColumn,
+            ipAddressColumn,
+            subnetColumn,
+            gatewayColumn,
+            signalStatusColumn,
+            fiberCoreCountColumn,
+            fiberConnectionColumn,
+            workVolumeColumnsCsv
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ánh xạ cột Excel theo nội dung", fontWeight = FontWeight.Bold, color = Color.White) },
+        title = { Text("Anh xa cot Excel theo noi dung", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
         text = {
-            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Ứng dụng tự phát hiện cột Excel. Vui lòng đối soát mẫu trước khi nhập.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Ung dung tu phat hien cot Excel. Vui long doi soat mau truoc khi nhap.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 if (state.sheets.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Chọn Worksheet (Sheet)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        Text("Chon worksheet", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                         DropdownField(
                             selected = state.selectedSheet.ifBlank { state.sheets.firstOrNull().orEmpty() },
                             options = state.sheets,
@@ -86,9 +129,9 @@ fun ExcelMappingDialog(
                     }
                 }
 
-                ColumnSection("1. Cột tên đối tượng / vị trí", state.positionColumn, allHeaders, previews) { onUpdateExcelMapping(it, null, null, null, null, null, null, null) }
+                ColumnSection("1. Cot ten doi tuong / vi tri", state.positionColumn, allHeaders, previews) { update(positionColumn = it) }
 
-                Text("2. Định dạng tọa độ trong Excel", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text("2. Dinh dang toa do trong Excel", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(
                         onClick = { onUpdateCoordinateMode(false) },
@@ -97,7 +140,7 @@ fun ExcelMappingDialog(
                             containerColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("1 cột (lat,lon)") }
+                    ) { Text("1 cot (lat,lon)") }
                     Button(
                         onClick = { onUpdateCoordinateMode(true) },
                         modifier = Modifier.weight(1f),
@@ -105,29 +148,41 @@ fun ExcelMappingDialog(
                             containerColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("2 cột (vĩ/kinh)") }
+                    ) { Text("2 cot (vi/kinh)") }
                 }
 
                 if (!state.useTwoColumnCoordinates) {
-                    ColumnSection("3. Cột tọa độ GPS (lat,lon)", state.coordinateColumn, allHeaders, previews) { onUpdateExcelMapping(null, it, null, null, null, null, null, null) }
+                    ColumnSection("3. Cot toa do GPS (lat,lon)", state.coordinateColumn, allHeaders, previews) { update(coordinateColumn = it) }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.weight(1f)) {
-                            ColumnSection("3a. Cột vĩ độ", state.latitudeColumn, allHeaders, previews) { onUpdateExcelMapping(null, null, it, null, null, null, null, null) }
+                            ColumnSection("3a. Cot vi do", state.latitudeColumn, allHeaders, previews) { update(latitudeColumn = it) }
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            ColumnSection("3b. Cột kinh độ", state.longitudeColumn, allHeaders, previews) { onUpdateExcelMapping(null, null, null, it, null, null, null, null) }
+                            ColumnSection("3b. Cot kinh do", state.longitudeColumn, allHeaders, previews) { update(longitudeColumn = it) }
                         }
                     }
                 }
 
-                ColumnSection("4. Cột nhà thầu", state.contractorColumn, allHeaders, previews) { onUpdateExcelMapping(null, null, null, null, it, null, null, null) }
-                ColumnSection("5. Cột số hiển thị trên bản đồ", state.mapNumberColumn, allHeaders, previews) { onUpdateExcelMapping(null, null, null, null, null, it, null, null) }
+                ColumnSection("4. Cot nha thau", state.contractorColumn, allHeaders, previews) { update(contractorColumn = it) }
+                ColumnSection("5. Cot so hien thi tren ban do", state.mapNumberColumn, allHeaders, previews) { update(mapNumberColumn = it) }
+                ColumnSection("6. Cot IP", state.ipAddressColumn, allHeaders, previews) { update(ipAddressColumn = it) }
+                ColumnSection("7. Cot subnet", state.subnetColumn, allHeaders, previews) { update(subnetColumn = it) }
+                ColumnSection("8. Cot gateway", state.gatewayColumn, allHeaders, previews) { update(gatewayColumn = it) }
+                ColumnSection("9. Cot trang thai tin hieu", state.signalStatusColumn, allHeaders, previews) { update(signalStatusColumn = it) }
+                ColumnSection("10. Cot so core quang", state.fiberCoreCountColumn, allHeaders, previews) { update(fiberCoreCountColumn = it) }
+                ColumnSection("11. Cot soi ket noi", state.fiberConnectionColumn, allHeaders, previews) { update(fiberConnectionColumn = it) }
 
                 val excluded = setOf(
                     state.positionColumn,
                     state.contractorColumn,
                     state.mapNumberColumn,
+                    state.ipAddressColumn,
+                    state.subnetColumn,
+                    state.gatewayColumn,
+                    state.signalStatusColumn,
+                    state.fiberCoreCountColumn,
+                    state.fiberConnectionColumn,
                     if (state.useTwoColumnCoordinates) state.latitudeColumn else state.coordinateColumn,
                     if (state.useTwoColumnCoordinates) state.longitudeColumn else ""
                 )
@@ -138,32 +193,38 @@ fun ExcelMappingDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("5. Cột công việc / khối lượng công việc", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    Text("12. Cot cong viec / khoi luong", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "Chọn tất cả",
+                            text = "Chon tat ca",
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp,
-                            modifier = Modifier.clickable {
-                                selectedMaterials.clear()
-                                selectedMaterials.addAll(availableHeaders)
-                                onUpdateExcelMapping(null, null, null, null, null, null, null, selectedMaterials.joinToString(","))
-                            }.padding(4.dp)
+                            modifier = Modifier
+                                .clickable {
+                                    selectedMaterials.clear()
+                                    selectedMaterials.addAll(availableHeaders)
+                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
+                                }
+                                .padding(4.dp)
                         )
                         Text(
-                            text = "Bỏ chọn",
+                            text = "Bo chon",
                             color = Color.Gray,
                             fontSize = 12.sp,
-                            modifier = Modifier.clickable {
-                                selectedMaterials.clear()
-                                onUpdateExcelMapping(null, null, null, null, null, null, null, "")
-                            }.padding(4.dp)
+                            modifier = Modifier
+                                .clickable {
+                                    selectedMaterials.clear()
+                                    update(workVolumeColumnsCsv = "")
+                                }
+                                .padding(4.dp)
                         )
                     }
                 }
 
                 Column(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp)
                         .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp))
                         .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                         .verticalScroll(rememberScrollState())
@@ -173,30 +234,33 @@ fun ExcelMappingDialog(
                         val checked = selectedMaterials.contains(header)
                         val sample = previews.firstOrNull { it.first == header }?.second?.joinToString(", ").orEmpty()
                         Row(
-                            modifier = Modifier.fillMaxWidth().clickable {
-                                if (checked) selectedMaterials.remove(header) else selectedMaterials.add(header)
-                                onUpdateExcelMapping(null, null, null, null, null, null, null, selectedMaterials.joinToString(","))
-                            }.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (checked) selectedMaterials.remove(header) else selectedMaterials.add(header)
+                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
                                 checked = checked,
                                 onCheckedChange = {
                                     if (it) selectedMaterials.add(header) else selectedMaterials.remove(header)
-                                    onUpdateExcelMapping(null, null, null, null, null, null, null, selectedMaterials.joinToString(","))
+                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
                                 },
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(header, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (sample.isNotBlank()) Text("Mẫu: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp)
+                                if (sample.isNotBlank()) Text("Mau: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp)
                             }
                         }
                     }
                 }
 
-                Text("6. Hiển thị số trên bản đồ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text("13. Hien thi so tren ban do", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(
                         onClick = { onUpdateMapVisualOptions(false, null) },
@@ -205,7 +269,7 @@ fun ExcelMappingDialog(
                             containerColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("Ẩn số") }
+                    ) { Text("An so") }
                     Button(
                         onClick = { onUpdateMapVisualOptions(true, null) },
                         modifier = Modifier.weight(1f),
@@ -213,10 +277,10 @@ fun ExcelMappingDialog(
                             containerColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("Hiện số") }
+                    ) { Text("Hien so") }
                 }
 
-                Text("7. Màu đối tượng trên bản đồ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text("14. Mau doi tuong tren ban do", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(
                         onClick = { onUpdateMapVisualOptions(null, false) },
@@ -225,7 +289,7 @@ fun ExcelMappingDialog(
                             containerColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("Đơn sắc") }
+                    ) { Text("Don sac") }
                     Button(
                         onClick = { onUpdateMapVisualOptions(null, true) },
                         modifier = Modifier.weight(1f),
@@ -233,16 +297,23 @@ fun ExcelMappingDialog(
                             containerColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             contentColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
                         )
-                    ) { Text("Theo nhà thầu") }
+                    ) { Text("Theo nha thau") }
                 }
             }
         },
         confirmButton = {
             Button(onClick = onConfirmParse, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-                Text("Xác nhận nhập liệu", fontWeight = FontWeight.Bold)
+                Text("Xac nhan nhap lieu", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Hủy", color = Color.Gray) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Huy", color = Color.Gray) } },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        modifier = Modifier
+            .fillMaxWidth(0.97f)
+            .fillMaxHeight(0.97f)
+            .navigationBarsPadding()
+            .imePadding(),
+        shape = RoundedCornerShape(16.dp),
         containerColor = MaterialTheme.colorScheme.surface
     )
 }
@@ -259,7 +330,7 @@ private fun ColumnSection(
         Text(label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         DropdownField(selected = selected, options = options, onSelected = onSelected)
         val sample = previews.firstOrNull { it.first == selected }?.second?.joinToString(", ").orEmpty()
-        if (sample.isNotBlank()) Text("Nội dung mẫu: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
+        if (sample.isNotBlank()) Text("Noi dung mau: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
     }
 }
 
@@ -294,4 +365,3 @@ private fun DropdownField(selected: String, options: List<String>, onSelected: (
         }
     }
 }
-

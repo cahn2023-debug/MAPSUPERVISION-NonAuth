@@ -91,6 +91,7 @@ private fun List<GisNode>.stableNodeSignature(): Long {
             .mix(node.latitude)
             .mix(node.longitude)
             .mix(node.mapNumberLabel)
+            .mix(node.signalStatus)
             .mix(node.importedFileId)
     }
     return signature
@@ -575,16 +576,43 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 }
 
                 val nodeFeatures = displayedNodes.map { (node, point) ->
+                    val baseColor = if (localColorByContractor) colorForContractor(node.contractor, localContractorColors) else "#f97316"
+                    val signalColor = when (node.signalStatus.name) {
+                        "HAS_SIGNAL" -> "#22c55e"
+                        "NO_SIGNAL" -> "#ef4444"
+                        else -> baseColor
+                    }
                     Feature.fromGeometry(Point.fromLngLat(point.longitude, point.latitude)).apply {
                         addStringProperty("code", node.code)
                         addStringProperty("contractor", node.contractor)
+                        addStringProperty("signalStatus", node.signalStatus.name)
                         addStringProperty(
                             "label",
                             if (!effectiveShowNumberLabels) "" else formatNodeLabel(node, localLabelField)
                         )
+                        addStringProperty("color", signalColor)
                         addStringProperty(
-                            "color",
-                            if (localColorByContractor) colorForContractor(node.contractor, localContractorColors) else "#f97316"
+                            "signalStrokeColor",
+                            when (node.signalStatus.name) {
+                                "HAS_SIGNAL" -> "#dcfce7"
+                                "NO_SIGNAL" -> "#fee2e2"
+                                else -> "#ffffff"
+                            }
+                        )
+                        addNumberProperty(
+                            "signalStrokeWidth",
+                            when (node.signalStatus.name) {
+                                "HAS_SIGNAL", "NO_SIGNAL" -> 3.5
+                                else -> 2.5
+                            }
+                        )
+                        addNumberProperty(
+                            "signalRadius",
+                            when (node.signalStatus.name) {
+                                "HAS_SIGNAL" -> 11.5
+                                "NO_SIGNAL" -> 11.0
+                                else -> 10.0
+                            }
                         )
                     }
                 }

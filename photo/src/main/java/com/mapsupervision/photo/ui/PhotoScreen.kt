@@ -30,6 +30,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -229,13 +234,13 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
     if (currentSelectedForReview != null) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { viewModel.clearPhotoReviewSelection() },
-            title = { Text("Chỉnh ảnh đối chiếu") },
+            title = { Text("Chỉnh ảnh đối chiếu", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     val selectedPhoto = currentSelectedForReview
-                    Text("Ảnh: ${selectedPhoto.objectCode}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Ảnh: ${selectedPhoto.objectCode}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     var offsetText by remember(selectedPhoto.id, selectedPhoto.matchingTimeOffsetMs) { mutableStateOf((selectedPhoto.matchingTimeOffsetMs / 60000).toString()) }
-                    Text("Chọn node/tuyến", style = MaterialTheme.typography.titleSmall)
+                    Text("Chọn node/tuyến", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         availableTagOptions.forEach { tag ->
                             val selected = selectedPhoto.resolvedTagCodes.any { it == tag }
@@ -252,7 +257,8 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                     }
                     Text(
                         text = "Đã chọn: " + (joinCsvList(selectedPhoto.resolvedTagCodes).ifBlank { "Chưa chọn" }),
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = offsetText,
@@ -264,7 +270,7 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
                         label = { Text("Offset thời gian (phút)") },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("Giờ khớp: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(selectedPhoto.matchedAtEpochMs.takeIf { it > 0L } ?: selectedPhoto.capturedAtEpochMs))}", style = MaterialTheme.typography.bodySmall)
+                    Text("Giờ khớp: ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(selectedPhoto.matchedAtEpochMs.takeIf { it > 0L } ?: selectedPhoto.capturedAtEpochMs))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             confirmButton = {
@@ -275,7 +281,15 @@ fun PhotoScreen(viewModel: PhotoViewModel = hiltViewModel()) {
             },
             dismissButton = {
                 OutlinedButton(onClick = { viewModel.clearPhotoReviewSelection() }) { Text("Hủy") }
-            }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+            modifier = Modifier
+                .fillMaxWidth(0.97f)
+                .wrapContentHeight()
+                .navigationBarsPadding()
+                .imePadding(),
+            shape = RoundedCornerShape(16.dp),
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 }

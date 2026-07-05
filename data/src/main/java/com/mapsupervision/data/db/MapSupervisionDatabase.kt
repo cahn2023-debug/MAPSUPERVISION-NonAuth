@@ -96,7 +96,7 @@ import com.mapsupervision.data.db.dao.MaterialDeclarationDao
         MaterialDeclarationEntity::class,
         RagDocumentEmbeddingEntity::class
     ],
-    version = 45,
+    version = 46,
     exportSchema = true
 )
 @TypeConverters(DbTypeConverters::class)
@@ -2908,6 +2908,17 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `gis_node` ADD COLUMN `ipAddress` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `gis_node` ADD COLUMN `subnet` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `gis_node` ADD COLUMN `gateway` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `gis_node` ADD COLUMN `signalStatus` TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                db.execSQL("ALTER TABLE `gis_route` ADD COLUMN `fiberCoreCount` INTEGER")
+                db.execSQL("ALTER TABLE `gis_route` ADD COLUMN `fiberConnection` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val ALL_MIGRATIONS = arrayOf(
             MIGRATION_8_9,
             MIGRATION_9_10,
@@ -2945,7 +2956,8 @@ abstract class MapSupervisionDatabase : RoomDatabase() {
             MIGRATION_41_42,
             MIGRATION_42_43,
             MIGRATION_43_44,
-            MIGRATION_44_45
+            MIGRATION_44_45,
+            MIGRATION_45_46
         )
     }
 }

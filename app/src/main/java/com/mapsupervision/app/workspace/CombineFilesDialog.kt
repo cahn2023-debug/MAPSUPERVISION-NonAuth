@@ -69,24 +69,26 @@ fun CombineFilesDialog(
     var selectedLeftRouteId by remember { mutableStateOf<String?>(null) }
     var selectedRightRouteId by remember { mutableStateOf<String?>(null) }
 
-    val darkBgColor = Color(0xFF1B2130)
-    val cardBgColor = Color(0xFF262D3D)
+    val darkBgColor = MaterialTheme.colorScheme.surface
+    val cardBgColor = MaterialTheme.colorScheme.surfaceVariant
     val orangeColor = Color(0xFFF5A623)
-    val textColor = Color(0xFFF8FAFC)
-    val secondaryTextColor = Color(0xFF94A3B8)
-    val dividerColor = Color(0xFF334155)
-
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val dividerColor = MaterialTheme.colorScheme.outline
+    
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.96f)
-                .fillMaxHeight(0.92f)
+                .fillMaxWidth(0.97f)
+                .fillMaxHeight(0.97f)
                 .clip(RoundedCornerShape(16.dp))
                 .background(darkBgColor)
                 .padding(16.dp)
+                .navigationBarsPadding()
+                .imePadding()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header

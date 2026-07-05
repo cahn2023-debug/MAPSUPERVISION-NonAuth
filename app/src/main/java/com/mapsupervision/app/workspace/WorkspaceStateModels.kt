@@ -17,6 +17,7 @@ import com.mapsupervision.domain.model.WorkPlan
 import com.mapsupervision.gis.ui.GisLabelField
 import com.mapsupervision.domain.model.ExcelClassificationMode
 import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
+import com.mapsupervision.domain.model.NodeSignalStatus
 
 enum class WorkspaceTab {
     MAP,
@@ -712,6 +713,12 @@ data class ExcelParserUiState(
     val contractorColumn: String = "",
     val mapNumberColumn: String = "",
     val objectTypeColumn: String = "",
+    val ipAddressColumn: String = "",
+    val subnetColumn: String = "",
+    val gatewayColumn: String = "",
+    val signalStatusColumn: String = "",
+    val fiberCoreCountColumn: String = "",
+    val fiberConnectionColumn: String = "",
     val useTwoColumnCoordinates: Boolean = false,
     val showMappingDialog: Boolean = false,
     val showNumberOnMap: Boolean = true,
@@ -739,7 +746,13 @@ data class ImportMappingUiState(
         mapNumberOptions = emptyList(),
         objectTypeOptions = emptyList(),
         itemOptions = emptyList(),
-        routeLengthOptions = emptyList()
+        routeLengthOptions = emptyList(),
+        ipAddressOptions = emptyList(),
+        subnetOptions = emptyList(),
+        gatewayOptions = emptyList(),
+        signalStatusOptions = emptyList(),
+        fiberCoreCountOptions = emptyList(),
+        fiberConnectionOptions = emptyList()
     ),
     val positionField: String = "",
     val coordinateField: String = "",
@@ -748,6 +761,12 @@ data class ImportMappingUiState(
     val objectTypeField: String = "",
     val workVolumeFieldsCsv: String = "",
     val routeLengthField: String = "",
+    val ipAddressField: String = "",
+    val subnetField: String = "",
+    val gatewayField: String = "",
+    val signalStatusField: String = "",
+    val fiberCoreCountField: String = "",
+    val fiberConnectionField: String = "",
     val confirmedPositionField: Boolean = false,
     val confirmedCoordinateField: Boolean = false,
     val confirmedContractorField: Boolean = false,
@@ -755,6 +774,12 @@ data class ImportMappingUiState(
     val confirmedObjectTypeField: Boolean = false,
     val confirmedWorkVolumeFields: Boolean = false,
     val confirmedRouteLengthField: Boolean = false,
+    val confirmedIpAddressField: Boolean = false,
+    val confirmedSubnetField: Boolean = false,
+    val confirmedGatewayField: Boolean = false,
+    val confirmedSignalStatusField: Boolean = false,
+    val confirmedFiberCoreCountField: Boolean = false,
+    val confirmedFiberConnectionField: Boolean = false,
     val showMappingDialog: Boolean = false,
     val isLoading: Boolean = false,
     val message: String = ""
@@ -763,9 +788,12 @@ data class ImportMappingUiState(
 data class MapUiState(
     val selectedNode: GisNode? = null,
     val selectedRoute: GisRoute? = null,
+    val centerNodeCode: String? = null,
     val status: String = "Nhà thầu",
     val expectedCompletion: String = "-",
     val lastInspection: String = "-",
+    val signalStatus: NodeSignalStatus = NodeSignalStatus.UNKNOWN,
+    val centerPathSummary: String = "",
     val labelField: GisLabelField = GisLabelField.CODE,
     val showNodes: Boolean = true,
     val showRoutes: Boolean = true,

@@ -526,14 +526,14 @@ fun ReportingScreen(
                     Text(
                         text = "Xuất báo cáo thành công",
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = "Đã xuất tập tin $fileTypeLabel thành công.",
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
                             text = file.name,
@@ -610,6 +610,13 @@ fun ReportingScreen(
                         Text("Đóng", color = Color.Gray)
                     }
                 },
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
                 containerColor = MaterialTheme.colorScheme.surface
             )
         }

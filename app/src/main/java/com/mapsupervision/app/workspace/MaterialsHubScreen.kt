@@ -29,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import com.mapsupervision.core.ui.theme.extendedColors
 import com.mapsupervision.core.ui.components.*
 import com.mapsupervision.domain.model.GisNode
@@ -1500,6 +1501,14 @@ fun AddDeclarationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        modifier = Modifier
+            .fillMaxWidth(0.97f)
+            .wrapContentHeight()
+            .navigationBarsPadding()
+            .imePadding(),
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
                 Text(
                     "KÊ KHAI ĐỊNH MỨC VẬT TƯ",
@@ -1657,6 +1666,14 @@ fun AddHandoverDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        modifier = Modifier
+            .fillMaxWidth(0.97f)
+            .wrapContentHeight()
+            .navigationBarsPadding()
+            .imePadding(),
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Text(
                 "GHI NHẬN PHIẾU GIAO NHẬN VẬT TƯ",
@@ -2193,6 +2210,14 @@ private fun QuickAddHandoverDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        modifier = Modifier
+            .fillMaxWidth(0.97f)
+            .wrapContentHeight()
+            .navigationBarsPadding()
+            .imePadding(),
+        shape = RoundedCornerShape(16.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
         title = {
             Text(
                 "THÊM GIAO NHẬN VẬT TƯ",

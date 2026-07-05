@@ -7,6 +7,7 @@ import com.mapsupervision.domain.model.ExcelClassificationMode
 import com.mapsupervision.domain.model.ExcelColumnMapping
 import com.mapsupervision.domain.model.ExcelMappingSuggestion
 import com.mapsupervision.domain.model.ExcelPreview
+import com.mapsupervision.domain.model.NodeSignalStatus
 import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
 import com.mapsupervision.domain.model.NonExcelFieldPreview
 import com.mapsupervision.domain.model.NonExcelImportMapping
@@ -126,6 +127,22 @@ fun mergeAndProcessLines(
                 } else {
                     "%.2f".format(Locale.US, routeLength) + " m"
                 }
+                val fiberCoreCount = mapping?.fiberCoreCountField
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { field ->
+                        val cleanField = field.removePrefix("properties.")
+                        firstLine.extendedData[field]?.trim()?.ifBlank { null }
+                            ?: firstLine.extendedData[cleanField]?.trim()?.ifBlank { null }
+                    }
+                    ?.toIntOrNull()
+                val fiberConnection = mapping?.fiberConnectionField
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { field ->
+                        val cleanField = field.removePrefix("properties.")
+                        firstLine.extendedData[field]?.trim()?.ifBlank { null }
+                            ?: firstLine.extendedData[cleanField]?.trim()?.ifBlank { null }
+                    }
+                    .orEmpty()
 
                 val routeCode = if (subGroups.size == 1) {
                     baseRouteCode.uppercase()
@@ -141,7 +158,9 @@ fun mergeAndProcessLines(
                     startNodeCode = "",
                     endNodeCode = "",
                     points = normalizedLine.points,
-                    designLength = designLength
+                    designLength = designLength,
+                    fiberCoreCount = fiberCoreCount,
+                    fiberConnection = fiberConnection
                 )
             }
         }
@@ -187,6 +206,12 @@ internal fun parseKmlContent(
             val mapNumberField = mapping.mapNumberField
             val objectTypeField = mapping.objectTypeField
             val routeLengthField = mapping.routeLengthField
+            val ipAddressField = mapping.ipAddressField
+            val subnetField = mapping.subnetField
+            val gatewayField = mapping.gatewayField
+            val signalStatusField = mapping.signalStatusField
+            val fiberCoreCountField = mapping.fiberCoreCountField
+            val fiberConnectionField = mapping.fiberConnectionField
             if (mapping.positionField.isNotBlank()) mappedKeys.add(mapping.positionField)
             if (!coordinateField.isNullOrBlank()) mappedKeys.add(coordinateField)
             if (!latitudeField.isNullOrBlank()) mappedKeys.add(latitudeField)
@@ -195,6 +220,12 @@ internal fun parseKmlContent(
             if (!mapNumberField.isNullOrBlank()) mappedKeys.add(mapNumberField)
             if (!objectTypeField.isNullOrBlank()) mappedKeys.add(objectTypeField)
             if (!routeLengthField.isNullOrBlank()) mappedKeys.add(routeLengthField)
+            if (!ipAddressField.isNullOrBlank()) mappedKeys.add(ipAddressField)
+            if (!subnetField.isNullOrBlank()) mappedKeys.add(subnetField)
+            if (!gatewayField.isNullOrBlank()) mappedKeys.add(gatewayField)
+            if (!signalStatusField.isNullOrBlank()) mappedKeys.add(signalStatusField)
+            if (!fiberCoreCountField.isNullOrBlank()) mappedKeys.add(fiberCoreCountField)
+            if (!fiberConnectionField.isNullOrBlank()) mappedKeys.add(fiberConnectionField)
             mappedKeys.addAll(mapping.itemFields)
         }
 
@@ -279,7 +310,11 @@ internal fun parseKmlContent(
                 latitude = point.first,
                 longitude = point.second,
                 mapNumberLabel = extractedMapNumber,
-                workVolumeSummary = materialSummary
+                workVolumeSummary = materialSummary,
+                ipAddress = extractMappedValue(extendedData, mapping?.ipAddressField),
+                subnet = extractMappedValue(extendedData, mapping?.subnetField),
+                gateway = extractMappedValue(extendedData, mapping?.gatewayField),
+                signalStatus = parseNodeSignalStatus(extractMappedValue(extendedData, mapping?.signalStatusField))
             )
         }
 
@@ -450,6 +485,26 @@ fun coordinatesText(geometryNode: org.w3c.dom.Node?): String {
 
 fun stripKmlHtml(text: String): String =
     text.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+
+internal fun extractMappedValue(data: Map<String, String>, field: String?): String {
+    if (field.isNullOrBlank()) return ""
+    val cleanField = field.removePrefix("properties.")
+    return data[field]?.trim()?.ifBlank { null }
+        ?: data[cleanField]?.trim()?.ifBlank { null }
+        ?: ""
+}
+
+internal fun parseNodeSignalStatus(raw: String?): NodeSignalStatus {
+    val normalized = raw?.trim()?.lowercase(Locale.US).orEmpty()
+    return when {
+        normalized.isBlank() -> NodeSignalStatus.UNKNOWN
+        normalized in setOf("has_signal", "has signal", "co_tin_hieu", "co tin hieu", "on", "online", "1", "yes", "true") ->
+            NodeSignalStatus.HAS_SIGNAL
+        normalized in setOf("no_signal", "no signal", "khong_tin_hieu", "khong tin hieu", "off", "offline", "0", "no", "false") ->
+            NodeSignalStatus.NO_SIGNAL
+        else -> NodeSignalStatus.UNKNOWN
+    }
+}
 
 fun parseKmlCoordinates(text: String): List<Pair<Double, Double>> {
     if (text.isBlank()) return emptyList()

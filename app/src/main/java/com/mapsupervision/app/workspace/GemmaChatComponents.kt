@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -62,6 +63,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.window.DialogProperties
 import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.Alignment
@@ -391,14 +393,22 @@ fun GemmaChatSheet(
         if (state.showCellularWarning) {
             AlertDialog(
                 onDismissRequest = onDismissCellularWarning,
-                title = { Text("Dùng dữ liệu di động?") },
-                text = { Text("Tải model qua 4G/5G có thể tốn nhiều dung lượng. Bạn muốn tiếp tục hay hủy?") },
+                title = { Text("Dùng dữ liệu di động?", color = MaterialTheme.colorScheme.onSurface) },
+                text = { Text("Tải model qua 4G/5G có thể tốn nhiều dung lượng. Bạn muốn tiếp tục hay hủy?", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 confirmButton = {
                     Button(onClick = onConfirmCellularDownload) { Text("Tiếp tục tải") }
                 },
                 dismissButton = {
                     OutlinedButton(onClick = onDismissCellularWarning) { Text("Hủy") }
-                }
+                },
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface
             )
         }
 

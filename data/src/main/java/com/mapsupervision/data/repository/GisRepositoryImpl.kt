@@ -129,7 +129,24 @@ class GisRepositoryImpl @Inject constructor(
         emitAll(source.map { rows -> rows.map { it.toDomain() } }.distinctUntilChanged())
     }
 
-    private fun GisNode.toEntity() = GisNodeEntity(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, workVolumeSummary, importedFileId, updatedAtEpochMs, isDeleted, deletedAtEpochMs)
+    private fun GisNode.toEntity() = GisNodeEntity(
+        id = id,
+        projectId = projectId,
+        code = code,
+        contractor = contractor,
+        latitude = latitude,
+        longitude = longitude,
+        mapNumberLabel = mapNumberLabel,
+        workVolumeSummary = workVolumeSummary,
+        importedFileId = importedFileId,
+        ipAddress = ipAddress,
+        subnet = subnet,
+        gateway = gateway,
+        signalStatus = signalStatus,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
+    )
     private fun GisRoute.toEntity() = GisRouteEntity(
         id = id,
         projectId = projectId,
@@ -140,13 +157,32 @@ class GisRepositoryImpl @Inject constructor(
         points = points,
         importedFileId = importedFileId,
         designLength = designLength,
+        fiberCoreCount = fiberCoreCount,
+        fiberConnection = fiberConnection,
         startNodeId = startNodeId,
         endNodeId = endNodeId,
         updatedAtEpochMs = updatedAtEpochMs,
         isDeleted = isDeleted,
         deletedAtEpochMs = deletedAtEpochMs
     )
-    private fun GisNodeEntity.toDomain() = GisNode(id, projectId, code, contractor, latitude, longitude, mapNumberLabel, workVolumeSummary, importedFileId, updatedAtEpochMs, isDeleted, deletedAtEpochMs)
+    private fun GisNodeEntity.toDomain() = GisNode(
+        id = id,
+        projectId = projectId,
+        code = code,
+        contractor = contractor,
+        latitude = latitude,
+        longitude = longitude,
+        mapNumberLabel = mapNumberLabel,
+        workVolumeSummary = workVolumeSummary,
+        importedFileId = importedFileId,
+        ipAddress = ipAddress,
+        subnet = subnet,
+        gateway = gateway,
+        signalStatus = signalStatus,
+        updatedAtEpochMs = updatedAtEpochMs,
+        isDeleted = isDeleted,
+        deletedAtEpochMs = deletedAtEpochMs
+    )
     private fun GisRouteEntity.toDomain() = GisRoute(
         id = id,
         projectId = projectId,
@@ -157,6 +193,8 @@ class GisRepositoryImpl @Inject constructor(
         points = points,
         importedFileId = importedFileId,
         designLength = designLength,
+        fiberCoreCount = fiberCoreCount,
+        fiberConnection = fiberConnection,
         startNodeId = startNodeId,
         endNodeId = endNodeId,
         updatedAtEpochMs = updatedAtEpochMs,

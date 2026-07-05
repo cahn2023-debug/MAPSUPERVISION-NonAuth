@@ -139,6 +139,70 @@ class GisRepositoryImplTest {
         assertEquals("file-2", nodes.first { it.code == "NODE-KEEP-1" }.importedFileId)
     }
 
+    @Test
+    fun `upsert and search nodes and routes round trips new network and fiber fields`() = runBlocking {
+        val projectId = "project-1"
+        database.projectDao().upsert(
+            com.mapsupervision.data.db.entity.ProjectEntity(
+                id = projectId,
+                name = "Project 1",
+                slug = "project-1",
+                isArchived = false,
+                createdAtEpochMs = 1000L,
+                metadataVersion = 3,
+                updatedAtEpochMs = 1000L,
+                storageMode = com.mapsupervision.domain.model.ProjectStorageMode.LEGACY_SHARED,
+                projectDbPath = ""
+            )
+        )
+
+        val node = GisNode(
+            id = "node-1",
+            projectId = projectId,
+            code = "NODE-1",
+            contractor = "CTR-A",
+            latitude = 10.0,
+            longitude = 106.0,
+            mapNumberLabel = "1",
+            workVolumeSummary = "summary",
+            ipAddress = "192.168.1.10",
+            subnet = "255.255.255.0",
+            gateway = "192.168.1.1",
+            signalStatus = com.mapsupervision.domain.model.NodeSignalStatus.HAS_SIGNAL
+        )
+
+        val route = GisRoute(
+            id = "route-1",
+            projectId = projectId,
+            code = "ROUTE-1",
+            contractor = "CTR-A",
+            startNodeCode = "NODE-1",
+            endNodeCode = "NODE-2",
+            fiberCoreCount = 24,
+            fiberConnection = "ODF-A to ODF-B"
+        )
+
+        // Save
+        repository.upsertNode(node)
+        repository.upsertRoute(route)
+
+        // Retrieve
+        val searchedNodes = repository.searchNodes(projectId, "NODE-1")
+        val searchedRoutes = repository.searchRoutes(projectId, "ROUTE-1")
+
+        assertTrue(searchedNodes is AppResult.Success)
+        val retrievedNode = (searchedNodes as AppResult.Success).data.single()
+        assertEquals("192.168.1.10", retrievedNode.ipAddress)
+        assertEquals("255.255.255.0", retrievedNode.subnet)
+        assertEquals("192.168.1.1", retrievedNode.gateway)
+        assertEquals(com.mapsupervision.domain.model.NodeSignalStatus.HAS_SIGNAL, retrievedNode.signalStatus)
+
+        assertTrue(searchedRoutes is AppResult.Success)
+        val retrievedRoute = (searchedRoutes as AppResult.Success).data.single()
+        assertEquals(24, retrievedRoute.fiberCoreCount)
+        assertEquals("ODF-A to ODF-B", retrievedRoute.fiberConnection)
+    }
+
     private fun nodeEntity(id: String, projectId: String, code: String, importedFileId: String) =
         com.mapsupervision.data.db.entity.GisNodeEntity(
             id = id,

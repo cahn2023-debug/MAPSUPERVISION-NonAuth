@@ -22,6 +22,8 @@ data class GisRoute(
     val points: List<Pair<Double, Double>> = emptyList(),
     val importedFileId: String? = null,
     val designLength: String? = null,
+    val fiberCoreCount: Int? = null,
+    val fiberConnection: String = "",
     val startNodeId: String? = null,
     val endNodeId: String? = null,
     val updatedAtEpochMs: Long = 0L,

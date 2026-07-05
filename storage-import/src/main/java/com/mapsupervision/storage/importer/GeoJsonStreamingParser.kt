@@ -84,7 +84,11 @@ internal fun parseGeoJsonContentStreaming(
                     latitude = point.first,
                     longitude = point.second,
                     mapNumberLabel = extractedMapNumber,
-                    workVolumeSummary = workVolumeSummary
+                    workVolumeSummary = workVolumeSummary,
+                    ipAddress = extractGeoJsonValue(feature.properties, mapping?.ipAddressField),
+                    subnet = extractGeoJsonValue(feature.properties, mapping?.subnetField),
+                    gateway = extractGeoJsonValue(feature.properties, mapping?.gatewayField),
+                    signalStatus = parseNodeSignalStatus(extractGeoJsonValue(feature.properties, mapping?.signalStatusField))
                 )
             }
             "LineString", "MultiLineString", "Polygon", "MultiPolygon" -> {
@@ -384,8 +388,23 @@ private fun mappedGeoJsonKeys(mapping: NonExcelImportMapping?): Set<String> {
     addKey(mapping.mapNumberField)
     addKey(mapping.objectTypeField)
     addKey(mapping.routeLengthField)
+    addKey(mapping.ipAddressField)
+    addKey(mapping.subnetField)
+    addKey(mapping.gatewayField)
+    addKey(mapping.signalStatusField)
+    addKey(mapping.fiberCoreCountField)
+    addKey(mapping.fiberConnectionField)
     mapping.itemFields.forEach(::addKey)
     return keys
+}
+
+private fun extractGeoJsonValue(
+    properties: Map<String, String>,
+    field: String?
+): String {
+    if (field.isNullOrBlank()) return ""
+    val cleanField = field.removePrefix("properties.")
+    return properties[field].orEmpty().ifBlank { properties[cleanField].orEmpty() }
 }
 
 private fun extractGeoJsonCode(

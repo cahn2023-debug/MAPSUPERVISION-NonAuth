@@ -389,6 +389,7 @@ fun WorkspaceViewModel.fetchWeatherAuto(
 
 fun WorkspaceViewModel.selectMapNode(node: GisNode) {
     val delayed = ensureIndexes().progressByNodeCode[node.code]?.delayed == true
+    val centerNodeCode = _state.value.mapUi.centerNodeCode
     _state.value = _state.value.copy(
         mapUi = _state.value.mapUi.copy(
             selectedNode = node,
@@ -396,6 +397,8 @@ fun WorkspaceViewModel.selectMapNode(node: GisNode) {
             status = if (delayed) "Chậm tiến độ" else "Bình thường",
             expectedCompletion = if (delayed) "Quá hạn" else "Đúng tiến độ",
             lastInspection = "Hôm nay",
+            signalStatus = node.signalStatus,
+            centerPathSummary = buildCenterPathSummary(node.code, centerNodeCode, _state.value.designRoutes),
             message = ""
         )
     )
@@ -404,6 +407,19 @@ fun WorkspaceViewModel.selectMapNode(node: GisNode) {
 
 fun WorkspaceViewModel.clearMapNodeSelection() {
     _state.value = _state.value.copy(mapUi = _state.value.mapUi.copy(selectedNode = null))
+}
+
+fun WorkspaceViewModel.setMapCenterNode(node: GisNode?) {
+    val centerNodeCode = node?.code
+    val selectedNode = _state.value.mapUi.selectedNode
+    _state.value = _state.value.copy(
+        mapUi = _state.value.mapUi.copy(
+            centerNodeCode = centerNodeCode,
+            centerPathSummary = selectedNode?.let {
+                buildCenterPathSummary(it.code, centerNodeCode, _state.value.designRoutes)
+            }.orEmpty()
+        )
+    )
 }
 
 fun WorkspaceViewModel.selectMapRoute(route: GisRoute) {
@@ -1094,12 +1110,67 @@ fun WorkspaceViewModel.getRouteProperties(route: GisRoute): List<Pair<String, St
         val routeLength = route.designLength.orEmpty()
         if (routeLength.isNotBlank()) add("Chiều dài thiết kế" to routeLength)
         
+        route.fiberCoreCount?.let { add("Fiber core" to it.toString()) }
+        if (route.fiberConnection.isNotBlank()) add("Fiber connection" to route.fiberConnection)
         val startNode = nodesByCode[route.startNodeCode]
         val endNode = nodesByCode[route.endNodeCode]
         collectSummaryProperties(startNode?.workVolumeSummary, endNode?.workVolumeSummary).forEach { (k, v) ->
             add(k to v)
         }
     }
+}
+
+internal fun buildCenterPathSummary(
+    nodeCode: String,
+    centerNodeCode: String?,
+    routes: List<GisRoute>
+): String {
+    val normalizedNodeCode = nodeCode.trim()
+    val normalizedCenter = centerNodeCode?.trim().orEmpty()
+    if (normalizedNodeCode.isBlank() || normalizedCenter.isBlank()) return ""
+    if (normalizedNodeCode.equals(normalizedCenter, ignoreCase = true)) return "Diem trung tam"
+
+    val previous = HashMap<String, String>()
+    val visited = linkedSetOf<String>()
+    val queue = ArrayDeque<String>()
+    queue.add(normalizedNodeCode)
+    visited.add(normalizedNodeCode.uppercase())
+    var found = false
+
+    while (queue.isNotEmpty() && !found) {
+        val current = queue.removeFirst()
+        for (route in routes) {
+            val start = route.startNodeCode.trim()
+            val end = route.endNodeCode.trim()
+            if (start.isBlank() || end.isBlank()) continue
+            val next = when {
+                current.equals(start, ignoreCase = true) -> end
+                current.equals(end, ignoreCase = true) -> start
+                else -> continue
+            }
+            val nextKey = next.uppercase()
+            if (!visited.add(nextKey)) continue
+            previous[nextKey] = current
+            if (next.equals(normalizedCenter, ignoreCase = true)) {
+                found = true
+                break
+            }
+            queue.add(next)
+        }
+    }
+
+    if (!found) return "Chua co duong ve trung tam"
+
+    val path = mutableListOf(normalizedCenter)
+    var cursorKey = normalizedCenter.uppercase()
+    while (true) {
+        val prev = previous[cursorKey] ?: break
+        path.add(prev)
+        if (prev.equals(normalizedNodeCode, ignoreCase = true)) break
+        cursorKey = prev.uppercase()
+    }
+    path.reverse()
+    return "Duong ve trung tam: ${path.joinToString(" -> ")}"
 }
 
 fun WorkspaceViewModel.onMapToggleMeasure() {

@@ -56,6 +56,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Button
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.DrawerValue
@@ -147,6 +149,7 @@ fun MapHubScreen(
     onDeleteProject: (String) -> Unit,
     onSelectNode: (GisNode) -> Unit,
     onSelectRoute: (GisRoute) -> Unit,
+    onSetCenterNode: (GisNode?) -> Unit,
     onCloseNodeCard: () -> Unit,
     onCloseRouteCard: () -> Unit,
     onZoomIn: () -> Unit,
@@ -987,6 +990,17 @@ fun MapHubScreen(
                         }
 
                         Text(describeNodeByField(selectedNode, mapUi.labelField), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = {
+                                    if (mapUi.centerNodeCode == selectedNode.code) onSetCenterNode(null) else onSetCenterNode(selectedNode)
+                                },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp)
+                            ) {
+                                Text(if (mapUi.centerNodeCode == selectedNode.code) "Bo trung tam" else "Dat trung tam", fontSize = 11.sp)
+                            }
+                        }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             if (selectedNode.contractor.isNotBlank()) {
@@ -1003,6 +1017,18 @@ fun MapHubScreen(
                                     fontSize = 12.sp
                                 )
                             }
+                        }
+
+                        if (selectedNode.ipAddress.isNotBlank() || selectedNode.subnet.isNotBlank() || selectedNode.gateway.isNotBlank()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (selectedNode.ipAddress.isNotBlank()) Text("IP: ${selectedNode.ipAddress}", fontSize = 12.sp)
+                                if (selectedNode.subnet.isNotBlank()) Text("Subnet: ${selectedNode.subnet}", fontSize = 12.sp)
+                                if (selectedNode.gateway.isNotBlank()) Text("Gateway: ${selectedNode.gateway}", fontSize = 12.sp)
+                            }
+                        }
+                        Text("Tin hieu: ${selectedNode.signalStatus.name}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        if (mapUi.centerPathSummary.isNotBlank()) {
+                            Text(mapUi.centerPathSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
                         // Only show completion/inspection row if data is meaningful
@@ -1159,7 +1185,14 @@ fun MapHubScreen(
                         Text("Hủy")
                     }
                 },
-                containerColor = cardBgColor
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface
             )
         }
 
@@ -1223,7 +1256,14 @@ fun MapHubScreen(
                         Text("Hủy")
                     }
                 },
-                containerColor = cardBgColor
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface
             )
         }
 

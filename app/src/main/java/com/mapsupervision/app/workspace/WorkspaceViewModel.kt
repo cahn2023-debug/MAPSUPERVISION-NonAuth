@@ -356,7 +356,23 @@ class WorkspaceViewModel @Inject constructor(
             routes.firstOrNull { it.code == current.code }
                 ?: current.takeIf { route -> routes.any { isSameRouteSelection(route, it) } }
         }
-        return mapUi.copy(selectedNode = selected, selectedRoute = selectedRoute)
+        val centerNodeCode = mapUi.centerNodeCode?.takeIf { center ->
+            nodes.any { it.code == center }
+        }
+        return mapUi.copy(
+            selectedNode = selected,
+            selectedRoute = selectedRoute,
+            centerNodeCode = centerNodeCode,
+            signalStatus = selected?.signalStatus ?: mapUi.signalStatus,
+            centerPathSummary = selected?.let { node ->
+                val normalizedCenter = centerNodeCode?.trim().orEmpty()
+                when {
+                    normalizedCenter.isBlank() -> ""
+                    node.code.equals(normalizedCenter, ignoreCase = true) -> "Diem trung tam"
+                    else -> mapUi.centerPathSummary
+                }
+            }.orEmpty()
+        )
     }
 
     private suspend fun runAiOpsRecommendations(state: WorkspaceState) {

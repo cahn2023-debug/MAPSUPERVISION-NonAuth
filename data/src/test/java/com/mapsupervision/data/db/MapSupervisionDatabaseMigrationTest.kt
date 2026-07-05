@@ -108,7 +108,7 @@ class MapSupervisionDatabaseMigrationTest {
     }
 
     @Test
-    fun `migration 8 to 45 compiles and validates successfully`() {
+    fun `migration 8 to 46 compiles and validates successfully`() {
         val dbName = "legacy8.sqlite"
         val dbFile = File(tempDir, dbName)
         createLegacyVersion8Database(dbFile)
@@ -116,7 +116,7 @@ class MapSupervisionDatabaseMigrationTest {
         val database = migratingDatabase(dbName).build()
 
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertProjectsTableHasNormalizedDefaults(database)
             assertLatestSchema(database)
         } finally {
@@ -125,7 +125,7 @@ class MapSupervisionDatabaseMigrationTest {
     }
 
     @Test
-    fun `every legacy schema from 9 to 31 migrates to version 45`() {
+    fun `every legacy schema from 9 to 31 migrates to version 46`() {
         for (version in 9..31) {
             val dbName = "legacy-version-$version.sqlite"
             val dbFile = File(tempDir, dbName)
@@ -133,7 +133,7 @@ class MapSupervisionDatabaseMigrationTest {
 
             val database = migratingDatabase(dbName).build()
             try {
-                assertEquals("Legacy version $version did not migrate to 45", 45, database.openHelper.writableDatabase.version)
+                assertEquals("Legacy version $version did not migrate to 46", 46, database.openHelper.writableDatabase.version)
                 assertLatestSchema(database)
             } finally {
                 database.close()
@@ -1001,7 +1001,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "ai_action_log"))
         } finally {
             database.close()
@@ -1022,7 +1022,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "work_volume_progress"))
             val nodes = runBlocking { database.gisNodeDao().byProject("proj1") }
             assertEquals("Legacy summary", nodes.single().workVolumeSummary)
@@ -1043,7 +1043,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "material_handover"))
         } finally {
             database.close()
@@ -1058,7 +1058,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "material_declaration"))
         } finally {
             database.close()
@@ -1073,7 +1073,7 @@ class MapSupervisionDatabaseMigrationTest {
 
         val database = migratingDatabase(dbName).build()
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             assertTrue(tableExists(database, "rag_document_embedding"))
         } finally {
             database.close()
@@ -1129,7 +1129,7 @@ class MapSupervisionDatabaseMigrationTest {
             .build()
 
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             database.openHelper.readableDatabase.query("SELECT `workName`, `materialName`, `nodeId` FROM `material_handover` WHERE `id` = 'ho1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("Work A", cursor.getString(0))
@@ -1166,10 +1166,50 @@ class MapSupervisionDatabaseMigrationTest {
             .build()
 
         try {
-            assertEquals(45, database.openHelper.writableDatabase.version)
+            assertEquals(46, database.openHelper.writableDatabase.version)
             database.openHelper.readableDatabase.query("SELECT `objectCode` FROM `site_photos` WHERE `id` = 'photo1'").use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("N1", cursor.getString(0))
+            }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `migration 45 to 46 adds network and fiber fields`() {
+        val dbName = "legacy45.sqlite"
+        val dbFile = File(tempDir, dbName)
+        createLegacyDatabaseFromSchema(dbFile, 45)
+
+        SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+            db.execSQL("INSERT INTO `projects` (`id`, `name`, `slug`, `isArchived`, `createdAtEpochMs`, `metadataVersion`, `updatedAtEpochMs`, `storageMode`, `projectDbPath`, `isDeleted`) VALUES ('proj1', 'Project 1', 'proj1', 0, 1000, 3, 1000, 'LEGACY_SHARED', '', 0)")
+            db.execSQL("INSERT INTO `gis_node` (`id`, `projectId`, `code`, `contractor`, `latitude`, `longitude`, `mapNumberLabel`, `workVolumeSummary`, `updatedAtEpochMs`, `isDeleted`) VALUES ('node1', 'proj1', 'N1', 'CON1', 10.0, 20.0, '', '', 1000, 0)")
+            db.execSQL("INSERT INTO `gis_route` (`id`, `projectId`, `code`, `contractor`, `startNodeCode`, `endNodeCode`, `points`, `updatedAtEpochMs`, `isDeleted`) VALUES ('route1', 'proj1', 'R1', 'CON1', 'N1', 'N2', '[]', 1000, 0)")
+        }
+
+        val database = Room.databaseBuilder(context, MapSupervisionDatabase::class.java, dbName)
+            .addMigrations(*MapSupervisionDatabase.ALL_MIGRATIONS)
+            .allowMainThreadQueries()
+            .build()
+
+        try {
+            assertEquals(46, database.openHelper.writableDatabase.version)
+
+            // Verify new columns exist on gis_node with default values
+            database.openHelper.readableDatabase.query("SELECT `ipAddress`, `subnet`, `gateway`, `signalStatus` FROM `gis_node` WHERE `id` = 'node1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("", cursor.getString(0))
+                assertEquals("", cursor.getString(1))
+                assertEquals("", cursor.getString(2))
+                assertEquals("UNKNOWN", cursor.getString(3))
+            }
+
+            // Verify new columns exist on gis_route with default values
+            database.openHelper.readableDatabase.query("SELECT `fiberCoreCount`, `fiberConnection` FROM `gis_route` WHERE `id` = 'route1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertTrue(cursor.isNull(0))
+                assertEquals("", cursor.getString(1))
             }
         } finally {
             database.close()

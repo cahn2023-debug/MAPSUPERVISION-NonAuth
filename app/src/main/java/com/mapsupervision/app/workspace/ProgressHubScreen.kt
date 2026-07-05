@@ -1,4 +1,4 @@
-﻿package com.mapsupervision.app.workspace
+package com.mapsupervision.app.workspace
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.compose.ui.window.DialogProperties
 import com.mapsupervision.core.ui.theme.extendedColors
 import com.mapsupervision.core.ui.theme.SecondaryMint
 import com.mapsupervision.core.ui.theme.PrimaryPeach
@@ -1893,7 +1894,15 @@ fun ProgressHubScreen(
         if (screenUiState.showExportDialog) {
             AlertDialog(
                 onDismissRequest = { if (!screenUiState.isExporting) onSetShowExportDialog(false) },
-                title = { Text("Xuất nhật ký", fontWeight = FontWeight.Bold) },
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = { Text("Xuất nhật ký", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Phạm vi xuất", fontWeight = FontWeight.SemiBold)
@@ -2115,7 +2124,18 @@ fun ProgressHubScreen(
         }
 
         if (screenUiState.showAddCategoryDialog) {
-            AlertDialog( onDismissRequest = { onSetShowAddCategoryDialog(false) }, title = { Text("HẠNG MỤC CÔNG VIỆC", fontWeight = FontWeight.Bold) }, text = {
+            AlertDialog(
+                onDismissRequest = { onSetShowAddCategoryDialog(false) },
+                properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+                modifier = Modifier
+                    .fillMaxWidth(0.97f)
+                    .wrapContentHeight()
+                    .navigationBarsPadding()
+                    .imePadding(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = { Text("HẠNG MỤC CÔNG VIỆC", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+                text = {
                      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedTextField( value = screenUiState.newCategoryName, onValueChange = { onUpdateNewCategoryName(it) }, label = { Text("Tên hạng mục (ví dụ: đổ bê tông)") }, modifier = Modifier.fillMaxWidth(), singleLine = true
                          )

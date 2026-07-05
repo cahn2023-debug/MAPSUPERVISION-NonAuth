@@ -8,6 +8,12 @@ data class ExcelColumnMapping(
     val contractorColumn: String? = null,
     val mapNumberColumn: String? = null,
     val objectTypeColumn: String? = null,
+    val ipAddressColumn: String? = null,
+    val subnetColumn: String? = null,
+    val gatewayColumn: String? = null,
+    val signalStatusColumn: String? = null,
+    val fiberCoreCountColumn: String? = null,
+    val fiberConnectionColumn: String? = null,
     val classificationMode: ExcelClassificationMode = ExcelClassificationMode.AUTO,
     val itemColumns: List<String> = emptyList()
 )
@@ -38,7 +44,13 @@ data class NonExcelFieldCandidateSet(
     val mapNumberOptions: List<String>,
     val objectTypeOptions: List<String>,
     val itemOptions: List<String>,
-    val routeLengthOptions: List<String>
+    val routeLengthOptions: List<String>,
+    val ipAddressOptions: List<String>,
+    val subnetOptions: List<String>,
+    val gatewayOptions: List<String>,
+    val signalStatusOptions: List<String>,
+    val fiberCoreCountOptions: List<String>,
+    val fiberConnectionOptions: List<String>
 )
 
 data class NonExcelFieldPreview(
@@ -60,7 +72,13 @@ data class NonExcelImportMapping(
     val mapNumberField: String? = null,
     val objectTypeField: String? = null,
     val itemFields: List<String> = emptyList(),
-    val routeLengthField: String? = null
+    val routeLengthField: String? = null,
+    val ipAddressField: String? = null,
+    val subnetField: String? = null,
+    val gatewayField: String? = null,
+    val signalStatusField: String? = null,
+    val fiberCoreCountField: String? = null,
+    val fiberConnectionField: String? = null
 )
 
 data class ConfirmedFieldFlags(
@@ -72,7 +90,13 @@ data class ConfirmedFieldFlags(
     val mapNumberField: Boolean = false,
     val objectTypeField: Boolean = false,
     val itemFields: Boolean = false,
-    val routeLengthField: Boolean = false
+    val routeLengthField: Boolean = false,
+    val ipAddressField: Boolean = false,
+    val subnetField: Boolean = false,
+    val gatewayField: Boolean = false,
+    val signalStatusField: Boolean = false,
+    val fiberCoreCountField: Boolean = false,
+    val fiberConnectionField: Boolean = false
 )
 
 data class ExcelMappingSuggestion(

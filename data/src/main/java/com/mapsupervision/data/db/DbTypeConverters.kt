@@ -1,6 +1,7 @@
 package com.mapsupervision.data.db
 
 import androidx.room.TypeConverter
+import com.mapsupervision.domain.model.NodeSignalStatus
 import com.mapsupervision.domain.model.PhotoLocationStatus
 import com.mapsupervision.domain.model.ProjectStorageMode
 
@@ -25,6 +26,13 @@ class DbTypeConverters {
     @TypeConverter
     fun toMediaType(value: String?): com.mapsupervision.domain.model.MediaType =
         value?.let(com.mapsupervision.domain.model.MediaType::valueOf) ?: com.mapsupervision.domain.model.MediaType.IMAGE
+
+    @TypeConverter
+    fun fromNodeSignalStatus(value: NodeSignalStatus?): String? = value?.name
+
+    @TypeConverter
+    fun toNodeSignalStatus(value: String?): NodeSignalStatus =
+        value?.let(NodeSignalStatus::valueOf) ?: NodeSignalStatus.UNKNOWN
 
     @TypeConverter
     fun fromCoordinatesList(value: List<Pair<Double, Double>>?): String? {

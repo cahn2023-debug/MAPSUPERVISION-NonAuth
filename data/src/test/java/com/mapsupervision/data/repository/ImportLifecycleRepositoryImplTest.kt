@@ -236,7 +236,13 @@ private class FakeImportRepository : ImportRepository {
                 mapNumberOptions = emptyList(),
                 objectTypeOptions = emptyList(),
                 itemOptions = emptyList(),
-                routeLengthOptions = emptyList()
+                routeLengthOptions = emptyList(),
+                ipAddressOptions = emptyList(),
+                subnetOptions = emptyList(),
+                gatewayOptions = emptyList(),
+                signalStatusOptions = emptyList(),
+                fiberCoreCountOptions = emptyList(),
+                fiberConnectionOptions = emptyList()
             ),
             sampleRows = emptyList()
         )

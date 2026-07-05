@@ -157,6 +157,12 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
             val suggestedContractor = suggested?.contractorColumn.orEmpty()
             val suggestedMapNumber = suggested?.mapNumberColumn ?: suggestedPosition
             val suggestedObjectType = suggested?.objectTypeColumn.orEmpty()
+            val suggestedIpAddress = suggested?.ipAddressColumn.orEmpty()
+            val suggestedSubnet = suggested?.subnetColumn.orEmpty()
+            val suggestedGateway = suggested?.gatewayColumn.orEmpty()
+            val suggestedSignalStatus = suggested?.signalStatusColumn.orEmpty()
+            val suggestedFiberCoreCount = suggested?.fiberCoreCountColumn.orEmpty()
+            val suggestedFiberConnection = suggested?.fiberConnectionColumn.orEmpty()
             val suggestedItems = suggested?.itemColumns.orEmpty()
             val confidence = preview.suggestedMappingConfidence
             val confidenceLabel = when {
@@ -183,6 +189,12 @@ fun WorkspaceViewModel.loadExcelPreview(uri: Uri, existingFileId: String? = null
                     contractorColumn = suggestedContractor,
                     mapNumberColumn = suggestedMapNumber,
                     objectTypeColumn = suggestedObjectType,
+                    ipAddressColumn = suggestedIpAddress,
+                    subnetColumn = suggestedSubnet,
+                    gatewayColumn = suggestedGateway,
+                    signalStatusColumn = suggestedSignalStatus,
+                    fiberCoreCountColumn = suggestedFiberCoreCount,
+                    fiberConnectionColumn = suggestedFiberConnection,
                     useTwoColumnCoordinates = suggestedLat.isNotBlank() && suggestedLon.isNotBlank(),
                     showMappingDialog = true,
                     workVolumeColumnsCsv = suggestedItems.joinToString(","),
@@ -318,6 +330,12 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
             var suggestedObjectType = preview.candidates.objectTypeOptions.firstOrNull().orEmpty()
             var suggestedItems = preview.candidates.itemOptions
             var suggestedRouteLength = preview.candidates.routeLengthOptions.firstOrNull().orEmpty()
+            val suggestedIpAddress = preview.candidates.ipAddressOptions.firstOrNull().orEmpty()
+            val suggestedSubnet = preview.candidates.subnetOptions.firstOrNull().orEmpty()
+            val suggestedGateway = preview.candidates.gatewayOptions.firstOrNull().orEmpty()
+            val suggestedSignalStatus = preview.candidates.signalStatusOptions.firstOrNull().orEmpty()
+            val suggestedFiberCoreCount = preview.candidates.fiberCoreCountOptions.firstOrNull().orEmpty()
+            val suggestedFiberConnection = preview.candidates.fiberConnectionOptions.firstOrNull().orEmpty()
             var aiMessage = "Đã đọc metadata non-Excel. Vui lòng xác nhận ánh xạ."
             runCatching {
                 val headers = buildList {
@@ -330,6 +348,12 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     addAll(preview.candidates.objectTypeOptions)
                     addAll(preview.candidates.itemOptions)
                     addAll(preview.candidates.routeLengthOptions)
+                    addAll(preview.candidates.ipAddressOptions)
+                    addAll(preview.candidates.subnetOptions)
+                    addAll(preview.candidates.gatewayOptions)
+                    addAll(preview.candidates.signalStatusOptions)
+                    addAll(preview.candidates.fiberCoreCountOptions)
+                    addAll(preview.candidates.fiberConnectionOptions)
                 }.distinct()
                 val mappedRows = preview.sampleRows.map { row ->
                     headers.map { h -> row[h] ?: "" }
@@ -375,6 +399,12 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     objectTypeField = suggestedObjectType,
                     workVolumeFieldsCsv = suggestedItems.joinToString(","),
                     routeLengthField = suggestedRouteLength,
+                    ipAddressField = suggestedIpAddress,
+                    subnetField = suggestedSubnet,
+                    gatewayField = suggestedGateway,
+                    signalStatusField = suggestedSignalStatus,
+                    fiberCoreCountField = suggestedFiberCoreCount,
+                    fiberConnectionField = suggestedFiberConnection,
                     confirmedPositionField = suggestedPosition.isNotBlank(),
                     confirmedCoordinateField = suggestedCoordinate.isNotBlank(),
                     // Non-Excel optional fields must be explicitly confirmed by user.
@@ -385,6 +415,12 @@ fun WorkspaceViewModel.loadNonExcelPreview(uri: Uri, existingFileId: String? = n
                     confirmedObjectTypeField = false,
                     confirmedWorkVolumeFields = false,
                     confirmedRouteLengthField = false,
+                    confirmedIpAddressField = false,
+                    confirmedSubnetField = false,
+                    confirmedGatewayField = false,
+                    confirmedSignalStatusField = false,
+                    confirmedFiberCoreCountField = false,
+                    confirmedFiberConnectionField = false,
                     showMappingDialog = true,
                     isLoading = false,
                     message = aiMessage
@@ -415,13 +451,25 @@ fun WorkspaceViewModel.updateImportMappingUi(
     objectTypeField: String? = null,
     workVolumeFieldsCsv: String? = null,
     routeLengthField: String? = null,
+    ipAddressField: String? = null,
+    subnetField: String? = null,
+    gatewayField: String? = null,
+    signalStatusField: String? = null,
+    fiberCoreCountField: String? = null,
+    fiberConnectionField: String? = null,
     confirmedPositionField: Boolean? = null,
     confirmedCoordinateField: Boolean? = null,
     confirmedContractorField: Boolean? = null,
     confirmedMapNumberField: Boolean? = null,
     confirmedObjectTypeField: Boolean? = null,
     confirmedWorkVolumeFields: Boolean? = null,
-    confirmedRouteLengthField: Boolean? = null
+    confirmedRouteLengthField: Boolean? = null,
+    confirmedIpAddressField: Boolean? = null,
+    confirmedSubnetField: Boolean? = null,
+    confirmedGatewayField: Boolean? = null,
+    confirmedSignalStatusField: Boolean? = null,
+    confirmedFiberCoreCountField: Boolean? = null,
+    confirmedFiberConnectionField: Boolean? = null
 ) {
     updateImportMappingUiIfChanged { ui ->
         ui.copy(
@@ -432,13 +480,25 @@ fun WorkspaceViewModel.updateImportMappingUi(
             objectTypeField = objectTypeField ?: ui.objectTypeField,
             workVolumeFieldsCsv = workVolumeFieldsCsv ?: ui.workVolumeFieldsCsv,
             routeLengthField = routeLengthField ?: ui.routeLengthField,
+            ipAddressField = ipAddressField ?: ui.ipAddressField,
+            subnetField = subnetField ?: ui.subnetField,
+            gatewayField = gatewayField ?: ui.gatewayField,
+            signalStatusField = signalStatusField ?: ui.signalStatusField,
+            fiberCoreCountField = fiberCoreCountField ?: ui.fiberCoreCountField,
+            fiberConnectionField = fiberConnectionField ?: ui.fiberConnectionField,
             confirmedPositionField = confirmedPositionField ?: ui.confirmedPositionField,
             confirmedCoordinateField = confirmedCoordinateField ?: ui.confirmedCoordinateField,
             confirmedContractorField = confirmedContractorField ?: ui.confirmedContractorField,
             confirmedMapNumberField = confirmedMapNumberField ?: ui.confirmedMapNumberField,
             confirmedObjectTypeField = confirmedObjectTypeField ?: ui.confirmedObjectTypeField,
             confirmedWorkVolumeFields = confirmedWorkVolumeFields ?: ui.confirmedWorkVolumeFields,
-            confirmedRouteLengthField = confirmedRouteLengthField ?: ui.confirmedRouteLengthField
+            confirmedRouteLengthField = confirmedRouteLengthField ?: ui.confirmedRouteLengthField,
+            confirmedIpAddressField = confirmedIpAddressField ?: ui.confirmedIpAddressField,
+            confirmedSubnetField = confirmedSubnetField ?: ui.confirmedSubnetField,
+            confirmedGatewayField = confirmedGatewayField ?: ui.confirmedGatewayField,
+            confirmedSignalStatusField = confirmedSignalStatusField ?: ui.confirmedSignalStatusField,
+            confirmedFiberCoreCountField = confirmedFiberCoreCountField ?: ui.confirmedFiberCoreCountField,
+            confirmedFiberConnectionField = confirmedFiberConnectionField ?: ui.confirmedFiberConnectionField
         )
     }
 }
@@ -485,7 +545,13 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                         mapNumberField = ui.mapNumberField.ifBlank { null },
                         objectTypeField = ui.objectTypeField.ifBlank { null },
                         itemFields = parseworkVolumeColumnsCsv(ui.workVolumeFieldsCsv),
-                        routeLengthField = ui.routeLengthField.ifBlank { null }
+                        routeLengthField = ui.routeLengthField.ifBlank { null },
+                        ipAddressField = ui.ipAddressField.ifBlank { null },
+                        subnetField = ui.subnetField.ifBlank { null },
+                        gatewayField = ui.gatewayField.ifBlank { null },
+                        signalStatusField = ui.signalStatusField.ifBlank { null },
+                        fiberCoreCountField = ui.fiberCoreCountField.ifBlank { null },
+                        fiberConnectionField = ui.fiberConnectionField.ifBlank { null }
                     ),
                     confirmed = ConfirmedFieldFlags(
                         positionField = ui.confirmedPositionField,
@@ -494,7 +560,13 @@ fun WorkspaceViewModel.parseNonExcelToDesign() {
                         mapNumberField = ui.confirmedMapNumberField,
                         objectTypeField = ui.confirmedObjectTypeField,
                         itemFields = ui.confirmedWorkVolumeFields,
-                        routeLengthField = ui.confirmedRouteLengthField
+                        routeLengthField = ui.confirmedRouteLengthField,
+                        ipAddressField = ui.confirmedIpAddressField,
+                        subnetField = ui.confirmedSubnetField,
+                        gatewayField = ui.confirmedGatewayField,
+                        signalStatusField = ui.confirmedSignalStatusField,
+                        fiberCoreCountField = ui.confirmedFiberCoreCountField,
+                        fiberConnectionField = ui.confirmedFiberConnectionField
                     )
                 )
             }
@@ -613,6 +685,12 @@ fun WorkspaceViewModel.updateExcelMapping(
     contractorColumn: String? = null,
     mapNumberColumn: String? = null,
     objectTypeColumn: String? = null,
+    ipAddressColumn: String? = null,
+    subnetColumn: String? = null,
+    gatewayColumn: String? = null,
+    signalStatusColumn: String? = null,
+    fiberCoreCountColumn: String? = null,
+    fiberConnectionColumn: String? = null,
     workVolumeColumnsCsv: String? = null
 ) {
     updateExcelParserUiIfChanged { ui ->
@@ -624,6 +702,12 @@ fun WorkspaceViewModel.updateExcelMapping(
             contractorColumn = contractorColumn ?: ui.contractorColumn,
             mapNumberColumn = mapNumberColumn ?: ui.mapNumberColumn,
             objectTypeColumn = objectTypeColumn ?: ui.objectTypeColumn,
+            ipAddressColumn = ipAddressColumn ?: ui.ipAddressColumn,
+            subnetColumn = subnetColumn ?: ui.subnetColumn,
+            gatewayColumn = gatewayColumn ?: ui.gatewayColumn,
+            signalStatusColumn = signalStatusColumn ?: ui.signalStatusColumn,
+            fiberCoreCountColumn = fiberCoreCountColumn ?: ui.fiberCoreCountColumn,
+            fiberConnectionColumn = fiberConnectionColumn ?: ui.fiberConnectionColumn,
             workVolumeColumnsCsv = workVolumeColumnsCsv ?: ui.workVolumeColumnsCsv
         )
     }
@@ -686,6 +770,12 @@ fun WorkspaceViewModel.parseExcelToDesign() {
                         contractorColumn = ui.contractorColumn.ifBlank { null },
                         mapNumberColumn = ui.mapNumberColumn.ifBlank { null },
                         objectTypeColumn = ui.objectTypeColumn.ifBlank { null },
+                        ipAddressColumn = ui.ipAddressColumn.ifBlank { null },
+                        subnetColumn = ui.subnetColumn.ifBlank { null },
+                        gatewayColumn = ui.gatewayColumn.ifBlank { null },
+                        signalStatusColumn = ui.signalStatusColumn.ifBlank { null },
+                        fiberCoreCountColumn = ui.fiberCoreCountColumn.ifBlank { null },
+                        fiberConnectionColumn = ui.fiberConnectionColumn.ifBlank { null },
                         classificationMode = ui.classificationMode,
                         itemColumns = parseworkVolumeColumnsCsv(ui.workVolumeColumnsCsv)
                     ),

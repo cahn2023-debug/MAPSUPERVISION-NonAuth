@@ -78,6 +78,7 @@ import com.mapsupervision.app.workspace.clearMapNodeSelection
 import com.mapsupervision.app.workspace.clearMapRouteSelection
 import com.mapsupervision.app.workspace.clearPhotoNodeFilter
 import com.mapsupervision.app.workspace.clearSelectedNodePhotos
+import com.mapsupervision.app.workspace.setMapCenterNode
 import com.mapsupervision.app.workspace.combineImportedFiles
 import com.mapsupervision.app.workspace.deleteImportedFile
 import com.mapsupervision.app.workspace.deleteNote
@@ -356,6 +357,7 @@ fun WorkspaceAppShell(
                     onRefreshProjects = projectViewModel::refresh,
                     onSelectNode = workspaceViewModel::selectMapNode,
                     onSelectRoute = workspaceViewModel::selectMapRoute,
+                    onSetCenterNode = workspaceViewModel::setMapCenterNode,
                     onUpdateMaterialProgress = workspaceViewModel::updateWorkVolumeProgress,
                     onCloseNodeCard = workspaceViewModel::clearMapNodeSelection,
                     onCloseRouteCard = workspaceViewModel::clearMapRouteSelection,

@@ -33,9 +33,9 @@
       "source": "nodes_source",
       "paint": {
         "circle-color": ["coalesce", ["get", "color"], "#f97316"],
-        "circle-radius": 10,
-        "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 2.5
+        "circle-radius": ["coalesce", ["get", "signalRadius"], 10],
+        "circle-stroke-color": ["coalesce", ["get", "signalStrokeColor"], "#ffffff"],
+        "circle-stroke-width": ["coalesce", ["get", "signalStrokeWidth"], 2.5]
       }
     },
     {

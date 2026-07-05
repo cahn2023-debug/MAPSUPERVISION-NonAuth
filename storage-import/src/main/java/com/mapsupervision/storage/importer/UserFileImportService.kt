@@ -37,6 +37,7 @@ import com.mapsupervision.domain.model.NonExcelFieldPreview
 import com.mapsupervision.domain.model.NonExcelImportMapping
 import com.mapsupervision.domain.model.NonExcelFieldCandidateSet
 import com.mapsupervision.domain.model.ExcelClassificationMode
+import com.mapsupervision.domain.model.NodeSignalStatus
 import com.mapsupervision.domain.model.NonExcelPreview
 import com.mapsupervision.domain.repository.ImportRepository
 
@@ -64,7 +65,13 @@ class UserFileImportService @Inject constructor(
                     mapNumberOptions = listOf("Mã tự sinh từ đối tượng") + metadataKeys,
                     objectTypeOptions = listOf("Point/LineString/Polygon") + metadataKeys,
                     itemOptions = emptyList(),
-                    routeLengthOptions = listOf("Chieu dai tuyen (tu tinh)")
+                    routeLengthOptions = listOf("Chieu dai tuyen (tu tinh)"),
+                    ipAddressOptions = metadataKeys,
+                    subnetOptions = metadataKeys,
+                    gatewayOptions = metadataKeys,
+                    signalStatusOptions = metadataKeys,
+                    fiberCoreCountOptions = metadataKeys,
+                    fiberConnectionOptions = metadataKeys
                 )
             }
             "geojson", "json" -> {
@@ -79,7 +86,13 @@ class UserFileImportService @Inject constructor(
                     mapNumberOptions = listOf("properties.mapNumber", "Mã tự sinh từ đối tượng") + metadataKeys,
                     objectTypeOptions = listOf("Point/LineString/Polygon") + metadataKeys,
                     itemOptions = emptyList(),
-                    routeLengthOptions = listOf("Chieu dai tuyen (tu tinh)")
+                    routeLengthOptions = listOf("Chieu dai tuyen (tu tinh)"),
+                    ipAddressOptions = metadataKeys,
+                    subnetOptions = metadataKeys,
+                    gatewayOptions = metadataKeys,
+                    signalStatusOptions = metadataKeys,
+                    fiberCoreCountOptions = metadataKeys,
+                    fiberConnectionOptions = metadataKeys
                 )
             }
             else -> NonExcelFieldCandidateSet(
@@ -91,7 +104,13 @@ class UserFileImportService @Inject constructor(
                 mapNumberOptions = emptyList(),
                 objectTypeOptions = emptyList(),
                 itemOptions = emptyList(),
-                routeLengthOptions = emptyList()
+                routeLengthOptions = emptyList(),
+                ipAddressOptions = emptyList(),
+                subnetOptions = emptyList(),
+                gatewayOptions = emptyList(),
+                signalStatusOptions = emptyList(),
+                fiberCoreCountOptions = emptyList(),
+                fiberConnectionOptions = emptyList()
             )
         }
         val sampleRows = when (ext) {
@@ -158,7 +177,11 @@ class UserFileImportService @Inject constructor(
                         node.contractor
                     } else "",
                     mapNumberLabel = if (confirmed.mapNumberField) node.mapNumberLabel else "",
-                    workVolumeSummary = if (confirmed.itemFields) node.workVolumeSummary else ""
+                    workVolumeSummary = if (confirmed.itemFields) node.workVolumeSummary else "",
+                    ipAddress = if (confirmed.ipAddressField) node.ipAddress else "",
+                    subnet = if (confirmed.subnetField) node.subnet else "",
+                    gateway = if (confirmed.gatewayField) node.gateway else "",
+                    signalStatus = if (confirmed.signalStatusField) node.signalStatus else NodeSignalStatus.UNKNOWN
                 )
             }
         }
@@ -167,7 +190,9 @@ class UserFileImportService @Inject constructor(
         } else {
             draft.suggestedRoutes.map { route ->
                 route.copy(
-                    designLength = if (confirmed.routeLengthField) route.designLength else null
+                    designLength = if (confirmed.routeLengthField) route.designLength else null,
+                    fiberCoreCount = if (confirmed.fiberCoreCountField) route.fiberCoreCount else null,
+                    fiberConnection = if (confirmed.fiberConnectionField) route.fiberConnection else ""
                 )
             }
         }
@@ -205,6 +230,12 @@ class UserFileImportService @Inject constructor(
         if (confirmed.objectTypeField) add("objectType")
         if (confirmed.itemFields) add("items")
         if (confirmed.routeLengthField) add("routeLength")
+        if (confirmed.ipAddressField) add("ipAddress")
+        if (confirmed.subnetField) add("subnet")
+        if (confirmed.gatewayField) add("gateway")
+        if (confirmed.signalStatusField) add("signalStatus")
+        if (confirmed.fiberCoreCountField) add("fiberCoreCount")
+        if (confirmed.fiberConnectionField) add("fiberConnection")
     }
 
     fun inspectNonExcel(uri: Uri): NonExcelPreview {
@@ -295,6 +326,12 @@ class UserFileImportService @Inject constructor(
         val contractorIdx = mapping.contractorColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
         val objectTypeIdx = mapping.objectTypeColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
         val mapNumberIdx = mapping.mapNumberColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val ipAddressIdx = mapping.ipAddressColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val subnetIdx = mapping.subnetColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val gatewayIdx = mapping.gatewayColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val signalStatusIdx = mapping.signalStatusColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val fiberCoreCountIdx = mapping.fiberCoreCountColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
+        val fiberConnectionIdx = mapping.fiberConnectionColumn?.takeIf { it.isNotBlank() }?.let { headerIndex[it.trim()] }
         val itemColumnIndexList = ArrayList<Int>(mapping.itemColumns.size)
         val itemLabels = ArrayList<String>(mapping.itemColumns.size)
         for (rawColumn in mapping.itemColumns) {
@@ -357,6 +394,24 @@ class UserFileImportService @Inject constructor(
             val objectType = objectTypeIdx?.let { idx ->
                 if (idx < rowSize) row[idx].trim() else ""
             }.orEmpty()
+            val ipAddress = ipAddressIdx?.let { idx ->
+                if (idx < rowSize) row[idx].trim() else ""
+            }.orEmpty()
+            val subnet = subnetIdx?.let { idx ->
+                if (idx < rowSize) row[idx].trim() else ""
+            }.orEmpty()
+            val gateway = gatewayIdx?.let { idx ->
+                if (idx < rowSize) row[idx].trim() else ""
+            }.orEmpty()
+            val signalStatus = signalStatusIdx?.let { idx ->
+                if (idx < rowSize) parseNodeSignalStatus(row[idx]) else NodeSignalStatus.UNKNOWN
+            } ?: NodeSignalStatus.UNKNOWN
+            val fiberCoreCount = fiberCoreCountIdx?.let { idx ->
+                if (idx < rowSize) row[idx].trim().toIntOrNull() else null
+            }
+            val fiberConnection = fiberConnectionIdx?.let { idx ->
+                if (idx < rowSize) row[idx].trim() else ""
+            }.orEmpty()
             val kind = when (mapping.classificationMode) {
                 ExcelClassificationMode.FORCE_NODE -> ObjectKind.NODE
                 ExcelClassificationMode.FORCE_ROUTE -> ObjectKind.ROUTE
@@ -401,7 +456,9 @@ class UserFileImportService @Inject constructor(
                     startNodeCode = "",
                     endNodeCode = "",
                     points = parsedCoords,
-                    designLength = designLength
+                    designLength = designLength,
+                    fiberCoreCount = fiberCoreCount,
+                    fiberConnection = fiberConnection
                 )
             } else {
                 nodes += GisNode(
@@ -412,7 +469,11 @@ class UserFileImportService @Inject constructor(
                     latitude = lat,
                     longitude = lon,
                     mapNumberLabel = mapNumberLabel,
-                    workVolumeSummary = workVolumeSummary
+                    workVolumeSummary = workVolumeSummary,
+                    ipAddress = ipAddress,
+                    subnet = subnet,
+                    gateway = gateway,
+                    signalStatus = signalStatus
                 )
             }
         }
@@ -872,6 +933,18 @@ class UserFileImportService @Inject constructor(
         } catch (e: Exception) {
             AppLogger.e(e, "extractGeoJsonMetadata parsing error")
             emptyList()
+        }
+    }
+
+    private fun parseNodeSignalStatus(raw: String?): NodeSignalStatus {
+        val normalized = raw?.trim()?.lowercase(Locale.US).orEmpty()
+        return when {
+            normalized.isBlank() -> NodeSignalStatus.UNKNOWN
+            normalized in setOf("has_signal", "has signal", "co_tin_hieu", "co tin hieu", "on", "online", "1", "yes", "true") ->
+                NodeSignalStatus.HAS_SIGNAL
+            normalized in setOf("no_signal", "no signal", "khong_tin_hieu", "khong tin hieu", "off", "offline", "0", "no", "false") ->
+                NodeSignalStatus.NO_SIGNAL
+            else -> NodeSignalStatus.UNKNOWN
         }
     }
 

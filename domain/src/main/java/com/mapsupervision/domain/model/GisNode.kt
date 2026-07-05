@@ -24,6 +24,10 @@ data class GisNode(
     val mapNumberLabel: String = "",
     val workVolumeSummary: String = "",
     val importedFileId: String? = null,
+    val ipAddress: String = "",
+    val subnet: String = "",
+    val gateway: String = "",
+    val signalStatus: NodeSignalStatus = NodeSignalStatus.UNKNOWN,
     val updatedAtEpochMs: Long = 0L,
     val isDeleted: Boolean = false,
     val deletedAtEpochMs: Long? = null

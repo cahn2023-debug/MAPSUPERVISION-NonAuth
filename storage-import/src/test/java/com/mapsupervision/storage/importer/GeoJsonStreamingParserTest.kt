@@ -244,4 +244,70 @@ class GeoJsonStreamingParserTest {
         assertEquals(1, result.routes.size)
         assertEquals("OK-01", result.routes.single().code)
     }
+
+    @Test
+    fun parse_geojson_streaming_maps_network_and_fiber_fields() {
+        val geoJson = """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "properties": {
+                    "name": "N-01",
+                    "ip": "192.168.1.1",
+                    "sub": "255.255.255.0",
+                    "gw": "192.168.1.254",
+                    "sig": "HAS_SIGNAL"
+                  },
+                  "geometry": {
+                    "type": "Point",
+                    "coordinates": [106.6, 10.6]
+                  }
+                },
+                {
+                  "type": "Feature",
+                  "properties": {
+                    "name": "R-01",
+                    "cores": "48",
+                    "conn": "SPLITTER-A"
+                  },
+                  "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[106.7, 10.7], [106.8, 10.8]]
+                  }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val mapping = NonExcelImportMapping(
+            positionField = "properties.name",
+            ipAddressField = "ip",
+            subnetField = "sub",
+            gatewayField = "gw",
+            signalStatusField = "sig",
+            fiberCoreCountField = "cores",
+            fiberConnectionField = "conn"
+        )
+
+        val result = parseGeoJsonContentStreaming(
+            stream = geoJson.byteInputStream(),
+            sourceName = "network_fiber.geojson",
+            projectId = "project-1",
+            mapping = mapping
+        )
+
+        assertEquals(1, result.nodes.size)
+        val node = result.nodes.single()
+        assertEquals("192.168.1.1", node.ipAddress)
+        assertEquals("255.255.255.0", node.subnet)
+        assertEquals("192.168.1.254", node.gateway)
+        assertEquals(com.mapsupervision.domain.model.NodeSignalStatus.HAS_SIGNAL, node.signalStatus)
+
+        assertEquals(1, result.routes.size)
+        val route = result.routes.single()
+        assertEquals(48, route.fiberCoreCount)
+        assertEquals("SPLITTER-A", route.fiberConnection)
+    }
 }
