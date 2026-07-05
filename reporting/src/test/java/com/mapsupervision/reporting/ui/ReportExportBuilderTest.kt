@@ -134,6 +134,112 @@ class ReportExportBuilderTest {
         assertEquals(3f, materialRows.last().totalActualQty, 0.001f)
     }
 
+    @Test
+    fun buildProjectTextSummary_countsWorkItemsUsesTotalRowAndLatestIssues() {
+        val snapshot = ReportingSnapshot(
+            projectId = "project-1",
+            projectName = "Project One",
+            nodes = sampleNodes(),
+            routes = sampleRoutes(),
+            workVolumeRowsRaw = sampleWorkVolumeRows(),
+            dailyLogs = listOf(
+                DailyLog(
+                    id = "log-1",
+                    projectId = "project-1",
+                    workItem = "Work A",
+                    manpower = 3,
+                    note = "Issue old",
+                    createdAtEpochMs = 1_000L,
+                    nodeCode = "NODE-A"
+                ),
+                DailyLog(
+                    id = "log-2",
+                    projectId = "project-1",
+                    workItem = "Work B",
+                    manpower = 2,
+                    note = "Issue newest",
+                    createdAtEpochMs = 3_000L,
+                    routeCode = "ROUTE-1"
+                ),
+                DailyLog(
+                    id = "log-3",
+                    projectId = "project-1",
+                    workItem = "Work C",
+                    manpower = 2,
+                    note = "Issue middle",
+                    createdAtEpochMs = 2_000L
+                ),
+                DailyLog(
+                    id = "log-4",
+                    projectId = "project-1",
+                    workItem = "Work D",
+                    manpower = 1,
+                    note = "",
+                    createdAtEpochMs = 4_000L,
+                    nodeCode = "NODE-D"
+                )
+            )
+        )
+
+        val summary = buildProjectTextSummary(snapshot)
+
+        assertEquals("Project One", summary.projectLabel)
+        assertEquals(2, summary.workItemCount)
+        assertEquals(35f, summary.totalPlannedQty, 0.001f)
+        assertEquals(22f, summary.totalActualQty, 0.001f)
+        assertEquals(62.857143f, summary.completionPercent, 0.001f)
+        assertEquals(
+            listOf(
+                "Work B (ROUTE-1): Issue newest",
+                "Work C: Issue middle",
+                "Work A (NODE-A): Issue old"
+            ),
+            summary.recentIssues
+        )
+    }
+
+    @Test
+    fun buildProjectTextSummary_returnsZerosAndEmptyIssuesWhenNoData() {
+        val summary = buildProjectTextSummary(
+            ReportingSnapshot(
+                projectId = "project-1",
+                projectName = "",
+                nodes = emptyList(),
+                routes = emptyList(),
+                workVolumeRowsRaw = emptyList(),
+                dailyLogs = emptyList()
+            )
+        )
+
+        assertEquals("project-1", summary.projectLabel)
+        assertEquals(0, summary.workItemCount)
+        assertEquals(0f, summary.totalPlannedQty, 0.001f)
+        assertEquals(0f, summary.totalActualQty, 0.001f)
+        assertEquals(0f, summary.completionPercent, 0.001f)
+        assertTrue(summary.recentIssues.isEmpty())
+    }
+
+    @Test
+    fun buildRecentIssueSummaries_respectsLimitAndSkipsBlankNotes() {
+        val issues = buildRecentIssueSummaries(
+            dailyLogs = listOf(
+                DailyLog("1", "p1", "A", 1, "Note A", 1_000L, nodeCode = "N1"),
+                DailyLog("2", "p1", "B", 1, " ", 5_000L, nodeCode = "N2"),
+                DailyLog("3", "p1", "C", 1, "Note C", 3_000L, routeCode = "R3"),
+                DailyLog("4", "p1", "D", 1, "Note D", 4_000L, nodeCode = "N4")
+            ),
+            limit = 2
+        )
+
+        assertEquals(
+            listOf(
+                "D (N4): Note D",
+                "C (R3): Note C"
+            ),
+            issues
+        )
+    }
+
     private fun sampleDraft() = ReportDraftResult(
         executiveSummary = "Summary",
         riskSection = "Risk",

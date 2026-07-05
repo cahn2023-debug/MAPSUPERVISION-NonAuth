@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -323,16 +324,22 @@ class WorkspaceViewModel @Inject constructor(
         val delayMs = resolveFilteredMapUpdateDelayMs(reason)
         filteredMapUpdateJob?.cancel()
         filteredMapUpdateJob = viewModelScope.launch(Dispatchers.Default) {
-            if (delayMs > 0L) delay(delayMs)
-            val stateSnapshot = _state.value
-            val indexes = ensureIndexes(stateSnapshot)
-            val nodes = buildMapDesignNodes(stateSnapshot, indexes)
-            val routes = filterRoutes(stateSnapshot.designRoutes, stateSnapshot.mapUi, indexes, nodes)
-            if (!shouldPublishFilteredMapData(_filteredNodesForMap.value, _filteredRoutesForMap.value, nodes, routes)) {
-                return@launch
+            try {
+                if (delayMs > 0L) delay(delayMs)
+                val stateSnapshot = _state.value
+                val indexes = ensureIndexes(stateSnapshot)
+                val nodes = buildMapDesignNodes(stateSnapshot, indexes)
+                val routes = filterRoutes(stateSnapshot.designRoutes, stateSnapshot.mapUi, indexes, nodes)
+                if (!shouldPublishFilteredMapData(_filteredNodesForMap.value, _filteredRoutesForMap.value, nodes, routes)) {
+                    return@launch
+                }
+                _filteredNodesForMap.value = nodes
+                _filteredRoutesForMap.value = routes
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                AppLogger.e(error, "workspace.map.filter.failed query=${_state.value.mapUi.searchQuery}")
             }
-            _filteredNodesForMap.value = nodes
-            _filteredRoutesForMap.value = routes
         }
     }
 
@@ -567,10 +574,11 @@ internal fun filterRoutes(
             route.contractor.equals(mapUi.filterContractor, ignoreCase = true)
         val byVisibility = !isContractorHidden(mapUi, route.contractor)
         val byQuery = mapUi.searchQuery.isBlank() ||
-            indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
+            indexes.normalizedRouteSearch[route.code]?.matches(normalizedQuery) == true
         val byLiveNodes = routeHasRenderablePolyline(route) ||
             liveNodeCodesUpper.contains(route.startNodeCode.trim().uppercase()) ||
-            liveNodeCodesUpper.contains(route.endNodeCode.trim().uppercase())
+            liveNodeCodesUpper.contains(route.endNodeCode.trim().uppercase()) ||
+            (mapUi.searchQuery.isNotBlank() && byQuery)
         byContractor && byVisibility && byQuery && byLiveNodes
     }
 }

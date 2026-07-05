@@ -97,6 +97,25 @@ class WorkspaceMapFilteringTest {
     }
 
     @Test
+    fun build_map_design_nodes_filters_by_code_and_map_number_label() {
+        val nodeA = GisNode("n1", "p1", "P-001", "A", 10.0, 106.0, mapNumberLabel = "So 12")
+        val nodeB = GisNode("n2", "p1", "CAB-002", "B", 10.1, 106.1, mapNumberLabel = "So 34")
+        val stateByCode = WorkspaceState(
+            designNodes = listOf(nodeA, nodeB),
+            mapUi = MapUiState(searchQuery = "cab002")
+        )
+
+        val indexesByCode = buildWorkspaceIndexes(stateByCode)
+        val resultByCode = buildMapDesignNodes(stateByCode, indexesByCode)
+        assertEquals(listOf("CAB-002"), resultByCode.map { it.code })
+
+        val stateByMapNumber = stateByCode.copy(mapUi = MapUiState(searchQuery = "số 12"))
+        val indexesByMapNumber = buildWorkspaceIndexes(stateByMapNumber)
+        val resultByMapNumber = buildMapDesignNodes(stateByMapNumber, indexesByMapNumber)
+        assertEquals(listOf("P-001"), resultByMapNumber.map { it.code })
+    }
+
+    @Test
     fun build_map_design_nodes_filters_by_material_type() {
         val nodeA = GisNode("n1", "p1", "P-001", "A", 10.0, 106.0, workVolumeSummary = "Cable: 10\nPipe: 5")
         val nodeB = GisNode("n2", "p1", "P-002", "A", 10.1, 106.1, workVolumeSummary = "Cable: 20")
@@ -164,6 +183,43 @@ class WorkspaceMapFilteringTest {
 
         val resultUnique = filterRoutes(stateUnique.designRoutes, stateUnique.mapUi, indexesUnique, liveNodesUnique)
         assertEquals(listOf("R-001"), resultUnique.map { it.code })
+    }
+
+    @Test
+    fun routes_filtering_matches_code_start_end_node_and_keeps_node_filter_separate() {
+        val nodeA = GisNode("n1", "p1", "P-001", "A", 10.0, 106.0, mapNumberLabel = "01")
+        val nodeB = GisNode("n2", "p1", "P-002", "A", 10.1, 106.1, mapNumberLabel = "02")
+        val nodeC = GisNode("n3", "p1", "P-003", "B", 10.2, 106.2, mapNumberLabel = "03")
+        val route1 = GisRoute("r1", "p1", "R-001", "A", "P-001", "P-002")
+        val route2 = GisRoute("r2", "p1", "CAP-003", "B", "P-003", "P-002")
+
+        val byRouteCodeState = WorkspaceState(
+            designNodes = listOf(nodeA, nodeB, nodeC),
+            designRoutes = listOf(route1, route2),
+            mapUi = MapUiState(searchQuery = "cap003")
+        )
+        val byRouteCodeIndexes = buildWorkspaceIndexes(byRouteCodeState)
+        val byRouteCodeNodes = buildMapDesignNodes(byRouteCodeState, byRouteCodeIndexes)
+        val byRouteCodeRoutes = filterRoutes(
+            byRouteCodeState.designRoutes,
+            byRouteCodeState.mapUi,
+            byRouteCodeIndexes,
+            byRouteCodeNodes
+        )
+        assertEquals(emptyList<String>(), byRouteCodeNodes.map { it.code })
+        assertEquals(listOf("CAP-003"), byRouteCodeRoutes.map { it.code })
+
+        val byEndNodeState = byRouteCodeState.copy(mapUi = MapUiState(searchQuery = "p002"))
+        val byEndNodeIndexes = buildWorkspaceIndexes(byEndNodeState)
+        val byEndNodeNodes = buildMapDesignNodes(byEndNodeState, byEndNodeIndexes)
+        val byEndNodeRoutes = filterRoutes(
+            byEndNodeState.designRoutes,
+            byEndNodeState.mapUi,
+            byEndNodeIndexes,
+            byEndNodeNodes
+        )
+        assertEquals(listOf("P-002"), byEndNodeNodes.map { it.code })
+        assertEquals(listOf("R-001", "CAP-003"), byEndNodeRoutes.map { it.code })
     }
 
     @Test

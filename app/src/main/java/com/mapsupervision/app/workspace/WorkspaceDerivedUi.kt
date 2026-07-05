@@ -61,12 +61,60 @@ internal data class WorkspaceIndexes(
     val progressByNodeCode: Map<String, NodeProgress> = emptyMap(),
     val workVolumeRowsByNodeKey: Map<String, List<WorkVolumeProgress>> = emptyMap(),
     val parsedMaterialsByNodeKey: Map<String, List<PreparedMaterialLine>> = emptyMap(),
-    val normalizedNodeSearch: Map<String, String> = emptyMap(),
-    val normalizedRouteSearch: Map<String, String> = emptyMap(),
+    val normalizedNodeSearch: Map<String, NodeSearchIndex> = emptyMap(),
+    val normalizedRouteSearch: Map<String, RouteSearchIndex> = emptyMap(),
     val materialTypeOptions: List<String> = emptyList(),
     val progressUi: ProgressUiState = ProgressUiState(),
     val dataHubUi: DataHubUiState = DataHubUiState()
 )
+
+internal data class NodeSearchIndex(
+    val codeNormalized: String,
+    val mapNumberLabelNormalized: String,
+    val contractor: String
+) {
+    private val contractorNormalized = normalizeForSearch(contractor)
+    private val codeCompact = codeNormalized.replace(" ", "")
+    private val mapNumberLabelCompact = mapNumberLabelNormalized.replace(" ", "")
+    private val contractorCompact = contractorNormalized.replace(" ", "")
+
+    fun matches(normalizedQuery: String): Boolean {
+        if (normalizedQuery.isBlank()) return true
+        val compactQuery = normalizedQuery.replace(" ", "")
+        return codeNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && codeCompact.contains(compactQuery)) ||
+            mapNumberLabelNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && mapNumberLabelCompact.contains(compactQuery)) ||
+            contractorNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && contractorCompact.contains(compactQuery))
+    }
+}
+
+internal data class RouteSearchIndex(
+    val codeNormalized: String,
+    val startNodeCodeNormalized: String,
+    val endNodeCodeNormalized: String,
+    val contractor: String
+) {
+    private val contractorNormalized = normalizeForSearch(contractor)
+    private val codeCompact = codeNormalized.replace(" ", "")
+    private val startNodeCodeCompact = startNodeCodeNormalized.replace(" ", "")
+    private val endNodeCodeCompact = endNodeCodeNormalized.replace(" ", "")
+    private val contractorCompact = contractorNormalized.replace(" ", "")
+
+    fun matches(normalizedQuery: String): Boolean {
+        if (normalizedQuery.isBlank()) return true
+        val compactQuery = normalizedQuery.replace(" ", "")
+        return codeNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && codeCompact.contains(compactQuery)) ||
+            startNodeCodeNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && startNodeCodeCompact.contains(compactQuery)) ||
+            endNodeCodeNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && endNodeCodeCompact.contains(compactQuery)) ||
+            contractorNormalized.contains(normalizedQuery) ||
+            (compactQuery.isNotEmpty() && contractorCompact.contains(compactQuery))
+    }
+}
 
 internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
     val routeNodeCodesUpper = HashSet<String>(state.designRoutes.size * 2 + 1)
@@ -306,8 +354,8 @@ internal fun buildWorkspaceIndexes(state: WorkspaceState): WorkspaceIndexes {
         progressByNodeCode = progressByNodeCode,
         workVolumeRowsByNodeKey = workVolumeRowsByNodeKey,
         parsedMaterialsByNodeKey = parsedMaterialsByNodeKey,
-        normalizedNodeSearch = state.designNodes.associate { node -> node.id to buildNodeSearchBlob(node) },
-        normalizedRouteSearch = state.designRoutes.associate { route -> route.code to buildRouteSearchBlob(route) },
+        normalizedNodeSearch = state.designNodes.associate { node -> node.id to buildNodeSearchIndex(node) },
+        normalizedRouteSearch = state.designRoutes.associate { route -> route.code to buildRouteSearchIndex(route) },
         materialTypeOptions = materialTypeOptions,
         progressUi = ProgressUiState(
             nonStructuralNodes = nonStructuralNodes,
@@ -365,14 +413,19 @@ private fun parseworkVolumeSummary(summary: String): List<PreparedMaterialLine> 
         .toList()
 }
 
-private fun buildNodeSearchBlob(node: GisNode): String =
-    normalizeForSearch(
-        listOf(node.code, node.mapNumberLabel, node.contractor).joinToString(" ")
+private fun buildNodeSearchIndex(node: GisNode): NodeSearchIndex =
+    NodeSearchIndex(
+        codeNormalized = normalizeForSearch(node.code),
+        mapNumberLabelNormalized = normalizeForSearch(node.mapNumberLabel),
+        contractor = node.contractor
     )
 
-private fun buildRouteSearchBlob(route: GisRoute): String =
-    normalizeForSearch(
-        listOf(route.code, route.contractor, route.startNodeCode, route.endNodeCode).joinToString(" ")
+private fun buildRouteSearchIndex(route: GisRoute): RouteSearchIndex =
+    RouteSearchIndex(
+        codeNormalized = normalizeForSearch(route.code),
+        startNodeCodeNormalized = normalizeForSearch(route.startNodeCode),
+        endNodeCodeNormalized = normalizeForSearch(route.endNodeCode),
+        contractor = route.contractor
     )
 
 private fun resolveLogEpochDay(log: DailyLog): Long = log.resolveEpochDay()

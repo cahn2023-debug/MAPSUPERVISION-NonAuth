@@ -63,6 +63,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
@@ -690,108 +691,64 @@ fun WorkspaceViewModel.onSearchQueryChanged(query: String) {
     if (trimmed.isBlank()) return
     mapSearchJob?.cancel()
     mapSearchJob = viewModelScope.launch {
-        delay(180)
-        val stateSnapshot = _state.value
-        val indexes = ensureIndexes(stateSnapshot)
-        val normalizedQuery = normalizeVietnamese(trimmed)
-        val matchedNode = stateSnapshot.designNodes.firstOrNull { node ->
-            indexes.normalizedNodeSearch[node.id].orEmpty().contains(normalizedQuery)
-        }
-        if (matchedNode != null) {
-            if (stateSnapshot.mapUi.selectedNode?.code != matchedNode.code) {
-                GisMapBridgeRegistry.bridge?.centerOnLocation(matchedNode.latitude, matchedNode.longitude)
+        try {
+            delay(180)
+            val stateSnapshot = _state.value
+            val indexes = ensureIndexes(stateSnapshot)
+            val normalizedQuery = normalizeMapSearchText(trimmed)
+            val matchedNode = stateSnapshot.designNodes.firstOrNull { node ->
+                indexes.normalizedNodeSearch[node.id]?.matches(normalizedQuery) == true
             }
-            _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Tìm thấy: ${matchedNode.code}")
-            )
-            return@launch
-        }
-        val matchedRoute = stateSnapshot.designRoutes.firstOrNull { route ->
-            indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
-        }
-        if (matchedRoute != null) {
-            val start = indexes.nodesByCode[matchedRoute.startNodeCode]
-            val end = indexes.nodesByCode[matchedRoute.endNodeCode]
-            if (start != null && end != null && stateSnapshot.mapUi.selectedRoute?.code != matchedRoute.code) {
-                GisMapBridgeRegistry.bridge?.centerOnLocation(
-                    (start.latitude + end.latitude) / 2,
-                    (start.longitude + end.longitude) / 2
+            if (matchedNode != null) {
+                if (stateSnapshot.mapUi.selectedNode?.code != matchedNode.code) {
+                    GisMapBridgeRegistry.bridge?.centerOnLocation(matchedNode.latitude, matchedNode.longitude)
+                }
+                _state.value = _state.value.copy(
+                    mapUi = _state.value.mapUi.copy(message = "Tim thay: ${matchedNode.code}")
+                )
+                return@launch
+            }
+            val matchedRoute = stateSnapshot.designRoutes.firstOrNull { route ->
+                indexes.normalizedRouteSearch[route.code]?.matches(normalizedQuery) == true
+            }
+            if (matchedRoute != null) {
+                val start = indexes.nodesByCode[matchedRoute.startNodeCode]
+                val end = indexes.nodesByCode[matchedRoute.endNodeCode]
+                if (start != null && end != null && stateSnapshot.mapUi.selectedRoute?.code != matchedRoute.code) {
+                    GisMapBridgeRegistry.bridge?.centerOnLocation(
+                        (start.latitude + end.latitude) / 2,
+                        (start.longitude + end.longitude) / 2
+                    )
+                }
+                _state.value = _state.value.copy(
+                    mapUi = _state.value.mapUi.copy(message = "Tim thay tuyen: ${matchedRoute.code}")
+                )
+                return@launch
+            }
+            val geocode = geocodeByNominatim(trimmed)
+            if (geocode != null) {
+                GisMapBridgeRegistry.bridge?.centerOnLocation(geocode.first, geocode.second)
+                _state.value = _state.value.copy(
+                    mapUi = _state.value.mapUi.copy(message = "Da tim vi tri theo dia chi")
+                )
+            } else {
+                _state.value = _state.value.copy(
+                    mapUi = _state.value.mapUi.copy(message = "Khong tim thay ket qua")
                 )
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            AppLogger.e(error, "workspace.map.search.failed query=$trimmed")
             _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Tìm thấy tuyến: ${matchedRoute.code}")
-            )
-            return@launch
-        }
-        val geocode = geocodeByNominatim(trimmed)
-        if (geocode != null) {
-            GisMapBridgeRegistry.bridge?.centerOnLocation(geocode.first, geocode.second)
-            _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Đã tìm vị trí theo địa chỉ")
-            )
-        } else {
-            _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Không tìm thấy kết quả")
-            )
-        }
-    }
-    return
-
-    // Normalize query for Vietnamese no-accent matching
-    val normalizedQuery = normalizeVietnamese(trimmed)
-
-    // Check if any node/route matches locally ? if so, zoom to first match
-    val matchedNode = _state.value.designNodes.firstOrNull { node ->
-        nodeMatchesQuery(node, trimmed, normalizedQuery)
-    }
-    if (matchedNode != null) {
-        GisMapBridgeRegistry.bridge?.centerOnLocation(matchedNode.latitude, matchedNode.longitude)
-        _state.value = _state.value.copy(
-            mapUi = _state.value.mapUi.copy(message = "Tìm thấy: ${matchedNode.code}")
-        )
-        return
-    }
-
-    val matchedRoute = _state.value.designRoutes.firstOrNull { route ->
-        routeMatchesQuery(route, trimmed, normalizedQuery)
-    }
-    if (matchedRoute != null) {
-        // Zoom to midpoint of route
-        val nodesByCode = _state.value.designNodes.associateBy { it.code }
-        val start = nodesByCode[matchedRoute.startNodeCode]
-        val end   = nodesByCode[matchedRoute.endNodeCode]
-        if (start != null && end != null) {
-            GisMapBridgeRegistry.bridge?.centerOnLocation(
-                (start.latitude + end.latitude) / 2,
-                (start.longitude + end.longitude) / 2
-            )
-        }
-        _state.value = _state.value.copy(
-            mapUi = _state.value.mapUi.copy(message = "Tìm thấy tuyến: ${matchedRoute.code}")
-        )
-        return
-    }
-
-    // Fallback: geocode by address
-    viewModelScope.launch {
-        val geocode = geocodeByNominatim(trimmed)
-        if (geocode != null) {
-            GisMapBridgeRegistry.bridge?.centerOnLocation(geocode.first, geocode.second)
-            _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Đã tìm vị trí theo địa chỉ")
-            )
-        } else {
-            _state.value = _state.value.copy(
-                mapUi = _state.value.mapUi.copy(message = "Không tìm thấy kết quả")
+                mapUi = _state.value.mapUi.copy(message = "Khong the tim kiem")
             )
         }
     }
 }
 
 private fun WorkspaceViewModel.normalizeVietnamese(text: String): String {
-    val stripped = java.text.Normalizer.normalize(text.lowercase(java.util.Locale.US), java.text.Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-    return stripped.replace("d", "d").replace(Regex("[^a-z0-9 ]+"), " ").trim().replace(Regex("\\s+"), " ")
+    return normalizeMapSearchText(text)
 }
 
 private fun WorkspaceViewModel.normalizeForMatching(text: String): String {
@@ -1006,13 +963,13 @@ private fun WorkspaceViewModel.routeMatchesQuery(route: GisRoute, raw: String, n
 
 fun WorkspaceViewModel.getFilteredDesignNodes(): List<GisNode> {
     val mapUi = _state.value.mapUi
-    val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeVietnamese(mapUi.searchQuery)
+    val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeMapSearchText(mapUi.searchQuery)
     val indexes = ensureIndexes()
     return _state.value.designNodes.filter { node ->
         val byContractor = mapUi.filterContractor.isNullOrBlank() ||
             node.contractor.equals(mapUi.filterContractor, ignoreCase = true)
         val byQuery = mapUi.searchQuery.isBlank() ||
-            indexes.normalizedNodeSearch[node.id].orEmpty().contains(normalizedQuery)
+            indexes.normalizedNodeSearch[node.id]?.matches(normalizedQuery) == true
         byContractor && byQuery
     }
 }
@@ -1023,13 +980,13 @@ fun WorkspaceViewModel.getFilteredDesignNodesForMap(): List<GisNode> {
 
 fun WorkspaceViewModel.getFilteredDesignRoutes(): List<GisRoute> {
     val mapUi = _state.value.mapUi
-    val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeVietnamese(mapUi.searchQuery)
+    val normalizedQuery = if (mapUi.searchQuery.isBlank()) "" else normalizeMapSearchText(mapUi.searchQuery)
     val indexes = ensureIndexes()
     return _state.value.designRoutes.filter { route ->
         val byContractor = mapUi.filterContractor.isNullOrBlank() ||
             route.contractor.equals(mapUi.filterContractor, ignoreCase = true)
         val byQuery = mapUi.searchQuery.isBlank() ||
-            indexes.normalizedRouteSearch[route.code].orEmpty().contains(normalizedQuery)
+            indexes.normalizedRouteSearch[route.code]?.matches(normalizedQuery) == true
         byContractor && byQuery
     }
 }
@@ -1392,27 +1349,29 @@ suspend fun WorkspaceViewModel.savePhoto(file: java.io.File, nodeCode: String): 
 }
 
 internal fun WorkspaceViewModel.ensureIndexes(state: WorkspaceState = _state.value): WorkspaceIndexes {
-    if (
-        cachedNodesRef !== state.designNodes ||
-        cachedRoutesRef !== state.designRoutes ||
-        cachedProgressRef !== state.constructionProgress ||
-        cachedWorkVolumeRowsRef !== state.workVolumeRows ||
-        cachedDailyLogsRef !== state.dailyLogs
-    ) {
-        cachedIndexes = buildWorkspaceIndexes(state)
-        cachedNodesRef = state.designNodes
-        cachedRoutesRef = state.designRoutes
-        cachedProgressRef = state.constructionProgress
-        cachedWorkVolumeRowsRef = state.workVolumeRows
-        cachedDailyLogsRef = state.dailyLogs
+    synchronized(this) {
+        if (
+            cachedNodesRef !== state.designNodes ||
+            cachedRoutesRef !== state.designRoutes ||
+            cachedProgressRef !== state.constructionProgress ||
+            cachedWorkVolumeRowsRef !== state.workVolumeRows ||
+            cachedDailyLogsRef !== state.dailyLogs
+        ) {
+            cachedIndexes = buildWorkspaceIndexes(state)
+            cachedNodesRef = state.designNodes
+            cachedRoutesRef = state.designRoutes
+            cachedProgressRef = state.constructionProgress
+            cachedWorkVolumeRowsRef = state.workVolumeRows
+            cachedDailyLogsRef = state.dailyLogs
+        }
+        return cachedIndexes
     }
-    return cachedIndexes
 }
 
 private suspend fun WorkspaceViewModel.geocodeByNominatim(query: String): Pair<Double, Double>? = withContext(Dispatchers.IO) {
     runCatching {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = URL("https://nominatim.openstreetmap.org/search?q=")
+        val url = URL("https://nominatim.openstreetmap.org/search?q=$encoded&format=jsonv2&limit=1")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             setRequestProperty("User-Agent", "MapSupervision/1.0")
@@ -1477,7 +1436,7 @@ internal fun buildMapDesignNodes(
             node.contractor.equals(mapUi.filterContractor, ignoreCase = true)
         val byVisibility = !isContractorHidden(mapUi, node.contractor)
         val byQuery = mapUi.searchQuery.isBlank() ||
-            indexes.normalizedNodeSearch[node.id].orEmpty().contains(normalizedQuery)
+            indexes.normalizedNodeSearch[node.id]?.matches(normalizedQuery) == true
         val byMaterial = lowerMaterialType.isNullOrBlank() || run {
             val nodeMaterials = (indexes.parsedMaterialsByNodeKey[node.id].orEmpty().map { it.itemName } +
                                  indexes.workVolumeRowsByNodeKey[node.id].orEmpty().map { it.workName })

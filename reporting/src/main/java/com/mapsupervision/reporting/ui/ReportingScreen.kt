@@ -121,6 +121,16 @@ fun ReportingScreen(
     val filteredMaterialRows = remember(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.workVolumeRowsRaw, selectedContractorFilter) {
         buildMaterialReportRows(reportSnapshot.nodes, reportSnapshot.routes, reportSnapshot.workVolumeRowsRaw, selectedContractorFilter)
     }
+    val projectTextSummary = remember(
+        reportSnapshot.projectId,
+        reportSnapshot.projectName,
+        reportSnapshot.nodes,
+        reportSnapshot.routes,
+        reportSnapshot.workVolumeRowsRaw,
+        reportSnapshot.dailyLogs
+    ) {
+        buildProjectTextSummary(reportSnapshot)
+    }
     val sortedMaterialRows = remember(filteredMaterialRows, sortBy, isAscending) {
         val nonTotalRows = filteredMaterialRows.filter { !it.isTotal }
         val totalRow = filteredMaterialRows.find { it.isTotal }
@@ -483,6 +493,8 @@ fun ReportingScreen(
                             onHeaderClick = { toggleSort(it) }
                         )
                     }
+
+                    ProjectTextSummaryCard(summary = projectTextSummary)
                 }
             }
 

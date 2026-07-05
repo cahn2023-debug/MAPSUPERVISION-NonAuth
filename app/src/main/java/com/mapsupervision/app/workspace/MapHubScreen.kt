@@ -457,7 +457,7 @@ fun MapHubScreen(
                             TextField(
                                 value = mapUi.searchQuery,
                                 onValueChange = onSearchQueryChanged,
-                                placeholder = { Text("Tìm mã node hoặc địa chỉ") },
+                                placeholder = { Text("Tìm mã hoặc số hiển thị") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),

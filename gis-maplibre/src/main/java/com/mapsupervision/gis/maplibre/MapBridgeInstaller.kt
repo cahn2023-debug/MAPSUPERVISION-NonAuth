@@ -378,6 +378,20 @@ private class MapLibreGisMapBridge : GisMapBridge {
         if (mapRef.style == null) return false
         val points = renderCoordinatesForMapObjects(nodesSnapshot, routesSnapshot)
         if (points.isEmpty()) return false
+        if (points.size == 1) {
+            val point = points.first()
+            mapRef.animateCamera(
+                CameraUpdateFactory.newLatLngZoom(
+                    LatLng(point.latitude, point.longitude),
+                    17.0
+                )
+            )
+            Log.d(
+                TAG,
+                "fitToObjects single-point nodes=${nodesSnapshot.size} routes=${routesSnapshot.size} lat=${point.latitude} lon=${point.longitude}"
+            )
+            return true
+        }
         val bounds = LatLngBounds.Builder().apply {
             points.forEach { include(LatLng(it.latitude, it.longitude)) }
         }.build()
