@@ -1110,8 +1110,8 @@ fun WorkspaceViewModel.getRouteProperties(route: GisRoute): List<Pair<String, St
         val routeLength = route.designLength.orEmpty()
         if (routeLength.isNotBlank()) add("Chiều dài thiết kế" to routeLength)
         
-        route.fiberCoreCount?.let { add("Fiber core" to it.toString()) }
-        if (route.fiberConnection.isNotBlank()) add("Fiber connection" to route.fiberConnection)
+        route.fiberCoreCount?.let { add("Số core quang" to it.toString()) }
+        if (route.fiberConnection.isNotBlank()) add("Sợi kết nối" to route.fiberConnection)
         val startNode = nodesByCode[route.startNodeCode]
         val endNode = nodesByCode[route.endNodeCode]
         collectSummaryProperties(startNode?.workVolumeSummary, endNode?.workVolumeSummary).forEach { (k, v) ->
@@ -1128,7 +1128,7 @@ internal fun buildCenterPathSummary(
     val normalizedNodeCode = nodeCode.trim()
     val normalizedCenter = centerNodeCode?.trim().orEmpty()
     if (normalizedNodeCode.isBlank() || normalizedCenter.isBlank()) return ""
-    if (normalizedNodeCode.equals(normalizedCenter, ignoreCase = true)) return "Diem trung tam"
+    if (normalizedNodeCode.equals(normalizedCenter, ignoreCase = true)) return "Điểm trung tâm"
 
     val previous = HashMap<String, String>()
     val visited = linkedSetOf<String>()
@@ -1159,7 +1159,7 @@ internal fun buildCenterPathSummary(
         }
     }
 
-    if (!found) return "Chua co duong ve trung tam"
+    if (!found) return "Chưa có đường kết nối về trung tâm"
 
     val path = mutableListOf(normalizedCenter)
     var cursorKey = normalizedCenter.uppercase()
@@ -1170,7 +1170,7 @@ internal fun buildCenterPathSummary(
         cursorKey = prev.uppercase()
     }
     path.reverse()
-    return "Duong ve trung tam: ${path.joinToString(" -> ")}"
+    return "Đường về trung tâm: ${path.joinToString(" -> ")}"
 }
 
 fun WorkspaceViewModel.onMapToggleMeasure() {

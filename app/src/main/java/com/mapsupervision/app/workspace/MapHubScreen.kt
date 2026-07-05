@@ -88,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mapsupervision.domain.model.GisNode
 import com.mapsupervision.domain.model.GisRoute
+import com.mapsupervision.domain.model.NodeSignalStatus
 import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.TaskStatus
@@ -863,20 +864,10 @@ fun MapHubScreen(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            routeProperties.forEach { (key, value) ->
-                                if (value.isNotBlank()) {
-                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            "$key: ",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.widthIn(min = 120.dp)
-                                        )
-                                        Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
-                            }
+                            val fiberProperties = routeProperties.filter { it.first == "Số core quang" || it.first == "Sợi kết nối" }
+                            val generalProperties = routeProperties.filterNot { it.first == "Số core quang" || it.first == "Sợi kết nối" }
+                            RouteInfoSection("Thông tin tuyến", generalProperties)
+                            RouteFiberSection(fiberProperties)
                         }
                         // Note input
                         val focusManager = LocalFocusManager.current
@@ -978,58 +969,20 @@ fun MapHubScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                       ) {
-                        // Header row: code + status + close
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Mã: ${selectedNode.code}", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            if (mapUi.status.isNotBlank()) {
-                                Text(mapUi.status, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                            IconButton(onClick = onCloseNodeCard, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Outlined.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
-                            }
-                        }
+                        NodeIdentitySection(
+                            node = selectedNode,
+                            mapUi = mapUi,
+                            onSetCenterNode = onSetCenterNode,
+                            onCloseNodeCard = onCloseNodeCard
+                        )
 
-                        Text(describeNodeByField(selectedNode, mapUi.labelField), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            OutlinedButton(
-                                onClick = {
-                                    if (mapUi.centerNodeCode == selectedNode.code) onSetCenterNode(null) else onSetCenterNode(selectedNode)
-                                },
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
-                            ) {
-                                Text(if (mapUi.centerNodeCode == selectedNode.code) "Bo trung tam" else "Dat trung tam", fontSize = 11.sp)
-                            }
-                        }
+                        NodeNetworkSection(node = selectedNode)
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            if (selectedNode.contractor.isNotBlank()) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("NHÀ THẦU", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                    Text(selectedNode.contractor, fontSize = 13.sp)
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("TỌA ĐỘ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                Text(
-                                    "Tọa độ: %.6f, %.6f".format(selectedNode.latitude, selectedNode.longitude),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-
-                        if (selectedNode.ipAddress.isNotBlank() || selectedNode.subnet.isNotBlank() || selectedNode.gateway.isNotBlank()) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (selectedNode.ipAddress.isNotBlank()) Text("IP: ${selectedNode.ipAddress}", fontSize = 12.sp)
-                                if (selectedNode.subnet.isNotBlank()) Text("Subnet: ${selectedNode.subnet}", fontSize = 12.sp)
-                                if (selectedNode.gateway.isNotBlank()) Text("Gateway: ${selectedNode.gateway}", fontSize = 12.sp)
-                            }
-                        }
-                        Text("Tin hieu: ${selectedNode.signalStatus.name}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                        if (mapUi.centerPathSummary.isNotBlank()) {
-                            Text(mapUi.centerPathSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        NodeRoutingSection(
+                            node = selectedNode,
+                            isCenter = mapUi.centerNodeCode == selectedNode.code,
+                            centerPathSummary = mapUi.centerPathSummary
+                        )
 
                         // Only show completion/inspection row if data is meaningful
                         if (mapUi.expectedCompletion.isNotBlank() || mapUi.lastInspection.isNotBlank()) {
@@ -1294,5 +1247,252 @@ private fun getPathFromTreeUri(uri: android.net.Uri): String? {
         }
     } catch (_: Exception) {
         uri.path
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp
+    )
+}
+
+@Composable
+private fun NodeIdentitySection(
+    node: GisNode,
+    mapUi: MapUiState,
+    onSetCenterNode: (GisNode?) -> Unit,
+    onCloseNodeCard: () -> Unit
+) {
+    val isCenter = mapUi.centerNodeCode == node.code
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Text("Mã: ${node.code}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                if (isCenter) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFF97316), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("Điểm trung tâm", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (mapUi.status.isNotBlank()) {
+                Text(mapUi.status, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (isCenter) "Bỏ chọn trung tâm" else "Đặt làm trung tâm",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable {
+                            if (isCenter) onSetCenterNode(null) else onSetCenterNode(node)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+                IconButton(onClick = onCloseNodeCard, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+
+        Text(describeNodeByField(node, mapUi.labelField), color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        SectionHeader("Thông tin nút")
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (node.contractor.isNotBlank()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("NHÀ THẦU", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(node.contractor, fontSize = 13.sp)
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text("TỌA ĐỘ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Text(
+                    "%.6f, %.6f".format(node.latitude, node.longitude),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignalStatusBadge(status: NodeSignalStatus) {
+    val (label, color, textColor) = when (status) {
+        NodeSignalStatus.HAS_SIGNAL -> Triple("Có tín hiệu", Color(0xFF22C55E), Color(0xFFFFFFFF))
+        NodeSignalStatus.NO_SIGNAL -> Triple("Không tín hiệu", Color(0xFFEF4444), Color(0xFFFFFFFF))
+        NodeSignalStatus.UNKNOWN -> Triple("Chưa rõ", Color(0xFF94A3B8), Color(0xFFFFFFFF))
+    }
+    Text(
+        text = label,
+        color = textColor,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(color, RoundedCornerShape(4.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun NodeNetworkSection(node: GisNode) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("THÔNG TIN MẠNG", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            SignalStatusBadge(node.signalStatus)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            NetworkInfoCell("IP", networkValue(node.ipAddress), Modifier.weight(1f))
+            NetworkInfoCell("Subnet", networkValue(node.subnet), Modifier.weight(1f))
+        }
+        NetworkInfoCell("Gateway", networkValue(node.gateway), Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun NodeRoutingSection(
+    node: GisNode,
+    isCenter: Boolean,
+    centerPathSummary: String
+) {
+    if (isCenter) return
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp)
+    ) {
+        Text("ĐƯỜNG VỀ TRUNG TÂM", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        val message = if (centerPathSummary.isNotBlank()) {
+            shortenCenterPath(centerPathSummary)
+        } else {
+            "Chưa có đường kết nối về trung tâm"
+        }
+        Text(
+            text = message,
+            fontSize = 13.sp,
+            color = if (centerPathSummary.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun RouteFiberSection(properties: List<Pair<String, String>>) {
+    if (properties.none { it.second.isNotBlank() }) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text("Thông tin tuyến quang", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+        properties.forEach { (key, value) ->
+            if (value.isNotBlank()) {
+                val label = when (key) {
+                    "Số core quang" -> "Số core quang"
+                    "Sợi kết nối" -> "Sợi kết nối"
+                    else -> key
+                }
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "$label:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.widthIn(min = 132.dp)
+                    )
+                    Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NetworkInfoCell(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(value, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+    }
+}
+
+private fun networkValue(value: String): String =
+    value.takeIf { it.isNotBlank() } ?: "Chưa cấu hình"
+
+private fun shortenCenterPath(value: String): String {
+    if (!value.startsWith("Đường về trung tâm:")) return value
+    val prefix = "Đường về trung tâm: "
+    val nodes = value.removePrefix(prefix).split(" -> ")
+    if (nodes.size <= 5) return value
+    return prefix + listOf(nodes.first(), nodes[1], "...", nodes[nodes.lastIndex - 1], nodes.last()).joinToString(" -> ")
+}
+
+@Composable
+private fun RouteInfoSection(
+    title: String,
+    properties: List<Pair<String, String>>
+) {
+    if (properties.none { it.second.isNotBlank() }) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(title, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+        properties.forEach { (key, value) ->
+            if (value.isNotBlank()) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "$key:",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.widthIn(min = 132.dp)
+                    )
+                    Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -128,7 +129,13 @@ fun NonExcelMappingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Anh xa du lieu ban ve KML / KMZ / GeoJSON", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+        title = {
+            Text(
+                "Ánh xạ dữ liệu bản vẽ",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
@@ -137,7 +144,7 @@ fun NonExcelMappingDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Anh xa cac thuoc tinh tu tep vector vao truong GIS. Chi truong da xac nhan moi duoc ap dung.",
+                    "Chọn các thuộc tính cần dùng để nhập dữ liệu GIS. Chỉ những trường đã xác nhận mới được áp dụng.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -149,140 +156,151 @@ fun NonExcelMappingDialog(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
-                            .padding(8.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
                             .fillMaxWidth()
                     )
                 }
 
-                ColumnSectionWithConfirm(
-                    label = "1. Truong ten doi tuong / vi tri tram",
-                    selected = state.positionField,
-                    options = candidates.positionOptions,
-                    confirmed = state.confirmedPositionField,
-                    onSelected = { update(positionField = it) },
-                    onConfirmedChange = { update(confirmedPositionField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "2. Truong toa do hinh hoc",
-                    selected = state.coordinateField,
-                    options = candidates.coordinateOptions,
-                    confirmed = state.confirmedCoordinateField,
-                    onSelected = { update(coordinateField = it) },
-                    onConfirmedChange = { update(confirmedCoordinateField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "3. Truong nha thau",
-                    selected = state.contractorField,
-                    options = candidates.contractorOptions,
-                    confirmed = state.confirmedContractorField,
-                    onSelected = { update(contractorField = it) },
-                    onConfirmedChange = { update(confirmedContractorField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "4. Truong so hien thi ban do",
-                    selected = state.mapNumberField,
-                    options = candidates.mapNumberOptions,
-                    confirmed = state.confirmedMapNumberField,
-                    onSelected = { update(mapNumberField = it) },
-                    onConfirmedChange = { update(confirmedMapNumberField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "5. Truong loai doi tuong",
-                    selected = state.objectTypeField,
-                    options = candidates.objectTypeOptions,
-                    confirmed = state.confirmedObjectTypeField,
-                    onSelected = { update(objectTypeField = it) },
-                    onConfirmedChange = { update(confirmedObjectTypeField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "6. Truong chieu dai tuyen",
-                    selected = state.routeLengthField,
-                    options = candidates.routeLengthOptions,
-                    confirmed = state.confirmedRouteLengthField,
-                    onSelected = { update(routeLengthField = it) },
-                    onConfirmedChange = { update(confirmedRouteLengthField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "7. Truong IP",
-                    selected = state.ipAddressField,
-                    options = candidates.ipAddressOptions,
-                    confirmed = state.confirmedIpAddressField,
-                    onSelected = { update(ipAddressField = it) },
-                    onConfirmedChange = { update(confirmedIpAddressField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "8. Truong subnet",
-                    selected = state.subnetField,
-                    options = candidates.subnetOptions,
-                    confirmed = state.confirmedSubnetField,
-                    onSelected = { update(subnetField = it) },
-                    onConfirmedChange = { update(confirmedSubnetField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "9. Truong gateway",
-                    selected = state.gatewayField,
-                    options = candidates.gatewayOptions,
-                    confirmed = state.confirmedGatewayField,
-                    onSelected = { update(gatewayField = it) },
-                    onConfirmedChange = { update(confirmedGatewayField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "10. Truong trang thai tin hieu",
-                    selected = state.signalStatusField,
-                    options = candidates.signalStatusOptions,
-                    confirmed = state.confirmedSignalStatusField,
-                    onSelected = { update(signalStatusField = it) },
-                    onConfirmedChange = { update(confirmedSignalStatusField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "11. Truong so core quang",
-                    selected = state.fiberCoreCountField,
-                    options = candidates.fiberCoreCountOptions,
-                    confirmed = state.confirmedFiberCoreCountField,
-                    onSelected = { update(fiberCoreCountField = it) },
-                    onConfirmedChange = { update(confirmedFiberCoreCountField = it) }
-                )
-                ColumnSectionWithConfirm(
-                    label = "12. Truong soi ket noi",
-                    selected = state.fiberConnectionField,
-                    options = candidates.fiberConnectionOptions,
-                    confirmed = state.confirmedFiberConnectionField,
-                    onSelected = { update(fiberConnectionField = it) },
-                    onConfirmedChange = { update(confirmedFiberConnectionField = it) }
-                )
+                MappingConfirmSection(title = "Định danh & Tọa độ") {
+                    ColumnSectionWithConfirm(
+                        label = "Tên đối tượng / vị trí trạm",
+                        selected = state.positionField,
+                        options = candidates.positionOptions,
+                        confirmed = state.confirmedPositionField,
+                        onSelected = { update(positionField = it) },
+                        onConfirmedChange = { update(confirmedPositionField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Tọa độ hình học",
+                        selected = state.coordinateField,
+                        options = candidates.coordinateOptions,
+                        confirmed = state.confirmedCoordinateField,
+                        onSelected = { update(coordinateField = it) },
+                        onConfirmedChange = { update(confirmedCoordinateField = it) }
+                    )
+                }
+
+                MappingConfirmSection(title = "Nhà thầu & Bản đồ") {
+                    ColumnSectionWithConfirm(
+                        label = "Nhà thầu",
+                        selected = state.contractorField,
+                        options = candidates.contractorOptions,
+                        confirmed = state.confirmedContractorField,
+                        onSelected = { update(contractorField = it) },
+                        onConfirmedChange = { update(confirmedContractorField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Số hiển thị trên bản đồ",
+                        selected = state.mapNumberField,
+                        options = candidates.mapNumberOptions,
+                        confirmed = state.confirmedMapNumberField,
+                        onSelected = { update(mapNumberField = it) },
+                        onConfirmedChange = { update(confirmedMapNumberField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Loại đối tượng",
+                        selected = state.objectTypeField,
+                        options = candidates.objectTypeOptions,
+                        confirmed = state.confirmedObjectTypeField,
+                        onSelected = { update(objectTypeField = it) },
+                        onConfirmedChange = { update(confirmedObjectTypeField = it) }
+                    )
+                }
+
+                MappingConfirmSection(title = "Thông tin mạng (Nút)") {
+                    ColumnSectionWithConfirm(
+                        label = "IP",
+                        selected = state.ipAddressField,
+                        options = candidates.ipAddressOptions,
+                        confirmed = state.confirmedIpAddressField,
+                        onSelected = { update(ipAddressField = it) },
+                        onConfirmedChange = { update(confirmedIpAddressField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Subnet",
+                        selected = state.subnetField,
+                        options = candidates.subnetOptions,
+                        confirmed = state.confirmedSubnetField,
+                        onSelected = { update(subnetField = it) },
+                        onConfirmedChange = { update(confirmedSubnetField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Gateway",
+                        selected = state.gatewayField,
+                        options = candidates.gatewayOptions,
+                        confirmed = state.confirmedGatewayField,
+                        onSelected = { update(gatewayField = it) },
+                        onConfirmedChange = { update(confirmedGatewayField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Trạng thái tín hiệu",
+                        selected = state.signalStatusField,
+                        options = candidates.signalStatusOptions,
+                        confirmed = state.confirmedSignalStatusField,
+                        onSelected = { update(signalStatusField = it) },
+                        onConfirmedChange = { update(confirmedSignalStatusField = it) }
+                    )
+                }
+
+                MappingConfirmSection(title = "Thông tin mạng (Tuyến)") {
+                    ColumnSectionWithConfirm(
+                        label = "Chiều dài tuyến",
+                        selected = state.routeLengthField,
+                        options = candidates.routeLengthOptions,
+                        confirmed = state.confirmedRouteLengthField,
+                        onSelected = { update(routeLengthField = it) },
+                        onConfirmedChange = { update(confirmedRouteLengthField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Số core quang",
+                        selected = state.fiberCoreCountField,
+                        options = candidates.fiberCoreCountOptions,
+                        confirmed = state.confirmedFiberCoreCountField,
+                        onSelected = { update(fiberCoreCountField = it) },
+                        onConfirmedChange = { update(confirmedFiberCoreCountField = it) }
+                    )
+                    ColumnSectionWithConfirm(
+                        label = "Sợi kết nối",
+                        selected = state.fiberConnectionField,
+                        options = candidates.fiberConnectionOptions,
+                        confirmed = state.confirmedFiberConnectionField,
+                        onSelected = { update(fiberConnectionField = it) },
+                        onConfirmedChange = { update(confirmedFiberConnectionField = it) }
+                    )
+                }
 
                 if (candidates.itemOptions.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MappingConfirmSection(title = "Vật tư & Khối lượng thiết kế") {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("13. Chon truong cong viec di kem", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(
+                                "Chọn các trường đi kèm",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = "Tat ca",
+                                    text = "Tất cả",
                                     color = MaterialTheme.colorScheme.primary,
                                     fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .clickable {
-                                            selectedItems.clear()
-                                            selectedItems.addAll(candidates.itemOptions)
-                                            update(workVolumeFieldsCsv = selectedItems.joinToString(","))
-                                        }
-                                        .padding(4.dp)
+                                    modifier = Modifier.clickable {
+                                        selectedItems.clear()
+                                        selectedItems.addAll(candidates.itemOptions)
+                                        update(workVolumeFieldsCsv = selectedItems.joinToString(","))
+                                    }
                                 )
                                 Text(
-                                    text = "Bo chon",
-                                    color = Color.Gray,
+                                    text = "Bỏ chọn",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .clickable {
-                                            selectedItems.clear()
-                                            update(workVolumeFieldsCsv = "")
-                                        }
-                                        .padding(4.dp)
+                                    modifier = Modifier.clickable {
+                                        selectedItems.clear()
+                                        update(workVolumeFieldsCsv = "")
+                                    }
                                 )
                             }
                         }
@@ -296,13 +314,13 @@ fun NonExcelMappingDialog(
                                 .verticalScroll(rememberScrollState())
                                 .padding(vertical = 4.dp)
                         ) {
-                            candidates.itemOptions.forEach { opt ->
-                                val checked = selectedItems.contains(opt)
+                            candidates.itemOptions.forEach { option ->
+                                val checked = selectedItems.contains(option)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
-                                            if (checked) selectedItems.remove(opt) else selectedItems.add(opt)
+                                            if (checked) selectedItems.remove(option) else selectedItems.add(option)
                                             update(workVolumeFieldsCsv = selectedItems.joinToString(","))
                                         }
                                         .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -311,13 +329,13 @@ fun NonExcelMappingDialog(
                                     Checkbox(
                                         checked = checked,
                                         onCheckedChange = {
-                                            if (it) selectedItems.add(opt) else selectedItems.remove(opt)
+                                            if (it) selectedItems.add(option) else selectedItems.remove(option)
                                             update(workVolumeFieldsCsv = selectedItems.joinToString(","))
                                         },
                                         colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(opt, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                    Text(option, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -329,7 +347,7 @@ fun NonExcelMappingDialog(
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Xac nhan nhap thong tin cong viec di kem", color = Color.LightGray, fontSize = 12.sp)
+                            Text("Xác nhận nhập thông tin vật tư đi kèm", color = Color.LightGray, fontSize = 12.sp)
                         }
                     }
                 }
@@ -338,12 +356,19 @@ fun NonExcelMappingDialog(
         confirmButton = {
             Button(
                 onClick = onConfirmParse,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("Xac nhan nhap ban ve", fontWeight = FontWeight.Bold)
+                Text("Xác nhận nhập bản vẽ", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Huy", color = Color.Gray) } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         modifier = Modifier
             .fillMaxWidth(0.97f)
@@ -352,6 +377,31 @@ fun NonExcelMappingDialog(
             .imePadding(),
         shape = RoundedCornerShape(16.dp),
         containerColor = MaterialTheme.colorScheme.surface
+    )
+}
+
+@Composable
+private fun MappingConfirmSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = {
+            Text(
+                text = title.uppercase(),
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                letterSpacing = 0.5.sp
+            )
+            content()
+        }
     )
 }
 
@@ -366,11 +416,11 @@ private fun ColumnSectionWithConfirm(
 ) {
     if (options.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
         Box(modifier = Modifier.fillMaxWidth()) {
             var expanded by remember { mutableStateOf(false) }
             OutlinedTextField(
-                value = selected.ifBlank { "Khong cau hinh" },
+                value = selected.ifBlank { "Chưa cấu hình" },
                 onValueChange = {},
                 modifier = Modifier
                     .fillMaxWidth()
@@ -378,7 +428,7 @@ private fun ColumnSectionWithConfirm(
                 readOnly = true,
                 trailingIcon = {
                     IconButton(onClick = { expanded = true }) {
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = "open")
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Mở danh sách")
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
@@ -390,24 +440,24 @@ private fun ColumnSectionWithConfirm(
             )
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
-                    DropdownMenuItem(text = { Text(option) }, onClick = {
-                        onSelected(option)
-                        expanded = false
-                    })
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            onSelected(option)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 2.dp)
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
                 checked = confirmed,
                 onCheckedChange = onConfirmedChange,
                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
             )
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Xac nhan truong du lieu nay", color = Color.LightGray, fontSize = 12.sp)
+            Text("Xác nhận dùng trường này", color = Color.LightGray, fontSize = 12.sp)
         }
     }
 }

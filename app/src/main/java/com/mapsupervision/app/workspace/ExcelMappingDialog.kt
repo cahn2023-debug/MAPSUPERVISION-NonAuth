@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -129,49 +130,58 @@ fun ExcelMappingDialog(
                     }
                 }
 
-                ColumnSection("1. Cot ten doi tuong / vi tri", state.positionColumn, allHeaders, previews) { update(positionColumn = it) }
-
-                Text("2. Dinh dang toa do trong Excel", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { onUpdateCoordinateMode(false) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("1 cot (lat,lon)") }
-                    Button(
-                        onClick = { onUpdateCoordinateMode(true) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("2 cot (vi/kinh)") }
-                }
-
-                if (!state.useTwoColumnCoordinates) {
-                    ColumnSection("3. Cot toa do GPS (lat,lon)", state.coordinateColumn, allHeaders, previews) { update(coordinateColumn = it) }
-                } else {
+                MappingSection("Định danh & Tọa độ") {
+                    ColumnSection("Cột tên đối tượng / vị trí", state.positionColumn, allHeaders, previews) { update(positionColumn = it) }
+                    Text("Định dạng tọa độ trong Excel", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            ColumnSection("3a. Cot vi do", state.latitudeColumn, allHeaders, previews) { update(latitudeColumn = it) }
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            ColumnSection("3b. Cot kinh do", state.longitudeColumn, allHeaders, previews) { update(longitudeColumn = it) }
+                        Button(
+                            onClick = { onUpdateCoordinateMode(false) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (!state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("1 cột (lat,lon)", fontSize = 12.sp) }
+                        Button(
+                            onClick = { onUpdateCoordinateMode(true) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (state.useTwoColumnCoordinates) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("2 cột (vĩ/kinh)", fontSize = 12.sp) }
+                    }
+
+                    if (!state.useTwoColumnCoordinates) {
+                        ColumnSection("Cột tọa độ GPS (lat,lon)", state.coordinateColumn, allHeaders, previews) { update(coordinateColumn = it) }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                ColumnSection("Cột vĩ độ (Latitude)", state.latitudeColumn, allHeaders, previews) { update(latitudeColumn = it) }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                ColumnSection("Cột kinh độ (Longitude)", state.longitudeColumn, allHeaders, previews) { update(longitudeColumn = it) }
+                            }
                         }
                     }
                 }
 
-                ColumnSection("4. Cot nha thau", state.contractorColumn, allHeaders, previews) { update(contractorColumn = it) }
-                ColumnSection("5. Cot so hien thi tren ban do", state.mapNumberColumn, allHeaders, previews) { update(mapNumberColumn = it) }
-                ColumnSection("6. Cot IP", state.ipAddressColumn, allHeaders, previews) { update(ipAddressColumn = it) }
-                ColumnSection("7. Cot subnet", state.subnetColumn, allHeaders, previews) { update(subnetColumn = it) }
-                ColumnSection("8. Cot gateway", state.gatewayColumn, allHeaders, previews) { update(gatewayColumn = it) }
-                ColumnSection("9. Cot trang thai tin hieu", state.signalStatusColumn, allHeaders, previews) { update(signalStatusColumn = it) }
-                ColumnSection("10. Cot so core quang", state.fiberCoreCountColumn, allHeaders, previews) { update(fiberCoreCountColumn = it) }
-                ColumnSection("11. Cot soi ket noi", state.fiberConnectionColumn, allHeaders, previews) { update(fiberConnectionColumn = it) }
+                MappingSection("Nhà thầu & Bản đồ") {
+                    ColumnSection("Cột nhà thầu", state.contractorColumn, allHeaders, previews) { update(contractorColumn = it) }
+                    ColumnSection("Cột số hiển thị trên bản đồ", state.mapNumberColumn, allHeaders, previews) { update(mapNumberColumn = it) }
+                }
+
+                MappingSection("Thông tin mạng (Nút)") {
+                    ColumnSection("Cột IP", state.ipAddressColumn, allHeaders, previews) { update(ipAddressColumn = it) }
+                    ColumnSection("Cột Subnet", state.subnetColumn, allHeaders, previews) { update(subnetColumn = it) }
+                    ColumnSection("Cột Gateway", state.gatewayColumn, allHeaders, previews) { update(gatewayColumn = it) }
+                    ColumnSection("Cột trạng thái tín hiệu", state.signalStatusColumn, allHeaders, previews) { update(signalStatusColumn = it) }
+                }
+
+                MappingSection("Thông tin mạng (Tuyến)") {
+                    ColumnSection("Cột số core quang", state.fiberCoreCountColumn, allHeaders, previews) { update(fiberCoreCountColumn = it) }
+                    ColumnSection("Cột sợi kết nối", state.fiberConnectionColumn, allHeaders, previews) { update(fiberConnectionColumn = it) }
+                }
 
                 val excluded = setOf(
                     state.positionColumn,
@@ -188,125 +198,139 @@ fun ExcelMappingDialog(
                 )
                 val availableHeaders = allHeaders.filter { it !in excluded }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("12. Cot cong viec / khoi luong", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = "Chon tat ca",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                            modifier = Modifier
-                                .clickable {
-                                    selectedMaterials.clear()
-                                    selectedMaterials.addAll(availableHeaders)
-                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
-                                }
-                                .padding(4.dp)
-                        )
-                        Text(
-                            text = "Bo chon",
-                            color = Color.Gray,
-                            fontSize = 12.sp,
-                            modifier = Modifier
-                                .clickable {
-                                    selectedMaterials.clear()
-                                    update(workVolumeColumnsCsv = "")
-                                }
-                                .padding(4.dp)
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 180.dp)
-                        .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp)
-                ) {
-                    availableHeaders.forEach { header ->
-                        val checked = selectedMaterials.contains(header)
-                        val sample = previews.firstOrNull { it.first == header }?.second?.joinToString(", ").orEmpty()
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (checked) selectedMaterials.remove(header) else selectedMaterials.add(header)
-                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = {
-                                    if (it) selectedMaterials.add(header) else selectedMaterials.remove(header)
-                                    update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                MappingSection("Vật tư & Khối lượng thiết kế") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Chọn cột công việc / khối lượng", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Chọn tất cả",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 12.sp,
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedMaterials.clear()
+                                        selectedMaterials.addAll(availableHeaders)
+                                        update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
+                                    }
+                                    .padding(4.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(header, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (sample.isNotBlank()) Text("Mau: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp)
+                            Text(
+                                text = "Bỏ chọn",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                modifier = Modifier
+                                    .clickable {
+                                        selectedMaterials.clear()
+                                        update(workVolumeColumnsCsv = "")
+                                    }
+                                    .padding(4.dp)
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 180.dp)
+                            .background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = 4.dp)
+                    ) {
+                        availableHeaders.forEach { header ->
+                            val checked = selectedMaterials.contains(header)
+                            val sample = previews.firstOrNull { it.first == header }?.second?.joinToString(", ").orEmpty()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (checked) selectedMaterials.remove(header) else selectedMaterials.add(header)
+                                        update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = {
+                                        if (it) selectedMaterials.add(header) else selectedMaterials.remove(header)
+                                        update(workVolumeColumnsCsv = selectedMaterials.joinToString(","))
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(header, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                                    if (sample.isNotBlank()) Text("Mẫu: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp)
+                                }
                             }
                         }
                     }
                 }
 
-                Text("13. Hien thi so tren ban do", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { onUpdateMapVisualOptions(false, null) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("An so") }
-                    Button(
-                        onClick = { onUpdateMapVisualOptions(true, null) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("Hien so") }
-                }
+                MappingSection("Cấu hình hiển thị bản đồ") {
+                    Text("Hiển thị số trên bản đồ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { onUpdateMapVisualOptions(false, null) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (!state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("Ẩn số", fontSize = 12.sp) }
+                        Button(
+                            onClick = { onUpdateMapVisualOptions(true, null) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (state.showNumberOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("Hiện số", fontSize = 12.sp) }
+                    }
 
-                Text("14. Mau doi tuong tren ban do", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { onUpdateMapVisualOptions(null, false) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("Don sac") }
-                    Button(
-                        onClick = { onUpdateMapVisualOptions(null, true) },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
-                        )
-                    ) { Text("Theo nha thau") }
+                    Text("Màu đối tượng trên bản đồ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Button(
+                            onClick = { onUpdateMapVisualOptions(null, false) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (!state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("Đơn sắc", fontSize = 12.sp) }
+                        Button(
+                            onClick = { onUpdateMapVisualOptions(null, true) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (state.colorByContractorOnMap) MaterialTheme.colorScheme.onPrimary else Color.White
+                            )
+                        ) { Text("Theo nhà thầu", fontSize = 12.sp) }
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = onConfirmParse, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)) {
-                Text("Xac nhan nhap lieu", fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onConfirmParse,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text("Xác nhận nhập dữ liệu", fontWeight = FontWeight.Bold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Huy", color = Color.Gray) } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Hủy", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
         modifier = Modifier
             .fillMaxWidth(0.97f)
@@ -327,10 +351,10 @@ private fun ColumnSection(
     onSelected: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
         DropdownField(selected = selected, options = options, onSelected = onSelected)
         val sample = previews.firstOrNull { it.first == selected }?.second?.joinToString(", ").orEmpty()
-        if (sample.isNotBlank()) Text("Noi dung mau: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 12.sp)
+        if (sample.isNotBlank()) Text("Nội dung mẫu: $sample", color = MaterialTheme.colorScheme.tertiary, fontSize = 11.sp)
     }
 }
 
@@ -339,13 +363,13 @@ private fun DropdownField(selected: String, options: List<String>, onSelected: (
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
-            value = selected,
+            value = selected.ifBlank { "Chưa cấu hình" },
             onValueChange = {},
             modifier = Modifier.fillMaxWidth().clickable { expanded = true },
             readOnly = true,
             trailingIcon = {
                 IconButton(onClick = { expanded = true }) {
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = "open")
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Mở danh sách")
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
@@ -357,11 +381,39 @@ private fun DropdownField(selected: String, options: List<String>, onSelected: (
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { option ->
-                DropdownMenuItem(text = { Text(option) }, onClick = {
-                    onSelected(option)
-                    expanded = false
-                })
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
             }
         }
     }
+}
+
+@Composable
+private fun MappingSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = {
+            Text(
+                text = title.uppercase(),
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                letterSpacing = 0.5.sp
+            )
+            content()
+        }
+    )
 }
