@@ -1,112 +1,175 @@
-# TÀI LIỆU CHI TIẾT CẤU TRÚC MÃ NGUỒN & HỆ THỐNG MODULE
+# Cau truc ma nguon va he thong module
 
-Dự án MapSupervision được xây dựng dưới dạng ứng dụng Android đa module (multi-module) viết bằng ngôn ngữ **Kotlin** và sử dụng công cụ thiết kế giao diện hiện đại **Jetpack Compose**. Cấu trúc mã nguồn tuân thủ chặt chẽ nguyên lý **Kiến trúc sạch (Clean Architecture)** nhằm tách biệt giao diện, logic nghiệp vụ và lưu trữ dữ liệu.
+Tai lieu nay mo ta codebase `MapSupervision` theo goc nhin ma nguon, layering va trach nhiem tung khoi lon. Muc tieu la giup team nhanh chong xac dinh "sua o dau" va "anh huong den dau".
 
----
+## 1. Cong nghe va to chuc tong quat
 
-## 1. Bản Đồ Tổng Quan Hệ Thống Module (Module Diagram)
+- Nen tang: Android multi-module.
+- Ngon ngu chinh: Kotlin.
+- UI: Jetpack Compose.
+- DI: Hilt.
+- Persistence: Room.
+- Background work: WorkManager.
+- Map renderer: MapLibre.
+- AI stack: local/cloud hybrid qua nhom module `ai-*`.
 
-Dưới đây là sơ đồ phụ thuộc giữa các module chính trong dự án:
+## 2. Ban do ma nguon cap cao
 
-```mermaid
-graph TD
-    subgraph Giao Diện & Điều Phối (Presentation Layer)
-        app[":app (Shell chính, AI Offline, Data Hub)"]
-        project[":project (Quản lý dự án)"]
-        gis[":gis (Giao diện Bản đồ GIS)"]
-        photo[":photo (Máy ảnh thực địa & Đóng dấu tọa độ)"]
-        timeline[":timeline (Nhật ký tiến trình thời gian)"]
-        reporting[":reporting (Xuất báo cáo PDF/Word)"]
-    end
+### 2.1 `app`
 
-    subgraph Cầu Nối GIS (Contracts)
-        gis-maplibre[":gis-maplibre (Hiện thực hóa bản đồ MapLibre)"]
-    end
+Khoi ghep chinh cua ung dung:
 
-    subgraph Nghiệp Vụ Lõi & Dữ Liệu (Core & Data Layer)
-        data[":data (SQLite Room, Repositories)"]
-        domain[":domain (Models, UseCases, Repositories Contracts)"]
-        storage-import[":storage-import (Excel/KML/Word Parsers)"]
-        storage-core[":storage-core (Quản lý lưu trữ & File DB)"]
-        storage-crypto[":storage-crypto (Mã hóa dữ liệu)"]
-        core[":core (Logger, Tiện ích dùng chung)"]
-    end
+- application/activity
+- navigation shell
+- workspace state
+- route cho cac tab
+- widget va worker
+- bridge AI, import, reporting
 
-    app --> project
-    app --> gis
-    app --> photo
-    app --> timeline
-    app --> reporting
-    app --> gis-maplibre
+File can nho:
 
-    project & gis & photo & timeline & reporting --> domain
-    gis-maplibre --> gis
-    
-    data --> domain
-    data --> storage-core
-    storage-import --> storage-core
-    storage-core --> storage-crypto
-    storage-crypto --> core
-    domain --> core
-```
+- `app/.../MapSupervisionApplication.kt`
+- `app/.../MainActivity.kt`
+- `app/.../WorkspaceAppShell.kt`
+- `app/.../WorkspaceViewModel.kt`
 
----
+### 2.2 `core`
 
-## 2. Chi Tiết Vai Trò Của Từng Module
+Khoi utility va nen dung chung:
 
-### 2.1. Module `:app` (Application Shell & Orchestrator)
-Đóng vai trò là module khởi chạy chính của ứng dụng, liên kết tất cả các module tính năng khác.
-- **Tệp tin chính**:
-  - [MainActivity.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/app/src/main/java/com/mapsupervision/app/MainActivity.kt): Điểm vào chính của ứng dụng, khởi tạo Hilt Dependency Injection và thiết lập màn hình.
-  - [WorkspaceAppShell.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/app/src/main/java/com/mapsupervision/app/WorkspaceAppShell.kt): Thanh điều hướng chính (NavigationBar / NavigationRail), quản lý trạng thái chuyển đổi tab, và chứa các hộp thoại (Dialog) hệ thống.
-  - [AIManager.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/app/src/main/java/com/mapsupervision/app/ai/AIManager.kt): Lớp quản lý vòng đời của mô hình Gemma Local LLM chạy trên thiết bị thông qua MediaPipe.
-  - [WorkspaceViewModel.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/app/src/main/java/com/mapsupervision/app/workspace/WorkspaceViewModel.kt): ViewModel trung tâm xử lý luồng dữ liệu (MVI Pattern) cho không gian làm việc.
+- logging
+- exception/result
+- dispatcher/coroutine helper
+- UI component va theme co ban
 
-### 2.2. Module `:domain` (Pure Business Logic)
-Chứa các đối tượng nghiệp vụ thuần túy, không phụ thuộc vào thư viện Android.
-- **Tệp tin chính**:
-  - Gói `model/`: Định nghĩa các thực thể nghiệp vụ như `Project`, `SitePhoto`, `GisNode`, `GisRoute`, `DailyLog`.
-  - Gói `repository/`: Định nghĩa các giao diện (Interface) kết nối dữ liệu như `GisRepository`, `PhotoRepository`, `ProjectRepository`.
-  - Gói `usecase/`: Chứa các ca sử dụng nghiệp vụ cụ thể như `ObserveWorkspaceSnapshotUseCase.kt` để thu thập trạng thái hiện tại của khu vực thi công.
+### 2.3 `domain`
 
-### 2.3. Module `:data` (Data Source & Storage Implementation)
-Triển khai các giao diện dữ liệu của `:domain` bằng SQLite Room Database và các dịch vụ mạng.
-- **Tệp tin chính**:
-  - [MapSupervisionDatabase.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/data/src/main/java/com/mapsupervision/data/db/MapSupervisionDatabase.kt): Khai báo cấu trúc Room Database (bảng, chỉ mục, khóa ngoại) và lịch sử nâng cấp schema (Migrations).
-  - Gói `dao/`: Định nghĩa các phương thức truy vấn SQLite cho các thực thể (`ProjectDao`, `GisNodeDao`, `DailyLogDao`).
-  - Gói `repository/` (trong data): Cung cấp mã nguồn thực tế triển khai lưu trữ của các Repository từ `:domain`.
+Noi chua "ngon ngu nghiep vu chung":
 
-### 2.4. Module `:gis` (GIS Abstract & Presentation)
-Mô tả giao diện bản đồ và trạng thái tương tác GIS, độc lập với thư viện vẽ bản đồ cụ thể.
-- **Tệp tin chính**:
-  - [GisScreen.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/gis/src/main/java/com/mapsupervision/gis/ui/GisScreen.kt): Giao diện hiển thị lớp bản đồ Compose và các nút tiện ích bản đồ.
-  - [GisViewModel.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/gis/src/main/java/com/mapsupervision/gis/ui/GisViewModel.kt): Quản lý tọa độ tâm bản đồ, mức thu phóng (Zoom), đo khoảng cách và chọn đối tượng (Node/Route).
+- model du an, GIS, progress, photo, report, AI
+- repository contract
+- use case tong hop snapshot
+- service contract de UI/dong bo goi xuong lop duoi
 
-### 2.5. Module `:gis-maplibre` (GIS MapLibre Renderer)
-Hiện thực hóa việc vẽ bản đồ sử dụng MapLibre SDK.
-- **Tệp tin chính**:
-  - [MapBridgeInstaller.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/gis-maplibre/src/main/java/com/mapsupervision/gis/maplibre/MapBridgeInstaller.kt): Cài đặt và lắng nghe các tương tác kéo thả bản đồ từ MapLibre truyền về module `:gis`.
-  - Thư mục `assets/`: Chứa tệp JSON định nghĩa phong cách bản đồ như `style_street.json`, `style_satellite.json`.
+### 2.4 `data`
 
-### 2.6. Module `:photo` (Camera & Stamp Watermark)
-Xử lý các tác vụ liên quan đến camera hiện trường và đóng dấu thông tin thực địa.
-- **Tệp tin chính**:
-  - [PhotoPipelineService.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/photo/src/main/java/com/mapsupervision/photo/worker/PhotoPipelineService.kt): Quản lý luồng xử lý và lưu trữ hình ảnh hiện trường.
-  - [PhotoStampRenderer.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/photo/src/main/java/com/mapsupervision/photo/worker/PhotoStampRenderer.kt): Vẽ lớp phủ chứa bản đồ mini, GPS, nhà thầu thi công lên bề mặt ảnh chụp.
+Noi hien thuc lop du lieu:
 
-### 2.7. Module `:storage-import` (Excel/KML/Word Parsers)
-Hỗ trợ đọc và chuyển đổi các tệp thiết kế dự án phức tạp sang cấu trúc GIS của MapSupervision.
-- **Tệp tin chính**:
-  - [ImportParsingModels.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/storage-import/src/main/java/com/mapsupervision/storage/importer/ImportParsingModels.kt): Chứa mã nguồn bộ phân tích KML/KMZ (Hàm `parseKmlContent`, `parseKmlContentStreaming`).
-  - [DocxParser.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/storage-import/src/main/java/com/mapsupervision/storage/importer/DocxParser.kt): Trích xuất bảng khối lượng vật tư từ file tài liệu Word.
-  - [ExcelParsingHelpers.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/storage-import/src/main/java/com/mapsupervision/storage/importer/ExcelParsingHelpers.kt): Đọc dữ liệu lưới Excel và trích xuất tọa độ VN-2000 hoặc WGS84.
+- `MapSupervisionDatabase`
+- DAO va entity
+- repository implementation
+- migration/service cho project storage
+- logic bridge giua shared DB va project-scoped DB
 
-### 2.8. Module `:storage-core` & `:storage-crypto` & `:storage-crypto`
-- `:storage-core`: Quản lý vị trí lưu trữ file trên bộ nhớ ngoài, chuyển đổi thư mục dữ liệu dự án khi thay đổi phiên bản.
-- `:storage-crypto`: Đảm bảo an toàn thông tin bằng cách mã hóa các payload của dự án trước khi lưu trữ (`ProjectCryptoManager.kt`).
+### 2.5 `project`, `gis`, `photo`, `timeline`, `reporting`
 
-### 2.9. Module `:reporting` (PDF & Word Exporter)
-Tự động điền dữ liệu tiến độ và kết xuất báo cáo nghiệm thu chuyên nghiệp.
-- **Tệp tin chính**:
-  - [PdfReportGenerator.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/reporting/src/main/java/com/mapsupervision/reporting/pdf/PdfReportGenerator.kt): Sử dụng thư viện đồ họa để tạo báo cáo PDF đính kèm ảnh và bảng biểu.
-  - [DocxReportGenerator.kt](file:///d:/Code%20Antinigaty/MAPSUPERVISION-NonAuth/reporting/src/main/java/com/mapsupervision/reporting/docx/DocxReportGenerator.kt): Xuất file mẫu báo cáo Microsoft Word có định dạng sẵn.
+Day la cac feature module huong man hinh:
+
+- `project`: lifecycle project
+- `gis`: map UI/state
+- `photo`: camera, gallery, stamp, GPS
+- `timeline`: progress va nhat ky
+- `reporting`: snapshot va export bao cao
+
+### 2.6 `storage-core`, `storage-crypto`, `storage-import`
+
+Khoi ha tang luu tru:
+
+- quan ly root storage theo project
+- package/import/export project
+- ma hoa payload
+- parser tep thiet ke va tai lieu
+
+### 2.7 `ai-core`, `ai-agent`, `ai-model`, `ai-rag`, `ai-prompt`
+
+Khoi AI duoc tach theo vai tro:
+
+- contract va facade
+- orchestration
+- engine/model runtime
+- retrieval support
+- prompt va parser
+
+## 3. Layering thuc te trong code
+
+1. `app` va feature module nhan input tu nguoi dung.
+2. ViewModel goi contract/use case trong `domain`.
+3. `data` va `storage-*` xu ly DB, file, import/export.
+4. `ProjectSyncRepository` phat event de cac feature cap nhat.
+5. Ket qua quay lai UI qua state flow/snapshot.
+
+## 4. Hai thanh phan co anh huong he thong
+
+### 4.1 `WorkspaceViewModel`
+
+Day la diem orchestration lon nhat cua app:
+
+- gop state map, progress, import, photo, AI, report
+- dieu phoi action lien tab
+- phat effect mo file export/snackbar
+
+Khi sua file nay can luon nghi den impact toi `map`, `data`, `progress`, `reports`, `materials`.
+
+### 4.2 `ProjectScopedDatabaseProvider`
+
+Day la diem nhay cam nhat cua persistence:
+
+- mo DB rieng theo project
+- chuan hoa `projectDbPath`
+- seed/hydrate cac bang cot loi
+- bridge du lieu giua shared DB va scoped DB
+
+Khi sua import, migration, backup hoac reporting, day la file can doc lai dau tien.
+
+## 5. Mot so cum file can doc theo bai toan
+
+### 5.1 Sua import thiet ke
+
+- `app/.../DataHubRoute.kt`
+- `app/.../WorkspaceImport*.kt`
+- `storage-import/...`
+- `domain/.../ImportRepository.kt`
+- `data/...` cac repository/import lifecycle lien quan
+
+### 5.2 Sua map/GIS
+
+- `app/.../MapHubScreen.kt`
+- `gis/.../GisScreen.kt`
+- `gis/.../GisViewModel.kt`
+- `gis-maplibre/.../MapBridgeInstaller.kt`
+
+### 5.3 Sua photo/media
+
+- `photo/.../PhotoViewModel.kt`
+- `photo/.../PhotoPipelineService.kt`
+- `app/.../CameraOverlay.kt`
+- `app/.../ShareIntentParser.kt`
+
+### 5.4 Sua reporting
+
+- `reporting/.../ReportingViewModel.kt`
+- `reporting/.../PdfReportGenerator.kt`
+- `reporting/.../DocxReportGenerator.kt`
+- `storage-core/.../ProjectPackageService.kt`
+
+### 5.5 Sua AI
+
+- `ai-core/...`
+- `ai-agent/...`
+- `ai-model/...`
+- `ai-rag/...`
+- `ai-prompt/...`
+- cac bridge AI trong `app`
+
+## 6. Diem canh bao ky thuat
+
+- Codebase da duoc tach module nhung state van hoi tu manh o `app`.
+- AI stack tach ro theo module nhung test hien chua deu.
+- `data` la module lon va nhieu logic nhay cam nhat ve consistency.
+- Release gate khong chi kiem tra test ma con ep `lint`, `assembleDebug` va `enforceModuleBoundaries`.
+
+## 7. Tai lieu nen mo kem
+
+- `tong_quan_kien_truc_toan_du_an.md`
+- `module_matrix_chi_tiet.md`
+- `android_cau_truc_module_va_du_lieu.md`

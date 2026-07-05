@@ -44,7 +44,7 @@ class WorkspaceStateModelsTest {
         val option = indexes.progressUi.templateOptions.first { it.name == "Thiết bị đo đếm lưu lượng" }
 
         assertEquals("bộ", option.unit)
-        assertEquals("Hạng mục công việc chung", option.source)
+        assertEquals("Hang muc cong viec chung", option.source)
     }
 
     @Test
@@ -150,6 +150,8 @@ class WorkspaceStateModelsTest {
             dashboard = DashboardState(),
             savedColors = mapOf("NT1" to "#123456"),
             savedHidden = setOf("NT2"),
+            savedNodeSize = 1.5f,
+            savedRouteWidth = 2.0f,
             loadedWorkVolumeProgress = emptyMap(),
             nextSelectedPhotos = emptyList(),
             selectedMapUi = MapUiState(),
@@ -163,6 +165,8 @@ class WorkspaceStateModelsTest {
         assertEquals(99L, updated.lastRefreshedAtEpochMs)
         assertEquals("#123456", updated.mapUi.contractorColors["NT1"])
         assertEquals(setOf("NT2"), updated.mapUi.hiddenContractors)
+        assertEquals(1.5f, updated.mapUi.nodeSizeScale)
+        assertEquals(2.0f, updated.mapUi.routeWidthScale)
     }
 }
 

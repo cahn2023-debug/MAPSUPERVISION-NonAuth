@@ -22,6 +22,8 @@ class GisMapBridgeRegistryTest {
             measureEnabled: Boolean,
             selectedNode: GisNode?,
             selectedRoute: GisRoute?,
+            nodeSizeScale: Float,
+            routeWidthScale: Float,
             onNodeClick: (GisNode) -> Unit,
             onRouteClick: (GisRoute) -> Unit,
             onMeasureDistance: (Double) -> Unit

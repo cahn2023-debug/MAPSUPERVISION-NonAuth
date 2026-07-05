@@ -106,6 +106,8 @@ sealed interface WorkspaceAction {
     data class UpdatePendingSharedImport(val pendingSharedImport: PendingSharedImport) : WorkspaceAction
     data object DismissReportPreview : WorkspaceAction
     data object ClearPendingSharedImport : WorkspaceAction
+    data class ShowMapConfigDialog(val show: Boolean) : WorkspaceAction
+    data class UpdateMapDisplayConfig(val nodeSize: Float, val routeWidth: Float) : WorkspaceAction
 }
 
 internal data class Quadruple<A, B, C, D>(
@@ -805,7 +807,10 @@ data class MapUiState(
     val hiddenContractors: Set<String> = emptySet(),
     val searchQuery: String = "",
     val message: String = "",
-    val routeNote: String = ""
+    val routeNote: String = "",
+    val nodeSizeScale: Float = 1.0f,
+    val routeWidthScale: Float = 1.0f,
+    val showConfigDialog: Boolean = false
 )
 
 internal val GisLabelField.displayName: String

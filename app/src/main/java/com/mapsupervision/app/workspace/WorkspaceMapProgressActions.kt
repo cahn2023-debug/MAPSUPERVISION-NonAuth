@@ -11,6 +11,7 @@ import com.mapsupervision.domain.ai.ImportMappingPayload
 import com.mapsupervision.domain.ai.OpsRecommendationPayload
 import com.mapsupervision.domain.model.DailyLog
 import com.mapsupervision.domain.model.GisNode
+import com.mapsupervision.domain.model.NodeSignalStatus
 import com.mapsupervision.domain.model.Note
 import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.TaskStatus
@@ -2075,6 +2076,26 @@ fun WorkspaceViewModel.importSharedMedia(
             _state.value = _state.value.copy(photoSaveCount = _state.value.photoSaveCount + savedCount)
         }
         refresh()
+    }
+}
+
+fun WorkspaceViewModel.updateNodeSignalStatus(node: GisNode, newStatus: NodeSignalStatus) {
+    viewModelScope.launch {
+        val updatedNode = node.copy(signalStatus = newStatus)
+        gisRepository.upsertNode(updatedNode)
+        val currentUi = _state.value.mapUi
+        if (currentUi.selectedNode?.code == node.code) {
+            _state.value = _state.value.copy(
+                mapUi = currentUi.copy(
+                    selectedNode = updatedNode,
+                    signalStatus = newStatus
+                )
+            )
+        }
+        val projectId = _state.value.activeProjectId
+        if (projectId != null) {
+            markProjectChanged(projectId, "node_signal_status_updated")
+        }
     }
 }
 

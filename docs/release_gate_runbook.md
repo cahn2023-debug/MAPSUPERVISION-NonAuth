@@ -1,79 +1,84 @@
-# DATA Hub Release Gate And Runbook
+# Release gate runbook
 
-Tai lieu nay dinh nghia diem chan release va quy trinh rollback cho DATA Hub truoc khi day len production.
+Tai lieu nay mo ta release gate cap repo cho `MapSupervision`, khong chi rieng DATA Hub. Noi dung duoc dong bo voi `scripts/release_gate.sh` va workflow CI hien tai.
 
-## Muc tieu
+## 1. Muc tieu
 
-- Bao dam nhung thay doi ve import, sync, migration va UI da duoc kiem tra truoc khi merge.
-- Giam rui ro release khi database migration, event outbox hoac import flow thay doi.
-- Co buoc rollback ro rang neu san sang production gap su co.
+- Chan release khi test quan trong, lint hoac boundary check chua dat.
+- Dam bao tai lieu van hanh bat buoc van ton tai.
+- Giam rui ro khi thay doi import, database, workspace shell, reporting va storage.
 
-## Release Gate
+## 2. Gate bat buoc
 
-Chi duoc phep release khi tat ca dieu kien sau deu dat:
+Chi duoc xem la san sang release khi tat ca buoc sau xanh:
 
-- `:app:testDebugUnitTest` xanh.
-- `:storage-import:testDebugUnitTest` xanh.
-- `:data:testDebugUnitTest` xanh.
-- Checklist P7-P11 da duoc tick day du.
-- Khong co thay doi schema database chua co migration tuong ung.
-- Khong co hardcoded warning ve full module test dang do.
-- Neu co thay doi import flow, phai co verify sample file Excel va non-Excel.
-- Neu co thay doi sync, phai co verify event outbox va dispatcher.
+- `:app:testDebugUnitTest`
+- `:storage-import:testDebugUnitTest`
+- `:data:testDebugUnitTest`
+- `lint`
+- `assembleDebug`
+- `enforceModuleBoundaries`
 
-## CI Gate
+Va cac file bat buoc phai ton tai:
 
-- Workflow GitHub Actions: `.github/workflows/android.yml`
-- Script gate chay truoc merge: `scripts/release_gate.sh`
-- Neu script nay pass, release gate coi nhu da dat trong CI.
+- `docs/release_gate_runbook.md`
+- `docs/tab_nhap_lieu_data_hub.md`
+- `production-ready-roadmap.md`
 
-## Pre-Release Steps
+## 3. Lenh gate
 
-1. Pull code moi nhat va sync dependency.
-2. Chay:
-   - `./gradlew.bat :app:testDebugUnitTest`
-   - `./gradlew.bat :storage-import:testDebugUnitTest`
-   - `./gradlew.bat :data:testDebugUnitTest`
-3. Kiem tra checklist trong:
-   - `docs/tab_nhap_lieu_data_hub.md`
-   - `production-ready-roadmap.md`
-4. Neu co thay doi migration, mo lai test migration lien quan va xac nhan schema version.
-5. Neu co thay doi import parser, test them file mau tuong ung.
+```bash
+sh ./scripts/release_gate.sh
+```
 
-## Release Steps
+Noi dung script hien tai:
 
-1. Tao tag hoac release branch theo quy uoc repo.
-2. Xac nhan khong co dirty change ngoai scope release.
-3. Ghi nhan commit hash va version release.
-4. Chay lai smoke test tren build release neu co san.
-5. Merge khi tat ca gate da xanh.
+1. chay 3 nhom unit test
+2. chay `lint`, `assembleDebug`, `enforceModuleBoundaries`
+3. verify su ton tai cua tai lieu va roadmap
 
-## Smoke Test After Release
+## 4. Truoc khi release
 
-- Mo tab `Nhap thiet ke`.
-- Import 1 file Excel mau.
-- Import 1 file non-Excel mau.
-- Kiem tra map, danh sach import, note/task va progress co update.
-- Kiem tra event outbox khong bi ket pending bat thuong.
+1. Dong bo code moi nhat.
+2. Xac nhan khong co thay doi ngoai pham vi release.
+3. Chay gate tong hop.
+4. Neu co sua import/database:
+   - kiem tra migration
+   - kiem tra lai file mau Excel va non-Excel
+5. Neu co sua workspace shell/map/progress/report:
+   - smoke test luong chinh tren thiet bi/emulator
 
-## Rollback Runbook
+## 5. Smoke test toi thieu
 
-Neu release gay loi:
+- Mo app va vao workspace thanh cong.
+- Chuyen duoc project active.
+- Mo tab `data` va import 1 file mau.
+- Xac nhan map, dashboard va imported files duoc cap nhat.
+- Mo tab `reports` va tao duoc preview/export.
+- Neu co media flow lien quan, test them capture hoac share intent.
 
-1. Dung release hien tai.
-2. Xac dinh commit / tag gan nhat on dinh.
-3. Rollback code ve commit/tag do.
-4. Neu da co thay doi database, phai chay migration backwards neu he thong ho tro, hoac khoi phuc tu backup/scoped data cu.
-5. Kiem tra lai:
-   - import flow
-   - outbox
-   - migration
-   - UI tab nhap lieu
+## 6. Tinh huong can canh giac
 
-## Go / No-Go Checklist
+- migration hoac bridge shared DB/scoped DB
+- remap import lam thay doi geometry
+- thay doi `WorkspaceViewModel` lam lech state lien tab
+- sua package/export service anh huong ZIP va artifact bao cao
+- doi dependency module co nguy co vi pham boundary
 
-- [ ] Tat ca test can thiet da xanh.
-- [ ] Checklist P7-P11 da dong.
-- [ ] Release note da co.
-- [ ] Co nguoi xac nhan cuoi cung.
-- [ ] Co ke hoach rollback neu gap su co.
+## 7. Rollback
+
+Neu release gap su co:
+
+1. dung phat hanh ban loi
+2. xac dinh commit/tag on dinh gan nhat
+3. rollback code ve moc on dinh
+4. neu loi nam o migration/storage:
+   - danh gia kha nang khoi phuc tu backup
+   - kiem tra scoped DB cua project bi anh huong
+5. chay lai smoke test toi thieu truoc khi phat hanh lai
+
+## 8. Goi y tai lieu doc kem
+
+- `build_kiem_thu_va_release.md`
+- `tong_hop_du_an_v1.1.md`
+- `tab_nhap_lieu_data_hub.md`

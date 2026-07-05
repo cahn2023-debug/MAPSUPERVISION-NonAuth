@@ -46,6 +46,8 @@ interface GisMapBridge {
         measureEnabled: Boolean,
         selectedNode: GisNode?,
         selectedRoute: GisRoute?,
+        nodeSizeScale: Float,
+        routeWidthScale: Float,
         onNodeClick: (GisNode) -> Unit,
         onRouteClick: (GisRoute) -> Unit,
         onMeasureDistance: (Double) -> Unit
@@ -91,6 +93,8 @@ fun GisScreen(
     measureEnabled: Boolean = false,
     selectedNode: GisNode? = null,
     selectedRoute: GisRoute? = null,
+    nodeSizeScale: Float = 1.0f,
+    routeWidthScale: Float = 1.0f,
     onNodeClick: (GisNode) -> Unit = {},
     onRouteClick: (GisRoute) -> Unit = {},
     onMeasureDistance: (Double) -> Unit = {},
@@ -123,6 +127,8 @@ fun GisScreen(
             measureEnabled = measureEnabled,
             selectedNode = selectedNode,
             selectedRoute = selectedRoute,
+            nodeSizeScale = nodeSizeScale,
+            routeWidthScale = routeWidthScale,
             onNodeClick = onNodeClick,
             onRouteClick = onRouteClick,
             onMeasureDistance = onMeasureDistance

@@ -15,8 +15,8 @@ class CenterPathBfsTest {
 
     @Test
     fun `returns Diem trung tam when node is center`() {
-        assertEquals("Diem trung tam", buildCenterPathSummary("CENTER", "CENTER", emptyList()))
-        assertEquals("Diem trung tam", buildCenterPathSummary("center", "CENTER", emptyList()))
+        assertEquals("Điểm trung tâm", buildCenterPathSummary("CENTER", "CENTER", emptyList()))
+        assertEquals("Điểm trung tâm", buildCenterPathSummary("center", "CENTER", emptyList()))
     }
 
     @Test
@@ -25,7 +25,7 @@ class CenterPathBfsTest {
             route("N1", "N2"),
             route("N2", "N3")
         )
-        assertEquals("Chua co duong ve trung tam", buildCenterPathSummary("N1", "N4", routes))
+        assertEquals("Chưa có đường kết nối về trung tâm", buildCenterPathSummary("N1", "N4", routes))
     }
 
     @Test
@@ -33,7 +33,7 @@ class CenterPathBfsTest {
         val routes = listOf(
             route("N1", "N2")
         )
-        assertEquals("Duong ve trung tam: N1 -> N2", buildCenterPathSummary("N1", "N2", routes))
+        assertEquals("Đường về trung tâm: N1 -> N2", buildCenterPathSummary("N1", "N2", routes))
     }
 
     @Test
@@ -43,7 +43,7 @@ class CenterPathBfsTest {
             route("N2", "N3"),
             route("N3", "N4")
         )
-        assertEquals("Duong ve trung tam: N1 -> N2 -> N3 -> N4", buildCenterPathSummary("N1", "N4", routes))
+        assertEquals("Đường về trung tâm: N1 -> N2 -> N3 -> N4", buildCenterPathSummary("N1", "N4", routes))
     }
 
     @Test
@@ -55,7 +55,7 @@ class CenterPathBfsTest {
             route("N3", "N5"),
             route("N5", "N4")  // Long path: N1 -> N3 -> N5 -> N4
         )
-        assertEquals("Duong ve trung tam: N1 -> N2 -> N4", buildCenterPathSummary("N1", "N4", routes))
+        assertEquals("Đường về trung tâm: N1 -> N2 -> N4", buildCenterPathSummary("N1", "N4", routes))
     }
 
     @Test
@@ -66,7 +66,7 @@ class CenterPathBfsTest {
             route("N3", "N1"),
             route("N3", "N4")
         )
-        assertEquals("Duong ve trung tam: N1 -> N3 -> N4", buildCenterPathSummary("N1", "N4", routes))
+        assertEquals("Đường về trung tâm: N1 -> N3 -> N4", buildCenterPathSummary("N1", "N4", routes))
     }
 
     private fun route(start: String, end: String): GisRoute = GisRoute(

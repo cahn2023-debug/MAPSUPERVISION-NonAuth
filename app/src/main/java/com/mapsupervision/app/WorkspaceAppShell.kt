@@ -131,6 +131,7 @@ import com.mapsupervision.app.workspace.updateMapLabelField
 import com.mapsupervision.app.workspace.updateMapVisualOptions
 import com.mapsupervision.app.workspace.updateWorkVolumeProgress
 import com.mapsupervision.app.workspace.updateMeasureDistance
+import com.mapsupervision.app.workspace.updateNodeSignalStatus
 import com.mapsupervision.app.workspace.updateRouteNote
 import com.mapsupervision.app.workspace.updateSelectedExcelSheet
 import com.mapsupervision.domain.service.IPhotoLocationProvider
@@ -358,6 +359,7 @@ fun WorkspaceAppShell(
                     onSelectNode = workspaceViewModel::selectMapNode,
                     onSelectRoute = workspaceViewModel::selectMapRoute,
                     onSetCenterNode = workspaceViewModel::setMapCenterNode,
+                    onUpdateNodeSignalStatus = workspaceViewModel::updateNodeSignalStatus,
                     onUpdateMaterialProgress = workspaceViewModel::updateWorkVolumeProgress,
                     onCloseNodeCard = workspaceViewModel::clearMapNodeSelection,
                     onCloseRouteCard = workspaceViewModel::clearMapRouteSelection,
@@ -379,6 +381,12 @@ fun WorkspaceAppShell(
                     },
                     onAddRouteNote = workspaceViewModel::updateRouteNote,
                     onMeasureDistance = workspaceViewModel::updateMeasureDistance,
+                    onToggleConfigDialog = { show ->
+                        workspaceViewModel.dispatch(WorkspaceAction.ShowMapConfigDialog(show))
+                    },
+                    onUpdateMapDisplayConfig = { nodeSize, routeWidth ->
+                        workspaceViewModel.dispatch(WorkspaceAction.UpdateMapDisplayConfig(nodeSize, routeWidth))
+                    },
                     onCreateProject = projectViewModel::createProject,
                     onSwitchProject = projectViewModel::switchProject,
                     onCloneProject = projectViewModel::cloneProject,

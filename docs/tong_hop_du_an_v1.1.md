@@ -1,4 +1,4 @@
-# Tong hop du an MapSupervision - Version 1.1
+# Tong hop du an MapSupervision - version 1.1
 
 ## 1. Thong tin phat hanh
 
@@ -10,142 +10,132 @@
 - Min SDK: `24`
 - Target SDK: `35`
 - Compile SDK: `36`
+- Java/Kotlin target: `17`
 
-## 2. Muc tieu san pham
+## 2. Du an nay la gi
 
-`MapSupervision` la ung dung Android phuc vu giam sat cong trinh theo huong local-first. He thong tap trung vao cac nhu cau chinh:
+`MapSupervision` la ung dung Android multi-module phuc vu giam sat cong trinh tren nen ban do so. He thong duoc thiet ke theo huong local-first, lam viec theo `project active`, cho phep nap du lieu thiet ke, theo doi tien do hien truong, ghi nhan media, su dung AI ho tro va xuat bao cao.
 
-- Quan ly du an va workspace theo project active.
-- Nhap du lieu thiet ke tu Excel, KML, KMZ, GeoJSON, JSON.
-- Quan ly node, route, tien do, nhat ky, ghi chu va task.
-- Chup anh hien truong, gan vi tri, dong dau thong tin va luu theo du an.
-- Ho tro AI on-device/offline cho tom tat, goi y va mapping.
-- Xuat bao cao `PDF`, `DOCX` va dong goi du an `ZIP`.
+## 3. Cac khoi chuc nang lon
 
-## 3. Pham vi chuc nang chinh
+### 3.1 Project va workspace
 
-### 3.1 Quan ly du an
-
-- Tao, chon, clone, archive va import/export du an.
+- Tao, chon, clone, archive, import/export project.
 - Theo doi `activeProjectId` de dong bo toan bo workspace.
-- Ho tro luu du lieu theo `project-scoped database`.
+- Ho tro du lieu theo `project-scoped database`.
 
 ### 3.2 DATA Hub va import
 
-- Import file Excel co preview va mapping cot.
-- Import file KML/KMZ/GeoJSON/JSON co mapping field.
+- Import `Excel`, `KML`, `KMZ`, `GeoJSON`, `JSON`, `DOCX`.
+- Preview va mapping cot/field truoc khi commit.
 - Quan ly file qua cac trang thai `pending`, `processed`, `failed`.
-- Cho phep remap va thay the geometry khi can.
+- Ho tro remap va repair geometry.
 
-### 3.3 Ban do va giam sat
+### 3.3 GIS va giam sat
 
 - Hien thi node/route tren map.
-- Loc theo nha thau, vat tu, doi tuong.
-- Theo doi tien do, khoi luong, tien do tre va dashboard du an.
+- Loc theo contractor, vat tu, tim doi tuong.
+- Theo doi signal/progress/moc thi cong tai doi tuong.
 
-### 3.4 Anh hien truong
+### 3.4 Progress, nhat ky va vat tu
+
+- Cap nhat tien do thi cong.
+- Quan ly daily log, work plan, task, note.
+- Theo doi material declaration va material handover.
+
+### 3.5 Media hien truong
 
 - Chup anh/quay video trong app.
-- Nhan media tu gallery hoac share intent ben ngoai.
-- Gan GPS, object code, watermark/stamp va luu vao storage cua du an.
+- Nhan media tu gallery hoac share intent Android.
+- Gan GPS, object code, watermark/stamp va luu theo project.
 
-### 3.5 Bao cao va dong goi
+### 3.6 AI
 
-- Xuat bao cao `PDF`.
-- Xuat bao cao `DOCX`.
-- Dong goi du an thanh `ZIP` de backup/chia se.
-
-### 3.6 AI ho tro nghiep vu
-
-- Tom tat timeline va ghi chu.
+- Goi y mapping import.
+- Tom tat timeline va note.
 - Goi y task tiep theo.
-- Ho tro mapping import.
-- Tao draft noi dung bao cao.
+- Draft bao cao va chat theo context project.
+
+### 3.7 Reporting va package
+
+- Xuat `PDF`.
+- Xuat `DOCX`.
+- Dong goi du an thanh `ZIP`.
 
 ## 4. Cau truc module
 
-Theo `settings.gradle.kts`, workspace gom cac module sau:
+Workspace hien co 18 module source va 1 khoi `buildSrc`:
 
-- `app`: shell Android, navigation, ViewModel tong, widget, WorkManager.
-- `core`: utility chung, logging, error/result.
+- `app`
+- `core`
+- `domain`
+- `data`
+- `project`
+- `gis`
+- `gis-maplibre`
+- `photo`
+- `timeline`
+- `reporting`
+- `storage-core`
+- `storage-crypto`
+- `storage-import`
+- `ai-core`
+- `ai-agent`
+- `ai-model`
+- `ai-rag`
+- `ai-prompt`
+- `buildSrc`
+
+Tom tat vai tro:
+
+- `app`: shell Android, navigation, state workspace, widget, worker.
+- `core`: utility, logging, result, UI nen.
 - `domain`: model, repository contract, use case.
-- `data`: Room database, DAO, repository implementation, migration.
-- `project`: quan ly vong doi du an.
-- `gis`: model va logic GIS.
-- `gis-maplibre`: bridge render map voi MapLibre.
-- `photo`: xu ly capture, gallery, stamp va review anh.
-- `timeline`: tong hop tien do, nhat ky va AI summary.
-- `reporting`: snapshot, draft va export bao cao.
-- `storage-core`: storage va package du an.
-- `storage-crypto`: xu ly storage can bao mat.
-- `storage-import`: import pipeline va parser.
-- `ai-core`, `ai-agent`, `ai-model`, `ai-rag`, `ai-prompt`: he thong AI on-device.
+- `data`: Room DB, DAO, migration, repository implementation.
+- `project/gis/photo/timeline/reporting`: cac feature module.
+- `storage-*`: storage root, crypto, parser/import, package.
+- `ai-*`: contract, orchestration, model runtime, retrieval, prompt.
 
-## 5. Kien truc du lieu va runtime
+## 5. Kien truc runtime va du lieu
 
-He thong theo huong tach lop ro rang:
-
-1. `app` dieu huong UI va orchestration.
-2. `domain` dinh nghia nghiep vu va contract.
-3. `data` va `storage-*` xu ly Room DB, file, migration, import/export.
-4. `ProjectSyncRepository` phat su kien de cac feature refresh dong bo.
-
-Du lieu du an uu tien luu theo `project-scoped database` de:
-
-- Tach biet du lieu tung du an.
-- Ho tro backup/export rieng.
-- Giam rui ro query cheo du an.
-
-## 6. Flow nghiep vu tong quat
-
-### 6.1 Khoi dong
+### 5.1 Runtime Android
 
 - `MapSupervisionApplication` khoi tao logger, map bridge, image loader va WorkManager.
-- `MainActivity` parse share intent neu app duoc mo bang file media.
-- `StartupPermissionWrapper` kiem tra `Location` va `Camera`.
+- `MainActivity` la entry point Compose va xu ly share intent media.
+- `WorkspaceAppShell` dieu huong 5 route chinh:
+  - `map`
+  - `progress`
+  - `data`
+  - `reports`
+  - `materials`
 
-### 6.2 Lam viec theo project
+### 5.2 Luong du lieu
 
-- Chon hoac tao du an.
-- Set `activeProjectId`.
-- `WorkspaceViewModel` nap snapshot va dong bo state cho cac tab.
+1. UI/ViewModel trong `app` phat action.
+2. `domain` dinh nghia contract va use case.
+3. `data` va `storage-*` xu ly DB, file, import/export.
+4. `ProjectSyncRepository` phat event de refresh cac feature.
+5. State quay lai workspace va man hinh con.
 
-### 6.3 Nhap lieu
+### 5.3 Persistence
 
-- Chon file thiet ke.
-- Preview va mapping neu can.
-- Parse vao DB va storage.
-- Phat sync event de map, report, timeline va photo refresh.
+- Room la persistence chinh.
+- Repo co ca shared DB va project-scoped DB.
+- `ProjectScopedDatabaseProvider` la diem trung tam cho open DB, hydrate va bridge du lieu.
 
-### 6.4 Ghi nhan hien truong
+## 6. Build, CI va release
 
-- Chup anh/video hoac nhan media tu ngoai app.
-- Dong dau thong tin.
-- Gan node/route va luu vao du an.
-
-### 6.5 Bao cao
-
-- Tong hop snapshot.
-- Tao draft AI neu can.
-- Xuat `PDF`, `DOCX` hoac `ZIP`.
-
-## 7. Huong dan build va release
-
-### 7.1 Lenh build release
+### 6.1 Build
 
 ```powershell
 .\gradlew.bat :app:assembleRelease
 ```
 
-### 7.2 Release gate hien co
+### 6.2 Release gate thuc te
 
-Script gate:
+Script: `scripts/release_gate.sh`
 
-```text
-scripts/release_gate.sh
-```
-
-Gate hien tai bao gom:
+Gate hien tai chay:
 
 - `:app:testDebugUnitTest`
 - `:storage-import:testDebugUnitTest`
@@ -154,47 +144,48 @@ Gate hien tai bao gom:
 - `assembleDebug`
 - `enforceModuleBoundaries`
 
-Tai lieu runbook lien quan:
+### 6.3 CI
 
-- `docs/release_gate_runbook.md`
-- `docs/tab_nhap_lieu_data_hub.md`
-- `production-ready-roadmap.md`
+GitHub Actions file:
 
-## 8. Artifact phat hanh version 1.1
+- `.github/workflows/android.yml`
 
-Sau khi build release, artifact can duoc doi chieu tai:
+CI dang goi truc tiep `scripts/release_gate.sh`.
 
-- `app/build/outputs/apk/release/`
+## 7. Hien trang ma nguon
 
-Build gan nhat cho ban `1.1` duoc tao luc:
+So file `.kt/.kts` theo module lon:
 
-- `2026-07-04 22:57:52 +07:00`
+- `data`: 161
+- `app`: 97
+- `domain`: 95
+- `ai-model`: 19
+- `photo`: 15
 
-Ban `1.1` da sinh cac APK theo ABI:
+Tin hieu test hien tai:
 
-- `app-arm64-v8a-release.apk` - `101244739` bytes
-- `app-armeabi-v7a-release.apk` - `66097612` bytes
+- Nhieu test nhat nam o `app`, `data`, `ai-agent`, `gis-maplibre`, `photo`.
+- Cac module `ai-core`, `ai-model`, `ai-rag`, `ai-prompt` hien chua co test rieng dang ke.
 
-Metadata build xac nhan:
+## 8. Rui ro ky thuat can ghi nho
 
-- `versionCode = 2`
-- `versionName = 1.1`
+- Bridge shared DB va project-scoped DB.
+- Import remap/repair co the thay doi geometry da co.
+- `WorkspaceViewModel` la orchestration layer lon, de tao tac dong lien tab.
+- Reporting va package lay du lieu tong hop tu nhieu module nen de bi anh huong day chuyen.
+- AI stack da tach module ro nhung test hien chua deu.
 
-Goi tong hop release duoc tao trong thu muc `docs`:
+## 9. Artifact hien co trong `docs`
 
 - `MapSupervision_v1.1_release.zip`
+- `mapsupervision_logo.png`
+- `database_tables.html`
 
-## 9. Rui ro ky thuat can ghi nho
+## 10. Tai lieu tham chieu de doc tiep
 
-- Chuyen doi giua shared DB va project-scoped DB.
-- Import remap co the anh huong geometry da ton tai.
-- Thay doi du lieu project co tac dong lien tab qua `ProjectSyncRepository`.
-- Export bao cao/package de nhay cam voi state project vua thay doi.
-
-## 10. Tai lieu tham chieu noi bo
-
-- `docs/android_kien_truc_tong_quan.md`
-- `docs/android_cau_truc_module_va_du_lieu.md`
-- `docs/android_flow_nghiep_vu.md`
-- `docs/android_huong_dan_su_dung_va_xu_ly_loi.md`
-- `docs/release_gate_runbook.md`
+- `README.md`
+- `tong_quan_kien_truc_toan_du_an.md`
+- `module_matrix_chi_tiet.md`
+- `build_kiem_thu_va_release.md`
+- `android_kien_truc_tong_quan.md`
+- `android_cau_truc_module_va_du_lieu.md`

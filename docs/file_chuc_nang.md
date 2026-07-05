@@ -1,37 +1,55 @@
-# Tai lieu tong hop Android MapSupervision
+# Muc luc tai lieu du an MapSupervision
 
-Tai lieu nay la diem vao chinh cho nhom Android cua du an `MapSupervision`. Muc tieu la gom lai cau truc, chuc nang, flow nghiep vu, cach van hanh va nhom loi thuong gap de de onboarding, debug va ban giao.
+Tai lieu nay dong vai tro "cua vao" cho toan bo thu muc `docs`. Muc tieu la giup team tim nhanh tai lieu theo dung nhu cau: onboarding, kien truc, Android feature, database, AI, build/release va van hanh.
 
-## 1. Bo tai lieu Android trong `docs/`
+## 1. Tai lieu nen doc dau tien
 
-- `android_kien_truc_tong_quan.md`: Tong quan app Android, entry point, dependency graph, navigation va cac thanh phan runtime quan trong.
-- `android_cau_truc_module_va_du_lieu.md`: Chi tiet tung module, repository, database scope theo du an, storage va event sync.
-- `android_flow_nghiep_vu.md`: Luong xu ly chinh tu tao du an, import thiet ke, map, chup anh, cap nhat thi cong, AI, bao cao.
-- `android_huong_dan_su_dung_va_xu_ly_loi.md`: Cach su dung theo vai tro nghiep vu, checklist truoc khi chay va bang loi/fix nhanh.
-- `tab_nhap_lieu_data_hub.md`: Tai lieu chi tiet rieng cho tab `DATA Hub`.
-- `database.md` va `file_database.md`: Tai lieu schema va bang du lieu.
+- `README.md`: chi muc tong hop toan bo thu muc `docs`.
+- `tong_hop_du_an_v1.1.md`: ban tom tat phat hanh va hien trang du an.
+- `tong_quan_kien_truc_toan_du_an.md`: ban do kien truc tong the cua workspace multi-module.
+- `module_matrix_chi_tiet.md`: bang vai tro, dependency, file chinh va muc do test cua tung module.
+- `build_kiem_thu_va_release.md`: cach build, test, CI va release gate.
 
-## 2. Tong quan nhanh tinh nang Android
+## 2. Tai lieu Android va nghiep vu
 
-- Quan ly workspace va project, bao gom tao, clone, archive, import/export va chuyen project active.
-- Ban do GIS voi `MapLibre`, loc theo nha thau, loai vat tu, tim doi tuong, do khoang cach va xem chi tiet node/route.
-- Import ho so thiet ke tu `Excel`, `KML`, `KMZ`, `GeoJSON`, `JSON`, co preview va mapping truoc khi ghi DB.
-- Chup anh hien truong co watermark, mini-map, GPS va co che phat hien tinh huong GPS khong dang tin cay.
-- Quan ly tien do, khoi luong, nhat ky, note, task, vat tu va ke hoach thi cong ngay trong workspace.
-- AI offline/on-device cho mapping, tong hop nhat ky, goi y task, draft bao cao va tro ly chat.
-- Xuat bao cao `PDF`, `DOCX`, dong goi du an thanh `ZIP` de chia se va backup.
+- `android_kien_truc_tong_quan.md`: entry point Android, navigation shell, permission, runtime.
+- `android_cau_truc_module_va_du_lieu.md`: module Android, Room DB, scoped DB, sync event.
+- `android_flow_nghiep_vu.md`: flow khoi dong, project, import, map, media, AI, reporting.
+- `android_huong_dan_su_dung_va_xu_ly_loi.md`: checklist su dung va troubleshooting.
+- `file_tinh_nang_tab.md`: tong hop tinh nang theo tung tab trong workspace.
+- `tab_nhap_lieu_data_hub.md`: tai lieu chi tiet rieng cho DATA Hub.
 
-## 3. Thu tu doc de onboarding nhanh
+## 3. Tai lieu kien truc va codebase
 
-1. Doc `android_kien_truc_tong_quan.md`.
-2. Doc `android_cau_truc_module_va_du_lieu.md`.
-3. Doc `android_flow_nghiep_vu.md`.
-4. Khi thao tac thuc te, mo them `android_huong_dan_su_dung_va_xu_ly_loi.md`.
-5. Neu lam viec voi import, doc them `tab_nhap_lieu_data_hub.md`.
+- `file_knowledge.md`: mo ta cau truc ma nguon, layering va vai tro cac khoi chinh.
+- `tong_quan_kien_truc_toan_du_an.md`: architecture map cap repo.
+- `module_matrix_chi_tiet.md`: module matrix cap build va source.
+- `adr/0001-gis-bridge-and-module-boundaries.md`: ADR ve GIS bridge va ranh gioi module.
 
-## 4. Ghi chu hien trang du an
+## 4. Tai lieu du lieu va database
 
-- App Android dung `Hilt`, `WorkManager`, `Compose`, `Navigation Compose`, `Room` va `MapLibre`.
-- Moi project co kha nang chay voi `project-scoped database`, dong thoi van co cau noi dong bo tu shared DB trong giai doan chuyen doi.
-- App dang co mot so file UI/ViewModel dang thay doi trong worktree, vi vay tai lieu nay mo ta theo code hien co o thoi diem cap nhat va tap trung vao luong on dinh.
-- Mot so chuoi tieng Viet trong code/manifest dang co dau hieu loi encoding. Tai lieu nay ghi ro trong phan troubleshooting de doi Android xu ly rieng khi can.
+- `database.md`: tong hop schema va luong du lieu.
+- `file_database.md`: dien giai chi tiet cac bang va y nghia nghiep vu.
+- `database_tables.html`: artifact schema HTML de tra cuu nhanh.
+
+## 5. Tai lieu build, release va van hanh
+
+- `build_kiem_thu_va_release.md`: cach build app, chay test, CI, release artifact.
+- `release_gate_runbook.md`: tieu chi gate, smoke test va rollback cho release.
+- `redundant-loop-cleanup-2026-06-28.md`: ghi chu cleanup ky thuat theo dot.
+
+## 6. Artifact va tai san
+
+- `MapSupervision_v1.1_release.zip`: goi release da dong goi.
+- `mapsupervision_logo.png`: logo su dung trong tai lieu va chia se noi bo.
+- `files.zip`: goi tep tham chieu cu.
+
+## 7. Thu tu doc de onboarding nhanh
+
+1. Doc `README.md`.
+2. Doc `tong_hop_du_an_v1.1.md`.
+3. Doc `tong_quan_kien_truc_toan_du_an.md`.
+4. Doc `module_matrix_chi_tiet.md`.
+5. Neu lam Android feature, doc them bo `android_*.md`.
+6. Neu sua import/database, doc them `database.md`, `file_database.md`, `tab_nhap_lieu_data_hub.md`.
+7. Truoc khi chuan bi release, doc `build_kiem_thu_va_release.md` va `release_gate_runbook.md`.

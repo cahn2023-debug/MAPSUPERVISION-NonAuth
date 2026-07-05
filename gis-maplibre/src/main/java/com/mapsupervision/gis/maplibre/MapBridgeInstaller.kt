@@ -59,7 +59,9 @@ internal data class MapRenderKey(
     val labelField: GisLabelField,
     val showNumberLabels: Boolean,
     val colorByContractor: Boolean,
-    val contractorColorsHash: Int
+    val contractorColorsHash: Int,
+    val nodeSizeScale: Float,
+    val routeWidthScale: Float
 )
 
 internal fun buildMapRenderKey(
@@ -68,7 +70,9 @@ internal fun buildMapRenderKey(
     labelField: GisLabelField,
     showNumberLabels: Boolean,
     colorByContractor: Boolean,
-    contractorColors: Map<String, String>
+    contractorColors: Map<String, String>,
+    nodeSizeScale: Float,
+    routeWidthScale: Float
 ): MapRenderKey {
     return MapRenderKey(
         nodeSignature = nodes.stableNodeSignature(),
@@ -78,7 +82,9 @@ internal fun buildMapRenderKey(
         labelField = labelField,
         showNumberLabels = showNumberLabels,
         colorByContractor = colorByContractor,
-        contractorColorsHash = contractorColors.hashCode()
+        contractorColorsHash = contractorColors.hashCode(),
+        nodeSizeScale = nodeSizeScale,
+        routeWidthScale = routeWidthScale
     )
 }
 
@@ -181,6 +187,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private var latestContractorColors: Map<String, String> = emptyMap()
     private var latestShowNodes: Boolean = true
     private var latestShowRoutes: Boolean = true
+    private var latestNodeSizeScale: Float = 1.0f
+    private var latestRouteWidthScale: Float = 1.0f
     private var measureEnabled: Boolean = false
     private var selectedNodeSnapshot: GisNode? = null
     private var selectedRouteSnapshot: GisRoute? = null
@@ -215,6 +223,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
         measureEnabled: Boolean,
         selectedNode: GisNode?,
         selectedRoute: GisRoute?,
+        nodeSizeScale: Float,
+        routeWidthScale: Float,
         onNodeClick: (GisNode) -> Unit,
         onRouteClick: (GisRoute) -> Unit,
         onMeasureDistance: (Double) -> Unit
@@ -230,6 +240,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
         latestLabelField = labelField
         latestShowNodes = showNodes
         latestShowRoutes = showRoutes
+        latestNodeSizeScale = nodeSizeScale
+        latestRouteWidthScale = routeWidthScale
         this.measureEnabled = measureEnabled
         selectedNodeSnapshot = selectedNode
         selectedRouteSnapshot = selectedRoute
@@ -323,6 +335,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 val _measure = measureEnabled
                 val _selNode = selectedNode
                 val _selRoute = selectedRoute
+                val _nodeScale = nodeSizeScale
+                val _routeScale = routeWidthScale
 
                 val currentMap = map
                 if (currentMap != null && currentMap.style != null) {
@@ -526,6 +540,8 @@ private class MapLibreGisMapBridge : GisMapBridge {
         val localShowNumberLabels = latestShowNumberLabels
         val localColorByContractor = latestColorByContractor
         val localContractorColors = latestContractorColors
+        val localNodeSizeScale = latestNodeSizeScale
+        val localRouteWidthScale = latestRouteWidthScale
         val localStyleEpoch = styleEpoch
         val localPreferLightweightRender = preferLightweightRender
         val localIsLowRamDevice = isCurrentDeviceLowRam
@@ -540,7 +556,9 @@ private class MapLibreGisMapBridge : GisMapBridge {
                     labelField = localLabelField,
                     showNumberLabels = localShowNumberLabels,
                     colorByContractor = localColorByContractor,
-                    contractorColors = localContractorColors
+                    contractorColors = localContractorColors,
+                    nodeSizeScale = localNodeSizeScale,
+                    routeWidthScale = localRouteWidthScale
                 )
                 val renderPolicy = resolveMapRenderPolicy(
                     preferLightweightRender = localPreferLightweightRender,
@@ -577,11 +595,7 @@ private class MapLibreGisMapBridge : GisMapBridge {
 
                 val nodeFeatures = displayedNodes.map { (node, point) ->
                     val baseColor = if (localColorByContractor) colorForContractor(node.contractor, localContractorColors) else "#f97316"
-                    val signalColor = when (node.signalStatus.name) {
-                        "HAS_SIGNAL" -> "#22c55e"
-                        "NO_SIGNAL" -> "#ef4444"
-                        else -> baseColor
-                    }
+                    val signalColor = baseColor
                     Feature.fromGeometry(Point.fromLngLat(point.longitude, point.latitude)).apply {
                         addStringProperty("code", node.code)
                         addStringProperty("contractor", node.contractor)
@@ -594,25 +608,25 @@ private class MapLibreGisMapBridge : GisMapBridge {
                         addStringProperty(
                             "signalStrokeColor",
                             when (node.signalStatus.name) {
-                                "HAS_SIGNAL" -> "#dcfce7"
-                                "NO_SIGNAL" -> "#fee2e2"
+                                "HAS_SIGNAL" -> "#22c55e"
+                                "NO_SIGNAL" -> "#ef4444"
                                 else -> "#ffffff"
                             }
                         )
                         addNumberProperty(
                             "signalStrokeWidth",
-                            when (node.signalStatus.name) {
-                                "HAS_SIGNAL", "NO_SIGNAL" -> 3.5
-                                else -> 2.5
-                            }
+                            (when (node.signalStatus.name) {
+                                "HAS_SIGNAL", "NO_SIGNAL" -> 4.0
+                                else -> 2.0
+                            }) * localNodeSizeScale
                         )
                         addNumberProperty(
                             "signalRadius",
-                            when (node.signalStatus.name) {
+                            (when (node.signalStatus.name) {
                                 "HAS_SIGNAL" -> 11.5
                                 "NO_SIGNAL" -> 11.0
                                 else -> 10.0
-                            }
+                            }) * localNodeSizeScale
                         )
                     }
                 }
@@ -716,8 +730,10 @@ private class MapLibreGisMapBridge : GisMapBridge {
         labelField: GisLabelField,
         showNumberLabels: Boolean,
         colorByContractor: Boolean,
-        contractorColors: Map<String, String>
-    ): MapRenderKey = buildMapRenderKey(nodes, routes, labelField, showNumberLabels, colorByContractor, contractorColors)
+        contractorColors: Map<String, String>,
+        nodeSizeScale: Float,
+        routeWidthScale: Float
+    ): MapRenderKey = buildMapRenderKey(nodes, routes, labelField, showNumberLabels, colorByContractor, contractorColors, nodeSizeScale, routeWidthScale)
 
     private fun clearPendingMapUpdate() {
         mapUpdateJob?.cancel()
@@ -741,7 +757,9 @@ private class MapLibreGisMapBridge : GisMapBridge {
                 labelField = latestLabelField,
                 showNumberLabels = latestShowNumberLabels,
                 colorByContractor = latestColorByContractor,
-                contractorColors = latestContractorColors
+                contractorColors = latestContractorColors,
+                nodeSizeScale = latestNodeSizeScale,
+                routeWidthScale = latestRouteWidthScale
             )
             if (latestRequestedRenderKey != requestedRenderKey) return@launch
             preferLightweightRender = false
@@ -779,18 +797,22 @@ private class MapLibreGisMapBridge : GisMapBridge {
     private fun applyLayerVisibility() {
         val mapRef = map ?: return
         if (mapRef.style == null) return
-        val signature = (if (latestShowNodes) 1 else 0) * 100 +
-            (if (latestShowRoutes) 1 else 0) * 10 +
-            (if (measureEnabled) 1 else 0)
+        val signature = (if (latestShowNodes) 1 else 0) * 1000 +
+            (if (latestShowRoutes) 1 else 0) * 100 +
+            (if (measureEnabled) 1 else 0) * 10 +
+            (latestRouteWidthScale * 100).toInt()
         if (signature == lastLayerSignature) return
         lastLayerSignature = signature
-        Log.d(TAG, "applyLayerVisibility showNodes=$latestShowNodes showRoutes=$latestShowRoutes measureEnabled=$measureEnabled")
+        Log.d(TAG, "applyLayerVisibility showNodes=$latestShowNodes showRoutes=$latestShowRoutes measureEnabled=$measureEnabled routeWidthScale=$latestRouteWidthScale")
         mapRef.getStyle()?.let { style ->
             val nodeVisibility = if (latestShowNodes) Property.VISIBLE else Property.NONE
             val routeVisibility = if (latestShowRoutes) Property.VISIBLE else Property.NONE
             style.getLayer(NODES_LAYER_ID)?.setProperties(PropertyFactory.visibility(nodeVisibility))
             style.getLayer(NODE_LABELS_LAYER_ID)?.setProperties(PropertyFactory.visibility(nodeVisibility))
-            style.getLayer(ROUTES_LAYER_ID)?.setProperties(PropertyFactory.visibility(routeVisibility))
+            style.getLayer(ROUTES_LAYER_ID)?.setProperties(
+                PropertyFactory.visibility(routeVisibility),
+                PropertyFactory.lineWidth(4.0f * latestRouteWidthScale)
+            )
             style.getLayer(MEASURE_LAYER_ID)?.setProperties(
                 PropertyFactory.visibility(if (measureEnabled) Property.VISIBLE else Property.NONE)
             )

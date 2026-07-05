@@ -35,6 +35,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterList
@@ -60,6 +62,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,6 +97,7 @@ import com.mapsupervision.domain.model.Task
 import com.mapsupervision.domain.model.TaskStatus
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Checkbox
@@ -151,6 +155,7 @@ fun MapHubScreen(
     onSelectNode: (GisNode) -> Unit,
     onSelectRoute: (GisRoute) -> Unit,
     onSetCenterNode: (GisNode?) -> Unit,
+    onUpdateNodeSignalStatus: (GisNode, NodeSignalStatus) -> Unit = { _, _ -> },
     onCloseNodeCard: () -> Unit,
     onCloseRouteCard: () -> Unit,
     onZoomIn: () -> Unit,
@@ -170,6 +175,8 @@ fun MapHubScreen(
     onFileReport: (String) -> Unit,
     onAddRouteNote: (String) -> Unit,
     onMeasureDistance: (Double) -> Unit,
+    onToggleConfigDialog: (Boolean) -> Unit = {},
+    onUpdateMapDisplayConfig: (Float, Float) -> Unit = { _, _ -> },
     selectedNodePhotos: List<com.mapsupervision.domain.model.SitePhoto> = emptyList(),
     onDismissPhotoPopup: () -> Unit = {},
     selectedObjectNotes: List<Note> = emptyList(),
@@ -715,6 +722,8 @@ fun MapHubScreen(
                         measureEnabled = mapUi.measureEnabled,
                         selectedNode = mapUi.selectedNode,
                         selectedRoute = mapUi.selectedRoute,
+                        nodeSizeScale = mapUi.nodeSizeScale,
+                        routeWidthScale = mapUi.routeWidthScale,
                         onNodeClick = onSelectNode,
                         onRouteClick = onSelectRoute,
                         onMeasureDistance = onMeasureDistance
@@ -807,6 +816,13 @@ fun MapHubScreen(
                                     Icons.Outlined.Straighten,
                                     contentDescription = "Measure",
                                     tint = if (mapUi.measureEnabled) dangerColor else onSurfaceColor
+                                )
+                            }
+                        IconButton(onClick = { onToggleConfigDialog(true) }) {
+                                Icon(
+                                    Icons.Outlined.Settings,
+                                    contentDescription = "Cấu hình bản đồ",
+                                    tint = onSurfaceColor
                                 )
                             }
                         }
@@ -976,7 +992,7 @@ fun MapHubScreen(
                             onCloseNodeCard = onCloseNodeCard
                         )
 
-                        NodeNetworkSection(node = selectedNode)
+                        NodeNetworkSection(node = selectedNode, onUpdateNodeSignalStatus = onUpdateNodeSignalStatus)
 
                         NodeRoutingSection(
                             node = selectedNode,
@@ -1230,6 +1246,125 @@ fun MapHubScreen(
                 }
             )
         }
+
+        // Map configuration BottomSheet
+        if (mapUi.showConfigDialog) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            var localNodeScale by remember(mapUi.nodeSizeScale) { mutableStateOf(mapUi.nodeSizeScale) }
+            var localRouteScale by remember(mapUi.routeWidthScale) { mutableStateOf(mapUi.routeWidthScale) }
+
+            ModalBottomSheet(
+                onDismissRequest = { onToggleConfigDialog(false) },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                dragHandle = {
+                    Box(
+                        modifier = Modifier
+                            .padding(vertical = 12.dp)
+                            .size(width = 40.dp, height = 4.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                shape = CircleShape
+                            )
+                    )
+                }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Cấu hình hiển thị bản đồ",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    )
+
+                    // Node size slider
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Kích thước các nút (Node)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1fx", localNodeScale),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = localNodeScale,
+                            onValueChange = {
+                                localNodeScale = it
+                                onUpdateMapDisplayConfig(localNodeScale, localRouteScale)
+                            },
+                            valueRange = 0.5f..2.5f,
+                            steps = 20
+                        )
+                    }
+
+                    // Route thickness slider
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Chiều dày đường vẽ (Route)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1fx", localRouteScale),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = localRouteScale,
+                            onValueChange = {
+                                localRouteScale = it
+                                onUpdateMapDisplayConfig(localNodeScale, localRouteScale)
+                            },
+                            valueRange = 0.5f..2.5f,
+                            steps = 20
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { onToggleConfigDialog(false) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Đóng", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1350,29 +1485,79 @@ private fun SignalStatusBadge(status: NodeSignalStatus) {
 }
 
 @Composable
-private fun NodeNetworkSection(node: GisNode) {
+private fun NodeNetworkSection(
+    node: GisNode,
+    onUpdateNodeSignalStatus: (GisNode, NodeSignalStatus) -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (isExpanded) 8.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            .padding(12.dp)
+            .padding(vertical = 8.dp, horizontal = 12.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { isExpanded = !isExpanded },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("THÔNG TIN MẠNG", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            SignalStatusBadge(node.signalStatus)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(
+                    imageVector = if (isExpanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Thu hẹp" else "Mở rộng",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "THÔNG TIN MẠNG",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val isOnline = node.signalStatus == NodeSignalStatus.HAS_SIGNAL
+                Text(
+                    text = if (isOnline) "Trực tuyến" else "Ngoại tuyến",
+                    color = if (isOnline) Color(0xFF22C55E) else Color(0xFFEF4444),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                androidx.compose.material3.Switch(
+                    checked = isOnline,
+                    onCheckedChange = { checked ->
+                        onUpdateNodeSignalStatus(
+                            node,
+                            if (checked) NodeSignalStatus.HAS_SIGNAL else NodeSignalStatus.NO_SIGNAL
+                        )
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = Color(0xFF22C55E),
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = Color(0xFFEF4444)
+                    ),
+                    modifier = Modifier.scale(0.7f)
+                )
+            }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            NetworkInfoCell("IP", networkValue(node.ipAddress), Modifier.weight(1f))
-            NetworkInfoCell("Subnet", networkValue(node.subnet), Modifier.weight(1f))
+        if (isExpanded) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                NetworkInfoCell("IP", networkValue(node.ipAddress), Modifier.weight(1f))
+                NetworkInfoCell("Subnet", networkValue(node.subnet), Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            NetworkInfoCell("Gateway", networkValue(node.gateway), Modifier.fillMaxWidth())
         }
-        NetworkInfoCell("Gateway", networkValue(node.gateway), Modifier.fillMaxWidth())
     }
 }
 

@@ -25,8 +25,8 @@ class MapRenderKeyTest {
             GisRoute("route-1", "project-1", "R-001", "CTR-A", "N-001", "N-001")
         )
 
-        val key1 = buildMapRenderKey(nodes1, routes1, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"))
-        val key2 = buildMapRenderKey(nodes2, routes2, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"))
+        val key1 = buildMapRenderKey(nodes1, routes1, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"), 1.0f, 1.0f)
+        val key2 = buildMapRenderKey(nodes2, routes2, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"), 1.0f, 1.0f)
 
         assertEquals(key1, key2)
     }
@@ -40,9 +40,9 @@ class MapRenderKeyTest {
             GisRoute("route-1", "project-1", "R-001", "CTR-A", "N-001", "N-001")
         )
 
-        val key1 = buildMapRenderKey(nodes, routes, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"))
-        val key2 = buildMapRenderKey(nodes, routes, GisLabelField.CONTRACTOR, true, true, mapOf("CTR-A" to "#f97316"))
-        val key3 = buildMapRenderKey(nodes, routes, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#22c55e"))
+        val key1 = buildMapRenderKey(nodes, routes, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#f97316"), 1.0f, 1.0f)
+        val key2 = buildMapRenderKey(nodes, routes, GisLabelField.CONTRACTOR, true, true, mapOf("CTR-A" to "#f97316"), 1.0f, 1.0f)
+        val key3 = buildMapRenderKey(nodes, routes, GisLabelField.CODE, true, true, mapOf("CTR-A" to "#22c55e"), 1.0f, 1.0f)
 
         assertNotEquals(key1, key2)
         assertNotEquals(key1, key3)
@@ -60,8 +60,8 @@ class MapRenderKeyTest {
             GisRoute("route-1", "project-1", "R-001", "CTR-A", "N-001", "N-001")
         )
 
-        val key1 = buildMapRenderKey(nodes1, routes, GisLabelField.CODE, true, true, emptyMap())
-        val key2 = buildMapRenderKey(nodes2, routes, GisLabelField.CODE, true, true, emptyMap())
+        val key1 = buildMapRenderKey(nodes1, routes, GisLabelField.CODE, true, true, emptyMap(), 1.0f, 1.0f)
+        val key2 = buildMapRenderKey(nodes2, routes, GisLabelField.CODE, true, true, emptyMap(), 1.0f, 1.0f)
 
         assertNotEquals(key1, key2)
     }
@@ -77,14 +77,16 @@ class MapRenderKeyTest {
             GisRoute("route-2", "project-1", "R-002", "CTR-B", "N-002", "N-002")
         )
 
-        val allKey = buildMapRenderKey(allNodes, allRoutes, GisLabelField.CODE, true, true, emptyMap())
+        val allKey = buildMapRenderKey(allNodes, allRoutes, GisLabelField.CODE, true, true, emptyMap(), 1.0f, 1.0f)
         val filteredKey = buildMapRenderKey(
             nodes = listOf(allNodes.first()),
             routes = listOf(allRoutes.first()),
             labelField = GisLabelField.CODE,
             showNumberLabels = true,
             colorByContractor = true,
-            contractorColors = emptyMap()
+            contractorColors = emptyMap(),
+            nodeSizeScale = 1.0f,
+            routeWidthScale = 1.0f
         )
 
         assertNotEquals(allKey, filteredKey)

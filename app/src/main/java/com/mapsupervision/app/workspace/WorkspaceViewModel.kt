@@ -170,6 +170,23 @@ class WorkspaceViewModel @Inject constructor(
         }.toSet()
     }
 
+    private val mapDisplayPrefs by lazy {
+        context.getSharedPreferences("map_display_config", Context.MODE_PRIVATE)
+    }
+
+    internal fun saveMapDisplayConfig(projectId: String, nodeSize: Float, routeWidth: Float) {
+        mapDisplayPrefs.edit()
+            .putFloat("${projectId}_nodeSizeScale", nodeSize)
+            .putFloat("${projectId}_routeWidthScale", routeWidth)
+            .apply()
+    }
+
+    internal fun loadMapDisplayConfig(projectId: String): Pair<Float, Float> {
+        val nodeSize = mapDisplayPrefs.getFloat("${projectId}_nodeSizeScale", 1.0f)
+        val routeWidth = mapDisplayPrefs.getFloat("${projectId}_routeWidthScale", 1.0f)
+        return Pair(nodeSize, routeWidth)
+    }
+
     init {
         observeWorkspace()
         observeProjectSync()
@@ -201,6 +218,24 @@ class WorkspaceViewModel @Inject constructor(
             }
             WorkspaceAction.ClearPendingSharedImport -> {
                 _state.value = _state.value.copy(pendingSharedImport = null)
+            }
+            is WorkspaceAction.ShowMapConfigDialog -> {
+                _state.value = _state.value.copy(
+                    mapUi = _state.value.mapUi.copy(showConfigDialog = action.show)
+                )
+            }
+            is WorkspaceAction.UpdateMapDisplayConfig -> {
+                val current = _state.value
+                val projectId = current.activeProjectId
+                if (projectId != null) {
+                    saveMapDisplayConfig(projectId, action.nodeSize, action.routeWidth)
+                }
+                _state.value = current.copy(
+                    mapUi = current.mapUi.copy(
+                        nodeSizeScale = action.nodeSize,
+                        routeWidthScale = action.routeWidth
+                    )
+                )
             }
         }
     }
@@ -329,6 +364,7 @@ class WorkspaceViewModel @Inject constructor(
 
             val savedColors = loadContractorColors(snapshot.projectId)
             val savedHidden = loadHiddenContractors(snapshot.projectId)
+            val (savedNodeSize, savedRouteWidth) = loadMapDisplayConfig(snapshot.projectId)
 
             val nextState = applyWorkspaceSnapshotToState(
                 current = current,
@@ -336,6 +372,8 @@ class WorkspaceViewModel @Inject constructor(
                 dashboard = dashboard,
                 savedColors = savedColors,
                 savedHidden = savedHidden,
+                savedNodeSize = savedNodeSize,
+                savedRouteWidth = savedRouteWidth,
                 loadedWorkVolumeProgress = loadedWorkVolumeProgress,
                 nextSelectedPhotos = nextSelectedPhotos,
                 selectedMapUi = keepMapSelection(current.mapUi, snapshot.designNodes, snapshot.designRoutes),
@@ -453,6 +491,8 @@ internal fun applyWorkspaceSnapshotToState(
     dashboard: DashboardState,
     savedColors: Map<String, String>,
     savedHidden: Set<String>,
+    savedNodeSize: Float = 1.0f,
+    savedRouteWidth: Float = 1.0f,
     loadedWorkVolumeProgress: Map<String, String>,
     nextSelectedPhotos: List<SitePhoto>,
     selectedMapUi: MapUiState,
@@ -467,7 +507,9 @@ internal fun applyWorkspaceSnapshotToState(
         dashboard = dashboard,
         mapUi = selectedMapUi.copy(
             contractorColors = savedColors,
-            hiddenContractors = savedHidden
+            hiddenContractors = savedHidden,
+            nodeSizeScale = savedNodeSize,
+            routeWidthScale = savedRouteWidth
         ),
         workVolumeRows = snapshot.workVolumeRows,
         workVolumeProgress = loadedWorkVolumeProgress,
